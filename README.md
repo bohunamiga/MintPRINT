@@ -26,3 +26,16 @@ Classic AmigaOS using m68k-amigaos-gcc / Bebbo GCC.
 ## Notes
 
 This repository is being preserved first, cleaned later.
+
+## Quick Windows IPP Probe
+
+If your Amiga build suddenly stopped printing, you can isolate printer-side vs client-side issues from a Windows machine with `windows_ipp_probe.py`.
+
+Examples:
+
+```bash
+python windows_ipp_probe.py http://192.168.0.17:631/ipp/print
+python windows_ipp_probe.py http://192.168.0.17:631/ipp/print --print-file test.jpg --mime image/jpeg
+```
+
+This checks `Get-Printer-Attributes` and optionally submits a test `Print-Job` with a chosen MIME type.

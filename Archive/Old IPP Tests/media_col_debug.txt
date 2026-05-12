@@ -1,0 +1,3441 @@
+--- Media Tray Mappings (media-col-ready) ---
+Pos 0: Tag 0x08
+Group tag, skipping
+Pos 0: Tag 0x09
+Name length: 0
+Name: attributes-charset
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): utf-8
+Pos 0: Tag 0x25
+Name length: 0
+Name: attributes-natural-language
+Value length: 0
+Raw value bytes: 00 00 
+Value (as string): en
+Pos 0: Tag 0x47
+Group tag, skipping
+Pos 0: Tag 0x48
+Name length: 0
+Name: copies-default
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x5f
+Name length: 0
+Name: finishings-default
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x7a
+Name length: 0
+Name: media-default
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): iso_a4_210x297mm
+Pos 0: Tag 0x9c
+Name length: 0
+Name: media-col-default
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0xb2
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-type
+Pos 0: Tag 0xc1
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): stationery
+Pos 0: Tag 0xd0
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-size
+Pos 0: Tag 0xdf
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0xe4
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0xf4
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xfd
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x10d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x116
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x11b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-bottom-margin
+Pos 0: Tag 0x133
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x13c
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-left-margin
+Pos 0: Tag 0x152
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x15b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-right-margin
+Pos 0: Tag 0x172
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x17b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-top-margin
+Pos 0: Tag 0x190
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x199
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source
+Pos 0: Tag 0x1aa
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): auto
+Pos 0: Tag 0x1b3
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-auto-dimension
+Pos 0: Tag 0x1cc
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 
+Value (as string): 
+Pos 0: Tag 0x1d2
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-properties
+Pos 0: Tag 0x1ee
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1f3
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-feed-direction
+Pos 0: Tag 0x213
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): long-edge-first
+Pos 0: Tag 0x227
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-feed-orientation
+Pos 0: Tag 0x249
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x252
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x257
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x25c
+Name length: 0
+Name: orientation-requested-default
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x282
+Name length: 0
+Name: output-bin-default
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 
+Value (as string): face-up
+Pos 0: Tag 0x2a0
+Name length: 0
+Name: output-mode-default
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): color
+Pos 0: Tag 0x2bd
+Name length: 0
+Name: print-quality-default
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x2db
+Name length: 0
+Name: printer-resolution-default
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x303
+Name length: 0
+Name: sides-default
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 
+Value (as string): one-sided
+Pos 0: Tag 0x31e
+Name length: 0
+Name: print-color-mode-default
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): color
+Pos 0: Tag 0x340
+Name length: 0
+Name: print-content-optimize-default
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): auto
+Pos 0: Tag 0x367
+Name length: 0
+Name: print-scaling-default
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): auto
+Pos 0: Tag 0x385
+Name length: 0
+Name: copies-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x3a2
+Name length: 0
+Name: finishings-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x3bf
+Name length: 0
+Name: media-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): iso_a4_210x297mm
+Pos 0: Tag 0x3e3
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): na_letter_8.5x11in
+Pos 0: Tag 0x3fa
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): na_legal_8.5x14in
+Pos 0: Tag 0x410
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): na_executive_7.25x10.5in
+Pos 0: Tag 0x42d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): iso_a5_148x210mm
+Pos 0: Tag 0x442
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): iso_a6_105x148mm
+Pos 0: Tag 0x457
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): na_number-10_4.125x9.5in
+Pos 0: Tag 0x474
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): iso_dl_110x220mm
+Pos 0: Tag 0x489
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): iso_c5_162x229mm
+Pos 0: Tag 0x49e
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): na_monarch_3.875x7.5in
+Pos 0: Tag 0x4b9
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): na_foolscap_8.5x13in
+Pos 0: Tag 0x4d2
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): na_oficio_8.5x13.4in
+Pos 0: Tag 0x4eb
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): om_india-legal_215x345mm
+Pos 0: Tag 0x508
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): iso_a3_297x420mm
+Pos 0: Tag 0x51d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): na_ledger_11x17in
+Pos 0: Tag 0x533
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): na_index-4x6_4x6in
+Pos 0: Tag 0x54a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): oe_photo-l_3.5x5in
+Pos 0: Tag 0x561
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): na_5x7_5x7in
+Pos 0: Tag 0x572
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): na_index-5x8_5x8in
+Pos 0: Tag 0x589
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): custom_min_88.9x127mm
+Pos 0: Tag 0x5a3
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): custom_max_287x431.8mm
+Pos 0: Tag 0x5be
+Name length: 0
+Name: media-col-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-type
+Pos 0: Tag 0x5e0
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-size
+Pos 0: Tag 0x5ef
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-top-margin
+Pos 0: Tag 0x604
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-left-margin
+Pos 0: Tag 0x61a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-right-margin
+Pos 0: Tag 0x631
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-bottom-margin
+Pos 0: Tag 0x649
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source
+Pos 0: Tag 0x65a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-auto-dimension
+Pos 0: Tag 0x673
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-propaties
+Pos 0: Tag 0x68e
+Name length: 0
+Name: orientation-requested-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x6b6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x6bf
+Name length: 0
+Name: output-bin-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 
+Value (as string): face-up
+Pos 0: Tag 0x6df
+Name length: 0
+Name: output-mode-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): color
+Pos 0: Tag 0x6fe
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): auto
+Pos 0: Tag 0x707
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): auto-monochrome
+Pos 0: Tag 0x71b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): monochrome
+Pos 0: Tag 0x72a
+Name length: 0
+Name: print-quality-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x74a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x753
+Name length: 0
+Name: printer-resolution-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x77d
+Name length: 0
+Name: sides-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 
+Value (as string): one-sided
+Pos 0: Tag 0x79a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): two-sided-long-edge
+Pos 0: Tag 0x7b2
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): two-sided-short-edge
+Pos 0: Tag 0x7cb
+Name length: 0
+Name: print-color-mode-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): auto
+Pos 0: Tag 0x7ee
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): color
+Pos 0: Tag 0x7f8
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): monochrome
+Pos 0: Tag 0x807
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): auto-monochrome
+Pos 0: Tag 0x81b
+Name length: 0
+Name: print-content-optimize-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): auto
+Pos 0: Tag 0x844
+Name length: 0
+Name: print-scaling-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): auto
+Pos 0: Tag 0x864
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 
+Value (as string): auto-fit
+Pos 0: Tag 0x871
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): fill
+Pos 0: Tag 0x87a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 
+Value (as string): fit
+Pos 0: Tag 0x882
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): none
+Pos 0: Tag 0x88b
+Name length: 0
+Name: generated-natural-language-supported
+Value length: 0
+Raw value bytes: 00 00 
+Value (as string): en
+Pos 0: Tag 0x8b6
+Name length: 0
+Name: printer-uri-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): ipp://192.168.0.29/ipp/print
+Pos 0: Tag 0x8ec
+Name length: 0
+Name: uri-security-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): none
+Pos 0: Tag 0x90b
+Name length: 0
+Name: uri-authentication-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): none
+Pos 0: Tag 0x930
+Name length: 0
+Name: printer-name
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): BRW54137929BC70
+Pos 0: Tag 0x950
+Name length: 0
+Name: printer-location
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): Upstairs Office
+Pos 0: Tag 0x974
+Name length: 0
+Name: printer-info
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): Brother MFC-J6930DW [3c2af41c3e5d] (340)
+Pos 0: Tag 0x9ad
+Name length: 0
+Name: printer-make-and-model
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): Brother MFC-J6930DW
+Pos 0: Tag 0x9db
+Name length: 0
+Name: printer-state
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x9f1
+Name length: 0
+Name: printer-state-reasons
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): marker-supply-low-warning
+Pos 0: Tag 0xa24
+Name length: 0
+Name: ipp-versions-supported
+Value length: 0
+Raw value bytes: 00 00 00 
+Value (as string): 1.0
+Pos 0: Tag 0xa42
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 
+Value (as string): 1.1
+Pos 0: Tag 0xa4a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 
+Value (as string): 2.0
+Pos 0: Tag 0xa52
+Name length: 0
+Name: operations-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xa6f
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xa78
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xa81
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xa8a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xa93
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xa9c
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xaa5
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xaae
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xab7
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xac0
+Name length: 0
+Name: multiple-document-jobs-supported
+Value length: 0
+Raw value bytes: 00 
+Value (as string): 
+Pos 0: Tag 0xae6
+Name length: 0
+Name: multiple-operation-time-out
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xb0a
+Name length: 0
+Name: natural-language-configured
+Value length: 0
+Raw value bytes: 00 00 
+Value (as string): en
+Pos 0: Tag 0xb2c
+Name length: 0
+Name: charset-configured
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): utf-8
+Pos 0: Tag 0xb48
+Name length: 0
+Name: charset-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): utf-8
+Pos 0: Tag 0xb63
+Name length: 0
+Name: document-format-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): application/octet-stream
+Pos 0: Tag 0xb99
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 
+Value (as string): image/urf
+Pos 0: Tag 0xba7
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): image/jpeg
+Pos 0: Tag 0xbb6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): image/pwg-raster
+Pos 0: Tag 0xbcb
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): application/vnd.brother-hbp
+Pos 0: Tag 0xbeb
+Name length: 0
+Name: document-format-default
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): application/octet-stream
+Pos 0: Tag 0xc1f
+Name length: 0
+Name: printer-is-accepting-jobs
+Value length: 0
+Raw value bytes: 00 
+Value (as string): 
+Pos 0: Tag 0xc3e
+Name length: 0
+Name: queued-job-count
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xc57
+Name length: 0
+Name: pdl-override-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 
+Value (as string): attempted
+Pos 0: Tag 0xc7b
+Name length: 0
+Name: printer-up-time
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xc93
+Name length: 0
+Name: compression-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): none
+Pos 0: Tag 0xcb1
+Name length: 0
+Name: color-supported
+Value length: 0
+Raw value bytes: 00 
+Value (as string): 
+Pos 0: Tag 0xcc6
+Name length: 0
+Name: job-creation-attributes-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 
+Value (as string): copies
+Pos 0: Tag 0xcf2
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): finishings
+Pos 0: Tag 0xd01
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): ipp-attribute-fidelity
+Pos 0: Tag 0xd1c
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 
+Value (as string): job-name
+Pos 0: Tag 0xd29
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): media
+Pos 0: Tag 0xd33
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 
+Value (as string): media-col
+Pos 0: Tag 0xd41
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): orientation-requested
+Pos 0: Tag 0xd5b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): output-bin
+Pos 0: Tag 0xd6a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): output-mode
+Pos 0: Tag 0xd7a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): print-quality
+Pos 0: Tag 0xd8c
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): printer-resolution
+Pos 0: Tag 0xda3
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): requesting-user-name
+Pos 0: Tag 0xdbc
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): sides
+Pos 0: Tag 0xdc6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): print-color-mode
+Pos 0: Tag 0xddb
+Name length: 0
+Name: media-bottom-margin-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xe01
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xe0a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xe13
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xe1c
+Name length: 0
+Name: media-left-margin-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xe40
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xe49
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xe52
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xe5b
+Name length: 0
+Name: media-right-margin-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xe80
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xe89
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xe92
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xe9b
+Name length: 0
+Name: media-source-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): auto
+Pos 0: Tag 0xeba
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): by-pass-tray
+Pos 0: Tag 0xecb
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 
+Value (as string): tray-1
+Pos 0: Tag 0xed6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 
+Value (as string): tray-2
+Pos 0: Tag 0xee1
+Name length: 0
+Name: media-top-margin-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xf04
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xf0d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xf16
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xf1f
+Name length: 0
+Name: media-type-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): stationery
+Pos 0: Tag 0xf42
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): photographic-glossy
+Pos 0: Tag 0xf5a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): stationery-inkjet
+Pos 0: Tag 0xf70
+Name length: 0
+Name: media-size-supported
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0xf89
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0xf99
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xfa2
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0xfb2
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xfbb
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0xfc0
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0xfc5
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0xfd5
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xfde
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0xfee
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0xff7
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0xffc
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1001
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x1011
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x101a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x102a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1033
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1038
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x103d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x104d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1056
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x1066
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x106f
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1074
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1079
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x1089
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1092
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x10a2
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x10ab
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x10b0
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x10b5
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x10c5
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x10ce
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x10de
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x10e7
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x10ec
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x10f1
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x1101
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x110a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x111a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1123
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1128
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x112d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x113d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1146
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x1156
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x115f
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1164
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1169
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x1179
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1182
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x1192
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x119b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x11a0
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x11a5
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x11b5
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x11be
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x11ce
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x11d7
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x11dc
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x11e1
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x11f1
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x11fa
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x120a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1213
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1218
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x121d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x122d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1236
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x1246
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x124f
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1254
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1259
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x1269
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1272
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x1282
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x128b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1290
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1295
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x12a5
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x12ae
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x12be
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x12c7
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x12cc
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x12d1
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x12e1
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x12ea
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x12fa
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1303
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1308
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x130d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x131d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1326
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x1336
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x133f
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1344
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1349
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x1359
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1362
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x1372
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x137b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1380
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1385
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x1395
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x139e
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x13ae
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x13b7
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x13bc
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x13c1
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x13d1
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x13da
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x13ea
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x13f3
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x13f8
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x13fd
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x140d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x141a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x142a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1437
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x143c
+Name length: 0
+Name: pages-per-minute
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1455
+Name length: 0
+Name: pages-per-minute-color
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1474
+Name length: 0
+Name: printer-alert
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): code=markerInkAlmostEmpty
+Pos 0: Tag 0x149f
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): code=other
+Pos 0: Tag 0x14ae
+Name length: 0
+Name: printer-alert-description
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): Ink Low (BK)
+Pos 0: Tag 0x14d8
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): Sleep
+Pos 0: Tag 0x14e2
+Name length: 0
+Name: printer-device-id
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): MFG:Brother;CMD:HBP,PJL;MDL:MFC-J6930DW;CLS:PRINTER;CID:Brother Generic Jpeg Type1;
+Pos 0: Tag 0x154b
+Name length: 0
+Name: printer-icons
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): http://192.168.0.29/ipp/printer-icons-128.png
+Pos 0: Tag 0x158a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): http://192.168.0.29/ipp/printer-icons-512.png
+Pos 0: Tag 0x15bc
+Name length: 0
+Name: printer-more-info
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): http://192.168.0.29/net/net/airprint.html
+Pos 0: Tag 0x15fb
+Name length: 0
+Name: printer-uuid
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): urn:uuid:e3248000-80ce-11db-8000-3c2af41c3e5d
+Pos 0: Tag 0x1639
+Name length: 0
+Name: job-impressions-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x165f
+Name length: 0
+Name: printer-geo-location
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1678
+Name length: 0
+Name: printer-supply-info-uri
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): http://192.168.0.29/general/status.html
+Pos 0: Tag 0x16bb
+Name length: 0
+Name: media-ready
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): iso_a4_210x297mm
+Pos 0: Tag 0x16db
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): iso_a4_210x297mm
+Pos 0: Tag 0x16f0
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): iso_a3_297x420mm
+Pos 0: Tag 0x1705
+Name length: 0
+Name: media-col-ready
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Entering media-col-ready collection
+Pos 0: Tag 0x1719
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-type
+Pos 0: Tag 0x1728
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): stationery
+Pos 0: Tag 0x1737
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-size
+Pos 0: Tag 0x1746
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x174b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x175b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1764
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x1774
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x177d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1782
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-bottom-margin
+Pos 0: Tag 0x179a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x17a3
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-left-margin
+Pos 0: Tag 0x17b9
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x17c2
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-right-margin
+Pos 0: Tag 0x17d9
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x17e2
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-top-margin
+Pos 0: Tag 0x17f7
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1800
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source
+Pos 0: Tag 0x1811
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 
+Value (as string): tray-1
+Pos 0: Tag 0x181c
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-auto-dimension
+Pos 0: Tag 0x1835
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 
+Value (as string): 
+Pos 0: Tag 0x183b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-properties
+Pos 0: Tag 0x1857
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x185c
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-feed-direction
+Pos 0: Tag 0x187c
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): long-edge-first
+Pos 0: Tag 0x1890
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-feed-orientation
+Pos 0: Tag 0x18b2
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x18bb
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x18c0
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x18c5
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x18ca
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-type
+Pos 0: Tag 0x18d9
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): stationery
+Pos 0: Tag 0x18e8
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-size
+Pos 0: Tag 0x18f7
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x18fc
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x190c
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1915
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x1925
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x192e
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1933
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-bottom-margin
+Pos 0: Tag 0x194b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1954
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-left-margin
+Pos 0: Tag 0x196a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1973
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-right-margin
+Pos 0: Tag 0x198a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1993
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-top-margin
+Pos 0: Tag 0x19a8
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x19b1
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source
+Pos 0: Tag 0x19c2
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 
+Value (as string): tray-1
+Pos 0: Tag 0x19cd
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-auto-dimension
+Pos 0: Tag 0x19e6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 
+Value (as string): 
+Pos 0: Tag 0x19ec
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-properties
+Pos 0: Tag 0x1a08
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1a0d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-feed-direction
+Pos 0: Tag 0x1a2d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): long-edge-first
+Pos 0: Tag 0x1a41
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-feed-orientation
+Pos 0: Tag 0x1a63
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1a6c
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1a71
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1a76
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1a7b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-type
+Pos 0: Tag 0x1a8a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): stationery
+Pos 0: Tag 0x1a99
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-size
+Pos 0: Tag 0x1aa8
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1aad
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x1abd
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1ac6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x1ad6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1adf
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1ae4
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-bottom-margin
+Pos 0: Tag 0x1afc
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1b05
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-left-margin
+Pos 0: Tag 0x1b1b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1b24
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-right-margin
+Pos 0: Tag 0x1b3b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1b44
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-top-margin
+Pos 0: Tag 0x1b59
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1b62
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source
+Pos 0: Tag 0x1b73
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 
+Value (as string): tray-2
+Pos 0: Tag 0x1b7e
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-auto-dimension
+Pos 0: Tag 0x1b97
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 
+Value (as string): 
+Pos 0: Tag 0x1b9d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-properties
+Pos 0: Tag 0x1bb9
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1bbe
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-feed-direction
+Pos 0: Tag 0x1bde
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): short-edge-first
+Pos 0: Tag 0x1bf3
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-feed-orientation
+Pos 0: Tag 0x1c15
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1c1e
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1c23
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1c28
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1c2d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-type
+Pos 0: Tag 0x1c3c
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): stationery
+Pos 0: Tag 0x1c4b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-size
+Pos 0: Tag 0x1c5a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1c5f
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x1c6f
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1c78
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x1c88
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1c91
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1c96
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-bottom-margin
+Pos 0: Tag 0x1cae
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1cb7
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-left-margin
+Pos 0: Tag 0x1ccd
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1cd6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-right-margin
+Pos 0: Tag 0x1ced
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1cf6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-top-margin
+Pos 0: Tag 0x1d0b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1d14
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source
+Pos 0: Tag 0x1d25
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 
+Value (as string): tray-2
+Pos 0: Tag 0x1d30
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-auto-dimension
+Pos 0: Tag 0x1d49
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 
+Value (as string): 
+Pos 0: Tag 0x1d4f
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-properties
+Pos 0: Tag 0x1d6b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1d70
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-feed-direction
+Pos 0: Tag 0x1d90
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): short-edge-first
+Pos 0: Tag 0x1da5
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-feed-orientation
+Pos 0: Tag 0x1dc7
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1dd0
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1dd5
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1dda
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1ddf
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-type
+Pos 0: Tag 0x1dee
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): stationery-inkjet
+Pos 0: Tag 0x1e04
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-size
+Pos 0: Tag 0x1e13
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1e18
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x1e28
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1e31
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x1e41
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1e4a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1e4f
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-bottom-margin
+Pos 0: Tag 0x1e67
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1e70
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-left-margin
+Pos 0: Tag 0x1e86
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1e8f
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-right-margin
+Pos 0: Tag 0x1ea6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1eaf
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-top-margin
+Pos 0: Tag 0x1ec4
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1ecd
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source
+Pos 0: Tag 0x1ede
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): by-pass-tray
+Pos 0: Tag 0x1eef
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-auto-dimension
+Pos 0: Tag 0x1f08
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 
+Value (as string): 
+Pos 0: Tag 0x1f0e
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-properties
+Pos 0: Tag 0x1f2a
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1f2f
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-feed-direction
+Pos 0: Tag 0x1f4f
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): long-edge-first
+Pos 0: Tag 0x1f63
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-feed-orientation
+Pos 0: Tag 0x1f85
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1f8e
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1f93
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1f98
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1f9d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-type
+Pos 0: Tag 0x1fac
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): stationery-inkjet
+Pos 0: Tag 0x1fc2
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-size
+Pos 0: Tag 0x1fd1
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x1fd6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): x-dimension
+Pos 0: Tag 0x1fe6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x1fef
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): y-dimension
+Pos 0: Tag 0x1fff
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x2008
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x200d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-bottom-margin
+Pos 0: Tag 0x2025
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x202e
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-left-margin
+Pos 0: Tag 0x2044
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x204d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-right-margin
+Pos 0: Tag 0x2064
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x206d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-top-margin
+Pos 0: Tag 0x2082
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x208b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source
+Pos 0: Tag 0x209c
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): by-pass-tray
+Pos 0: Tag 0x20ad
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-auto-dimension
+Pos 0: Tag 0x20c6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 
+Value (as string): 
+Pos 0: Tag 0x20cc
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-properties
+Pos 0: Tag 0x20e8
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x20ed
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-feed-direction
+Pos 0: Tag 0x210d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): long-edge-first
+Pos 0: Tag 0x2121
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): media-source-feed-orientation
+Pos 0: Tag 0x2143
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x214c
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x2151
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x2156
+Name length: 0
+Name: identify-actions-default
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): flash
+Pos 0: Tag 0x2178
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): sound
+Pos 0: Tag 0x2182
+Name length: 0
+Name: identify-actions-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): flash
+Pos 0: Tag 0x21a6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): sound
+Pos 0: Tag 0x21b0
+Name length: 0
+Name: ipp-features-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): airprint-1.6
+Pos 0: Tag 0x21d7
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): wfds-print-1.0
+Pos 0: Tag 0x21ea
+Name length: 0
+Name: printer-input-tray
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): type=other;mediafeed=296926;mediaxfeed=209973;maxcapacity=-2;level=-3;status=0;name=AUTO;index=1;dimunit=micrometers;unit=sheets;medianame=REGULAR;mediaweight=-2;mediatype=Unknown;mediacolor=Unknown;
+Pos 0: Tag 0x22c8
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): type=sheetFeedAutoNonRemovableTray;mediafeed=296926;mediaxfeed=209973;maxcapacity=-2;level=-3;status=0;name=MP TRAY;index=2;dimunit=micrometers;unit=sheets;medianame=INKJET;mediaweight=-2;mediatype=Unknown;mediacolor=Unknown;
+Pos 0: Tag 0x23ae
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): type=sheetFeedAutoNonRemovableTray;mediafeed=296926;mediaxfeed=209973;maxcapacity=-2;level=-3;status=0;name=TRAY1;index=3;dimunit=micrometers;unit=sheets;medianame=REGULAR;mediaweight=-2;mediatype=Unknown;mediacolor=Unknown;
+Pos 0: Tag 0x2493
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): type=sheetFeedAutoRemovableTray;mediafeed=-2;mediaxfeed=-2;maxcapacity=-2;level=-3;status=0;name=TRAY2;index=4;dimunit=micrometers;unit=sheets;medianame=REGULAR;mediaweight=-2;mediatype=Unknown;mediacolor=Unknown;
+Pos 0: Tag 0x256d
+Name length: 0
+Name: printer-output-tray
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): type=unRemovableBin;maxcapacity=-2;remaining=-2;status=0;name=face-up;index=1;unit=sheets;stackingorder=firstToLast;pagedelivery=faceUp;offsetstacking=notPresent;
+Pos 0: Tag 0x2627
+Name length: 0
+Name: print_wfds
+Value length: 0
+Raw value bytes: 00 
+Value (as string): T
+Pos 0: Tag 0x2637
+Name length: 0
+Name: document-format-varying-attributes
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 
+Value (as string): copies
+Pos 0: Tag 0x2664
+Name length: 0
+Name: multiple-operation-time-out-action
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 
+Value (as string): abort-job
+Pos 0: Tag 0x2694
+Name length: 0
+Name: printer-organization
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x26ad
+Name length: 0
+Name: printer-organizational-unit
+Value length: 0
+Raw value bytes: 
+Value (as string): 
+Pos 0: Tag 0x26cd
+Name length: 0
+Name: printer-get-attributes-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): document-format
+Pos 0: Tag 0x2701
+Name length: 0
+Name: which-jobs-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 
+Value (as string): completed
+Pos 0: Tag 0x2723
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): not_completed
+Pos 0: Tag 0x2735
+Name length: 0
+Name: printer-current-time
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string):   0
+Pos 0: Tag 0x2759
+Name length: 0
+Name: printer-config-change-time
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x277c
+Name length: 0
+Name: printer-config-change-date-time
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string):   
+Pos 0: Tag 0x27ab
+Name length: 0
+Name: printer-state-change-time
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x27cd
+Name length: 0
+Name: printer-state-change-date-time
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string):   1
+Pos 0: Tag 0x27fb
+Name length: 0
+Name: landscape-orientation-requested-preferred
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x282d
+Name length: 0
+Name: marker-colors
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 
+Value (as string): #FF00FF
+Pos 0: Tag 0x2846
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 
+Value (as string): #00FFFF
+Pos 0: Tag 0x2852
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 
+Value (as string): #FFFF00
+Pos 0: Tag 0x285e
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 
+Value (as string): #000000
+Pos 0: Tag 0x286a
+Name length: 0
+Name: marker-high-levels
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x2885
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x288e
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x2897
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x28a0
+Name length: 0
+Name: marker-levels
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x28b6
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x28bf
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x28c8
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x28d1
+Name length: 0
+Name: marker-low-levels
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x28eb
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x28f4
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x28fd
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x2906
+Name length: 0
+Name: marker-names
+Value length: 0
+Raw value bytes: 00 
+Value (as string): M
+Pos 0: Tag 0x2918
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 
+Value (as string): C
+Pos 0: Tag 0x291e
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 
+Value (as string): Y
+Pos 0: Tag 0x2924
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 
+Value (as string): BK
+Pos 0: Tag 0x292b
+Name length: 0
+Name: marker-types
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): ink-cartridge
+Pos 0: Tag 0x2949
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): ink-cartridge
+Pos 0: Tag 0x295b
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): ink-cartridge
+Pos 0: Tag 0x296d
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): ink-cartridge
+Pos 0: Tag 0x297f
+Name length: 0
+Name: pdf-versions-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): none
+Pos 0: Tag 0x299e
+Name length: 0
+Name: printer-dns-sd-name
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): Brother MFC-J6930DW [3c2af41c3e5d] (340)
+Pos 0: Tag 0x29de
+Name length: 0
+Name: printer-firmware-name
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): MAIN
+Pos 0: Tag 0x29fc
+Name length: 0
+Name: printer-firmware-string-version
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): Z2305160751:457E
+Pos 0: Tag 0x2a30
+Name length: 0
+Name: printer-firmware-version
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+Value (as string): Z2305160751:457E
+Pos 0: Tag 0x2a5d
+Name length: 0
+Name: printer-kind
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 
+Value (as string): document
+Pos 0: Tag 0x2a76
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 
+Value (as string): envelope
+Pos 0: Tag 0x2a83
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 
+Value (as string): postcard
+Pos 0: Tag 0x2a90
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): photo
+Pos 0: Tag 0x2a9a
+Name length: 0
+Name: urf-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 
+Value (as string): SRGB24
+Pos 0: Tag 0x2ab2
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 
+Value (as string): W8
+Pos 0: Tag 0x2ab9
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 
+Value (as string): CP1
+Pos 0: Tag 0x2ac1
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 
+Value (as string): IS19-1-21
+Pos 0: Tag 0x2acf
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 
+Value (as string): MT1-8-11
+Pos 0: Tag 0x2adc
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 
+Value (as string): OB9
+Pos 0: Tag 0x2ae4
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 
+Value (as string): PQ4-5
+Pos 0: Tag 0x2aee
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 
+Value (as string): RS200-300
+Pos 0: Tag 0x2afc
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): OFU0
+Pos 0: Tag 0x2b05
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): V1.4
+Pos 0: Tag 0x2b0e
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 
+Value (as string): DM4
+Pos 0: Tag 0x2b16
+Name length: 0
+Name: document-format-preferred
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 
+Value (as string): image/urf
+Pos 0: Tag 0x2b3d
+Name length: 0
+Name: jpeg-k-octets-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x2b61
+Name length: 0
+Name: jpeg-x-dimension-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x2b88
+Name length: 0
+Name: jpeg-y-dimension-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x2baf
+Name length: 0
+Name: jpeg-features-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 
+Value (as string): none
+Pos 0: Tag 0x2bcf
+Name length: 0
+Name: mopria-certified
+Value length: 0
+Raw value bytes: 00 00 00 
+Value (as string): 1.3
+Pos 0: Tag 0x2be7
+Name length: 0
+Name: pwg-raster-document-resolution-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 00 00 
+Value (as string): 
+Pos 0: Tag 0x2c1d
+Name length: 0
+Name: pwg-raster-document-sheet-back
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 
+Value (as string): rotated
+Pos 0: Tag 0x2c47
+Name length: 0
+Name: pwg-raster-document-type-supported
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 00 
+Value (as string): sgray_8
+Pos 0: Tag 0x2c75
+Name length: 0
+Name: (additional)
+Value length: 0
+Raw value bytes: 00 00 00 00 00 00 
+Value (as string): srgb_8
+Pos 0: Tag 0x2c80
+End of attributes
+--- Done parsing media-col-ready ---

@@ -1,5 +1,5 @@
 /*
- * MintPRINT printer.device integration spike #3.
+ * MintPRINT printer.device integration working driver path.
  *
  * Converts printer.device raster rows into a low-memory streaming JPEG and
  * then submits that JPEG to the known-good IPP Print-Job endpoint.
@@ -21,6 +21,7 @@
 #include <proto/exec.h>
 #include <proto/dos.h>
 
+#include "config.h"
 #include "jpeg_writer.h"
 #include "ipp_client.h"
 
@@ -55,6 +56,8 @@ static ULONG g_jpeg_scratch_bytes = 0;
 static ULONG g_jpeg_rows_written = 0;
 static BOOL g_jpeg_failed = FALSE;
 static MPJpegEncoder g_jpeg;
+static struct MPConfig g_config;
+static LONG g_config_source = MP_CONFIG_SOURCE_DEFAULTS;
 
 static ULONG mp_strlen(const char *s)
 {
@@ -133,6 +136,36 @@ static void mp_log_3(const char *event, LONG a, LONG b, LONG c)
     mp_write_long(fh, b);
     mp_write_text(fh, " ");
     mp_write_long(fh, c);
+    mp_write_text(fh, "\n");
+    Close(fh);
+}
+
+static void mp_log_config(const struct MPConfig *cfg, LONG source)
+{
+    BPTR fh = mp_open_log();
+    if (!fh || !cfg) return;
+
+    mp_write_text(fh, "MintPRINT: Config source=");
+    if (source == MP_CONFIG_SOURCE_ENV)
+        mp_write_text(fh, "ENV");
+    else if (source == MP_CONFIG_SOURCE_ENVARC)
+        mp_write_text(fh, "ENVARC");
+    else
+        mp_write_text(fh, "defaults");
+    mp_write_text(fh, " host=");
+    mp_write_text(fh, cfg->host);
+    mp_write_text(fh, " port=");
+    mp_write_long(fh, (LONG)cfg->port);
+    mp_write_text(fh, " path=");
+    mp_write_text(fh, cfg->path);
+    mp_write_text(fh, " keepjob=");
+    mp_write_long(fh, cfg->keep_job ? 1 : 0);
+    if (cfg->media[0]) { mp_write_text(fh, " media="); mp_write_text(fh, cfg->media); }
+    if (cfg->source[0]) { mp_write_text(fh, " source="); mp_write_text(fh, cfg->source); }
+    if (cfg->color[0]) { mp_write_text(fh, " color="); mp_write_text(fh, cfg->color); }
+    if (cfg->quality[0]) { mp_write_text(fh, " quality="); mp_write_text(fh, cfg->quality); }
+    if (cfg->scaling[0]) { mp_write_text(fh, " scaling="); mp_write_text(fh, cfg->scaling); }
+    if (cfg->sides[0]) { mp_write_text(fh, " sides="); mp_write_text(fh, cfg->sides); }
     mp_write_text(fh, "\n");
     Close(fh);
 }
@@ -340,6 +373,7 @@ LONG PRT_STDARGS Init(struct PrinterData *pd)
         return -1;
     }
 
+    mp_config_defaults(&g_config);
     mp_log_text("Init");
     return 0;
 }
@@ -406,7 +440,9 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             g_page_width = (ULONG)x;
             g_page_height = (ULONG)y;
             g_rows_seen = 0;
+            g_config_source = mp_config_load(&g_config);
             mp_log_3("Render begin width/height/ct", x, y, ct ? 1 : 0);
+            mp_log_config(&g_config, g_config_source);
 
             if (!mp_job_begin(g_page_width, g_page_height))
                 return PDERR_BUFFERMEMORY;
@@ -443,12 +479,15 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                 if (ct == 0 && jpeg_ok) {
                     struct MPIPPResult result;
                     LONG ipp_rc;
-                    mp_log_text("IPP submit " MP_IPP_HOST ":80" MP_IPP_PATH);
-                    ipp_rc = mp_ipp_print_jpeg((CONST_STRPTR)"T:MintPRINT-job.jpg", &result);
+                    ipp_rc = mp_ipp_print_jpeg(&g_config,
+                                                 (CONST_STRPTR)"T:MintPRINT-job.jpg",
+                                                 &result);
                     mp_log_3("IPP result error/http/status",
                              result.error, result.http_status,
                              (LONG)result.ipp_status);
                     if (ipp_rc != 0) return PDERR_CANCEL;
+                    if (!g_config.keep_job)
+                        DeleteFile((CONST_STRPTR)"T:MintPRINT-job.jpg");
                 }
             }
             return PDERR_NOERR;

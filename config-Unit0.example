@@ -1,0 +1,13 @@
+# MintPRINT Unit0 example
+HOST=192.168.0.51
+PORT=80
+PATH=/ipp/print
+ENGINE=jpeg
+KEEPJOB=1
+# Capability-backed defaults written by MintPRINT Preferences after Query Printer.
+MEDIA=
+SOURCE=
+COLOR=
+QUALITY=
+SCALING=
+SIDES=

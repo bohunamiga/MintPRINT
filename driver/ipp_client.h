@@ -2,6 +2,7 @@
 #define MINTPRINT_IPP_CLIENT_H
 
 #include <exec/types.h>
+#include "config.h"
 
 struct MPIPPResult {
     LONG error;
@@ -10,14 +11,7 @@ struct MPIPPResult {
     ULONG document_bytes;
 };
 
-/*
- * Spike #3 defaults.  The Prefs application will replace these with an
- * ENV:/ENVARC: profile in a later patch.
- */
-#define MP_IPP_HOST "192.168.0.51"
-#define MP_IPP_PORT 80
-#define MP_IPP_PATH "/ipp/print"
-
-LONG mp_ipp_print_jpeg(CONST_STRPTR filename, struct MPIPPResult *result);
+LONG mp_ipp_print_jpeg(const struct MPConfig *cfg, CONST_STRPTR filename,
+                       struct MPIPPResult *result);
 
 #endif

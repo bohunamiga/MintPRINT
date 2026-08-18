@@ -1,3 +1,5 @@
+/* MintPRINT prefs #9: compact address row and status-box fit. */
+/* MintPRINT prefs #8: capability cache and output-area layout polish. */
 /* Amiga IPP Print-Job Prototype with GUI
    Sends a JPEG file to an IPP printer (AirPrint-compatible)
    Compile with: m68k-amigaos-gcc -g -o IPP-test11 ipp-test11.c -lamiga -lsocket -lm
@@ -21,6 +23,8 @@ typedef long ssize_t;
 #include <libraries/gadtools.h>
 #include <graphics/gfx.h>
 #include <graphics/rastport.h>
+#include <graphics/displayinfo.h>
+#include <devices/printer.h>
 #include <stdarg.h>
 #include <string.h>
 #include <stdio.h>
@@ -49,8 +53,12 @@ extern struct GfxBase *GfxBase;
 #define GAD_PRINT_MODE 7
 #define GAD_SCALING_MODE 8
 #define GAD_QUALITY_MODE 9
+#define GAD_IPP_PATH 10
+#define GAD_KEEPJOB 11
+#define GAD_ENGINE 12
+#define GAD_SAVE_BUTTON 13
 
-#define OUTPUT_TOP     160 // Adjusted to make room for radio buttons
+#define OUTPUT_TOP     270 // Below Test Print / Save / Exit row
 #define OUTPUT_LEFT    10
 #define OUTPUT_LINE_H  8
 #define OUTPUT_LINES   MAX_OUTPUT_LINES
@@ -100,16 +108,19 @@ int num_supported_print_modes = 0;
 
 char *print_mode_options[MAX_PRINT_MODES];
 int num_print_modes = 0;
-static STRPTR initial_print_mode[] = { "Initializing...", NULL };
+static char initial_print_mode_value[MAX_ATTR_LEN] = "Not Detected";
+static STRPTR initial_print_mode[] = { initial_print_mode_value, NULL };
 char selected_print_mode[MAX_ATTR_LEN] = "monochrome"; // Default fallback
 char selected_scaling[MAX_ATTR_LEN] = "auto"; // Default
-static STRPTR initial_scaling_mode[] = { "Fetching...", NULL };
+static char initial_scaling_value[MAX_ATTR_LEN] = "Not Detected";
+static STRPTR initial_scaling_mode[] = { initial_scaling_value, NULL };
 STRPTR *scaling_mode_labels = NULL;
 char selected_quality[16] = "auto"; // Default
 char supported_quality[MAX_QUALITIES][16];
 int num_supported_quality = 0;
 STRPTR *quality_mode_labels = NULL;
-static STRPTR initial_quality_mode[] = { "Fetching...", NULL };
+static char initial_quality_value[32] = "Not Detected";
+static STRPTR initial_quality_mode[] = { initial_quality_value, NULL };
 // Media dropdown state
 char *selected_media = NULL;
 struct Gadget *media_dropdown = NULL;
@@ -122,12 +133,15 @@ int num_media_tray_mappings = 0;
 // Radio button labels for print mode
 STRPTR *print_mode_labels = NULL;
 
+static char initial_media_value[160] = "Not Detected";
+static STRPTR initial_media_labels[] = { initial_media_value, NULL };
+
 
 
 static struct NewMenu menu_template[] = {
     { NM_TITLE, (STRPTR)"File", 0, 0, 0, 0 },
-    { NM_ITEM,  (STRPTR)"Save Settings", 0, 0, 0, 0 },
-    { NM_ITEM,  (STRPTR)"Load Settings", 0, 0, 0, 0 },
+    { NM_ITEM,  (STRPTR)"Save Driver Settings", 0, 0, 0, 0 },
+    { NM_ITEM,  (STRPTR)"Reload Driver Settings", 0, 0, 0, 0 },
     { NM_ITEM,  NM_BARLABEL, 0, 0, 0, 0 },
     { NM_ITEM,  (STRPTR)"Quit", 0, 0, 0, 0 },
     { NM_END,   NULL, 0, 0, 0, 0 }
@@ -227,7 +241,20 @@ struct Library *SocketBase = NULL;
 struct Library *GadToolsBase = NULL;
 struct IntuitionBase *IntuitionBase = NULL;
 struct GfxBase *GfxBase = NULL;
-char ip_buffer[256] = "192.168.0.17"; // Updated to your printer's IP
+char ip_buffer[256] = "192.168.0.51:80";
+char driver_path_buffer[96] = "/ipp/print";
+BOOL driver_keep_job = TRUE;
+static STRPTR keep_job_labels[] = { "Delete job JPEG", "Keep debug JPEG", NULL };
+char driver_engine_buffer[32] = "jpeg";
+static STRPTR engine_labels[] = { "JPEG", "PWG Raster", NULL };
+char driver_media_buffer[MAX_ATTR_LEN] = "";
+char driver_source_buffer[MAX_ATTR_LEN] = "";
+char driver_color_buffer[MAX_ATTR_LEN] = "";
+char driver_quality_buffer[MAX_ATTR_LEN] = "";
+char driver_scaling_buffer[MAX_ATTR_LEN] = "";
+char driver_sides_buffer[MAX_ATTR_LEN] = "";
+/* MintPRINT prefs #6: queried job defaults are saved into Unit0. */
+/* MintPRINT prefs #7: saved-state placeholders, ghosting, layout and engine selector. */
 char file_buffer[256] = "UHD:test.jpg";
 char output_buffer[MAX_OUTPUT_LINES][MAX_OUTPUT_LINE_LENGTH];
 char supported_media_sources[MAX_VALUES][MAX_ATTR_LEN];
@@ -282,6 +309,585 @@ void load_print_mode(void) {
         }
         Close(file);
     }
+}
+
+
+static struct Gadget *find_gadget_by_id(UWORD id) {
+    struct Gadget *g = glist;
+    while (g && g->GadgetID != id) g = g->NextGadget;
+    return g;
+}
+
+static void trim_config_line(char *s) {
+    size_t n;
+    if (!s) return;
+    n = strlen(s);
+    while (n && (s[n - 1] == '\r' || s[n - 1] == '\n' ||
+                 s[n - 1] == ' ' || s[n - 1] == '\t')) {
+        s[--n] = '\0';
+    }
+}
+
+static BOOL ensure_config_dir(CONST_STRPTR name) {
+    BPTR lock;
+
+    lock = Lock(name, ACCESS_READ);
+    if (lock) {
+        UnLock(lock);
+        return TRUE;
+    }
+
+    lock = CreateDir(name);
+    if (!lock) return FALSE;
+    UnLock(lock);
+    return TRUE;
+}
+
+static void capture_driver_settings(struct Window *win) {
+    struct Gadget *g;
+    char *value = NULL;
+    ULONG active = driver_keep_job ? 1UL : 0UL;
+
+    if (!win) return;
+
+    g = find_gadget_by_id(GAD_IP_STRING);
+    if (g && GT_GetGadgetAttrs(g, win, NULL,
+                               GTST_String, (ULONG)&value,
+                               TAG_DONE) && value) {
+        strncpy(ip_buffer, value, sizeof(ip_buffer) - 1);
+        ip_buffer[sizeof(ip_buffer) - 1] = '\0';
+    }
+
+    value = NULL;
+    g = find_gadget_by_id(GAD_IPP_PATH);
+    if (g && GT_GetGadgetAttrs(g, win, NULL,
+                               GTST_String, (ULONG)&value,
+                               TAG_DONE) && value) {
+        strncpy(driver_path_buffer, value, sizeof(driver_path_buffer) - 1);
+        driver_path_buffer[sizeof(driver_path_buffer) - 1] = '\0';
+    }
+
+    g = find_gadget_by_id(GAD_KEEPJOB);
+    if (g) {
+        GT_GetGadgetAttrs(g, win, NULL,
+                          GTCY_Active, (ULONG)&active,
+                          TAG_DONE);
+        driver_keep_job = active ? TRUE : FALSE;
+    }
+
+    g = find_gadget_by_id(GAD_ENGINE);
+    if (g) {
+        ULONG engine_active = 0;
+        GT_GetGadgetAttrs(g, win, NULL,
+                          GTCY_Active, (ULONG)&engine_active,
+                          TAG_DONE);
+        strcpy(driver_engine_buffer, engine_active == 1 ? "pwg-raster" : "jpeg");
+    }
+
+    /* Persist the capability-backed choices currently visible in the GUI. */
+    if (media_dropdown && num_media_tray_mappings > 0) {
+        ULONG selected = 0;
+        GT_GetGadgetAttrs(media_dropdown, win, NULL,
+                          GTCY_Active, (ULONG)&selected,
+                          TAG_DONE);
+        if (selected < (ULONG)num_media_tray_mappings) {
+            strncpy(driver_media_buffer, media_tray_map[selected].media,
+                    sizeof(driver_media_buffer) - 1);
+            driver_media_buffer[sizeof(driver_media_buffer) - 1] = '\0';
+            strncpy(driver_source_buffer, media_tray_map[selected].source,
+                    sizeof(driver_source_buffer) - 1);
+            driver_source_buffer[sizeof(driver_source_buffer) - 1] = '\0';
+        }
+    }
+
+    g = find_gadget_by_id(GAD_PRINT_MODE);
+    if (g && num_supported_print_modes > 0) {
+        ULONG selected = 0;
+        GT_GetGadgetAttrs(g, win, NULL,
+                          GTCY_Active, (ULONG)&selected,
+                          TAG_DONE);
+        if (selected < (ULONG)num_supported_print_modes) {
+            strncpy(driver_color_buffer, supported_print_modes[selected],
+                    sizeof(driver_color_buffer) - 1);
+            driver_color_buffer[sizeof(driver_color_buffer) - 1] = '\0';
+            strncpy(selected_print_mode, supported_print_modes[selected],
+                    sizeof(selected_print_mode) - 1);
+            selected_print_mode[sizeof(selected_print_mode) - 1] = '\0';
+        }
+    }
+
+    g = find_gadget_by_id(GAD_SCALING_MODE);
+    if (g && num_supported_scaling > 0) {
+        ULONG selected = 0;
+        GT_GetGadgetAttrs(g, win, NULL,
+                          GTCY_Active, (ULONG)&selected,
+                          TAG_DONE);
+        if (selected < (ULONG)num_supported_scaling) {
+            strncpy(driver_scaling_buffer, supported_scaling[selected],
+                    sizeof(driver_scaling_buffer) - 1);
+            driver_scaling_buffer[sizeof(driver_scaling_buffer) - 1] = '\0';
+            strncpy(selected_scaling, supported_scaling[selected],
+                    sizeof(selected_scaling) - 1);
+            selected_scaling[sizeof(selected_scaling) - 1] = '\0';
+        }
+    }
+
+    g = find_gadget_by_id(GAD_QUALITY_MODE);
+    if (g && num_supported_quality > 0) {
+        ULONG selected = 0;
+        GT_GetGadgetAttrs(g, win, NULL,
+                          GTCY_Active, (ULONG)&selected,
+                          TAG_DONE);
+        if (selected < (ULONG)num_supported_quality) {
+            strncpy(driver_quality_buffer, supported_quality[selected],
+                    sizeof(driver_quality_buffer) - 1);
+            driver_quality_buffer[sizeof(driver_quality_buffer) - 1] = '\0';
+            strncpy(selected_quality, supported_quality[selected],
+                    sizeof(selected_quality) - 1);
+            selected_quality[sizeof(selected_quality) - 1] = '\0';
+        }
+    }
+}
+
+static BOOL write_driver_config_file(CONST_STRPTR filename) {
+    BPTR file;
+    char host[64];
+    int port = -1;
+    char line[192];
+
+    if (!parse_ip_and_port(ip_buffer, host, sizeof(host), &port) || !host[0]) {
+        printf("Invalid printer host/IP: %s\n", ip_buffer);
+        return FALSE;
+    }
+    if (port <= 0) port = 80;
+    if (port > 65535) {
+        printf("Invalid printer port: %d\n", port);
+        return FALSE;
+    }
+    if (!driver_path_buffer[0] || driver_path_buffer[0] != '/') {
+        printf("IPP path must start with '/': %s\n", driver_path_buffer);
+        return FALSE;
+    }
+
+    file = Open(filename, MODE_NEWFILE);
+    if (!file) return FALSE;
+
+    FPuts(file, "# MintPRINT Unit0 - written by MintPRINT Preferences\n");
+    snprintf(line, sizeof(line), "HOST=%s\n", host);
+    FPuts(file, line);
+    snprintf(line, sizeof(line), "PORT=%d\n", port);
+    FPuts(file, line);
+    snprintf(line, sizeof(line), "PATH=%s\n", driver_path_buffer);
+    FPuts(file, line);
+    snprintf(line, sizeof(line), "ENGINE=%s\n", driver_engine_buffer);
+    FPuts(file, line);
+    snprintf(line, sizeof(line), "KEEPJOB=%d\n", driver_keep_job ? 1 : 0);
+    FPuts(file, line);
+    snprintf(line, sizeof(line), "MEDIA=%s\n", driver_media_buffer);
+    FPuts(file, line);
+    snprintf(line, sizeof(line), "SOURCE=%s\n", driver_source_buffer);
+    FPuts(file, line);
+    snprintf(line, sizeof(line), "COLOR=%s\n", driver_color_buffer);
+    FPuts(file, line);
+    snprintf(line, sizeof(line), "QUALITY=%s\n", driver_quality_buffer);
+    FPuts(file, line);
+    snprintf(line, sizeof(line), "SCALING=%s\n", driver_scaling_buffer);
+    FPuts(file, line);
+    snprintf(line, sizeof(line), "SIDES=%s\n", driver_sides_buffer);
+    FPuts(file, line);
+    Close(file);
+    return TRUE;
+}
+
+static BOOL save_driver_config(struct Window *win) {
+    BOOL env_ok;
+    BOOL envarc_ok;
+
+    capture_driver_settings(win);
+
+    if (!ensure_config_dir((CONST_STRPTR)"ENV:MintPRINT")) {
+        printf("Could not create/find ENV:MintPRINT\n");
+        return FALSE;
+    }
+    if (!ensure_config_dir((CONST_STRPTR)"ENVARC:MintPRINT")) {
+        printf("Could not create/find ENVARC:MintPRINT\n");
+        return FALSE;
+    }
+
+    env_ok = write_driver_config_file((CONST_STRPTR)"ENV:MintPRINT/Unit0");
+    envarc_ok = write_driver_config_file((CONST_STRPTR)"ENVARC:MintPRINT/Unit0");
+    return env_ok && envarc_ok;
+}
+
+static BOOL load_driver_config(void) {
+    BPTR file;
+    char line[192];
+    char host[64] = "192.168.0.51";
+    int port = 80;
+    BOOL found = FALSE;
+
+    strcpy(driver_path_buffer, "/ipp/print");
+    strcpy(driver_engine_buffer, "jpeg");
+    driver_keep_job = TRUE;
+    driver_media_buffer[0] = '\0';
+    driver_source_buffer[0] = '\0';
+    driver_color_buffer[0] = '\0';
+    driver_quality_buffer[0] = '\0';
+    driver_scaling_buffer[0] = '\0';
+    driver_sides_buffer[0] = '\0';
+
+    file = Open((CONST_STRPTR)"ENV:MintPRINT/Unit0", MODE_OLDFILE);
+    if (!file)
+        file = Open((CONST_STRPTR)"ENVARC:MintPRINT/Unit0", MODE_OLDFILE);
+
+    if (!file) {
+        snprintf(ip_buffer, sizeof(ip_buffer), "%s:%d", host, port);
+        return FALSE;
+    }
+
+    found = TRUE;
+    while (FGets(file, line, sizeof(line))) {
+        char *value;
+        trim_config_line(line);
+        if (!line[0] || line[0] == '#' || line[0] == ';') continue;
+
+        if (strncmp(line, "HOST=", 5) == 0) {
+            value = line + 5;
+            if (*value) {
+                strncpy(host, value, sizeof(host) - 1);
+                host[sizeof(host) - 1] = '\0';
+            }
+        } else if (strncmp(line, "PORT=", 5) == 0) {
+            int parsed = atoi(line + 5);
+            if (parsed >= 1 && parsed <= 65535) port = parsed;
+        } else if (strncmp(line, "PATH=", 5) == 0) {
+            value = line + 5;
+            if (*value == '/') {
+                strncpy(driver_path_buffer, value, sizeof(driver_path_buffer) - 1);
+                driver_path_buffer[sizeof(driver_path_buffer) - 1] = '\0';
+            }
+        } else if (strncmp(line, "ENGINE=", 7) == 0) {
+            if (strcmp(line + 7, "pwg-raster") == 0)
+                strcpy(driver_engine_buffer, "pwg-raster");
+            else
+                strcpy(driver_engine_buffer, "jpeg");
+        } else if (strncmp(line, "KEEPJOB=", 8) == 0) {
+            driver_keep_job = (line[8] == '0') ? FALSE : TRUE;
+        } else if (strncmp(line, "MEDIA=", 6) == 0) {
+            strncpy(driver_media_buffer, line + 6, sizeof(driver_media_buffer) - 1);
+            driver_media_buffer[sizeof(driver_media_buffer) - 1] = '\0';
+        } else if (strncmp(line, "SOURCE=", 7) == 0) {
+            strncpy(driver_source_buffer, line + 7, sizeof(driver_source_buffer) - 1);
+            driver_source_buffer[sizeof(driver_source_buffer) - 1] = '\0';
+        } else if (strncmp(line, "COLOR=", 6) == 0) {
+            strncpy(driver_color_buffer, line + 6, sizeof(driver_color_buffer) - 1);
+            driver_color_buffer[sizeof(driver_color_buffer) - 1] = '\0';
+        } else if (strncmp(line, "QUALITY=", 8) == 0) {
+            strncpy(driver_quality_buffer, line + 8, sizeof(driver_quality_buffer) - 1);
+            driver_quality_buffer[sizeof(driver_quality_buffer) - 1] = '\0';
+        } else if (strncmp(line, "SCALING=", 8) == 0) {
+            strncpy(driver_scaling_buffer, line + 8, sizeof(driver_scaling_buffer) - 1);
+            driver_scaling_buffer[sizeof(driver_scaling_buffer) - 1] = '\0';
+        } else if (strncmp(line, "SIDES=", 6) == 0) {
+            strncpy(driver_sides_buffer, line + 6, sizeof(driver_sides_buffer) - 1);
+            driver_sides_buffer[sizeof(driver_sides_buffer) - 1] = '\0';
+        }
+    }
+
+    Close(file);
+    snprintf(ip_buffer, sizeof(ip_buffer), "%s:%d", host, port);
+    return found;
+}
+
+static void seed_saved_option_labels(void) {
+    if (driver_media_buffer[0]) {
+        if (driver_source_buffer[0])
+            snprintf(initial_media_value, sizeof(initial_media_value), "%s (%s)",
+                     driver_media_buffer, driver_source_buffer);
+        else
+            snprintf(initial_media_value, sizeof(initial_media_value), "%s",
+                     driver_media_buffer);
+    } else {
+        strcpy(initial_media_value, "Not Detected");
+    }
+
+    if (driver_color_buffer[0])
+        snprintf(initial_print_mode_value, sizeof(initial_print_mode_value), "%s",
+                 driver_color_buffer);
+    else
+        strcpy(initial_print_mode_value, "Not Detected");
+
+    if (driver_scaling_buffer[0])
+        snprintf(initial_scaling_value, sizeof(initial_scaling_value), "%s",
+                 driver_scaling_buffer);
+    else
+        strcpy(initial_scaling_value, "Not Detected");
+
+    if (driver_quality_buffer[0])
+        snprintf(initial_quality_value, sizeof(initial_quality_value), "%s",
+                 driver_quality_buffer);
+    else
+        strcpy(initial_quality_value, "Not Detected");
+}
+
+static void apply_saved_option_state(struct Window *win) {
+    struct Gadget *g;
+
+    if (!win) return;
+    seed_saved_option_labels();
+
+    if (num_media_tray_mappings == 0) {
+        g = find_gadget_by_id(GAD_MEDIA_DROPDOWN);
+        if (g)
+            GT_SetGadgetAttrs(g, win, NULL,
+                              GTCY_Labels, (ULONG)initial_media_labels,
+                              GTCY_Active, 0,
+                              GA_Disabled, driver_media_buffer[0] ? FALSE : TRUE,
+                              TAG_DONE);
+    }
+
+    if (num_supported_scaling == 0) {
+        g = find_gadget_by_id(GAD_SCALING_MODE);
+        if (g)
+            GT_SetGadgetAttrs(g, win, NULL,
+                              GTCY_Labels, (ULONG)initial_scaling_mode,
+                              GTCY_Active, 0,
+                              GA_Disabled, driver_scaling_buffer[0] ? FALSE : TRUE,
+                              TAG_DONE);
+    }
+
+    if (num_supported_quality == 0) {
+        g = find_gadget_by_id(GAD_QUALITY_MODE);
+        if (g)
+            GT_SetGadgetAttrs(g, win, NULL,
+                              GTCY_Labels, (ULONG)initial_quality_mode,
+                              GTCY_Active, 0,
+                              GA_Disabled, driver_quality_buffer[0] ? FALSE : TRUE,
+                              TAG_DONE);
+    }
+
+    if (num_supported_print_modes == 0) {
+        g = find_gadget_by_id(GAD_PRINT_MODE);
+        if (g)
+            GT_SetGadgetAttrs(g, win, NULL,
+                              GTCY_Labels, (ULONG)initial_print_mode,
+                              GTCY_Active, 0,
+                              GA_Disabled, driver_color_buffer[0] ? FALSE : TRUE,
+                              TAG_DONE);
+    }
+
+    GT_RefreshWindow(win, NULL);
+}
+
+static void apply_job_defaults_to_gadgets(struct Window *win) {
+    struct Gadget *g;
+    int i;
+
+    if (!win) return;
+
+    if (media_dropdown && num_media_tray_mappings > 0 && driver_media_buffer[0]) {
+        for (i = 0; i < num_media_tray_mappings; ++i) {
+            if (strcmp(media_tray_map[i].media, driver_media_buffer) == 0 &&
+                (!driver_source_buffer[0] ||
+                 strcmp(media_tray_map[i].source, driver_source_buffer) == 0)) {
+                GT_SetGadgetAttrs(media_dropdown, win, NULL,
+                                  GTCY_Active, (ULONG)i,
+                                  TAG_DONE);
+                break;
+            }
+        }
+    }
+
+    g = find_gadget_by_id(GAD_PRINT_MODE);
+    if (g && driver_color_buffer[0]) {
+        for (i = 0; i < num_supported_print_modes; ++i) {
+            if (strcmp(supported_print_modes[i], driver_color_buffer) == 0) {
+                GT_SetGadgetAttrs(g, win, NULL, GTCY_Active, (ULONG)i, TAG_DONE);
+                strncpy(selected_print_mode, supported_print_modes[i],
+                        sizeof(selected_print_mode) - 1);
+                selected_print_mode[sizeof(selected_print_mode) - 1] = '\0';
+                break;
+            }
+        }
+    }
+
+    g = find_gadget_by_id(GAD_SCALING_MODE);
+    if (g && driver_scaling_buffer[0]) {
+        for (i = 0; i < num_supported_scaling; ++i) {
+            if (strcmp(supported_scaling[i], driver_scaling_buffer) == 0) {
+                GT_SetGadgetAttrs(g, win, NULL, GTCY_Active, (ULONG)i, TAG_DONE);
+                strncpy(selected_scaling, supported_scaling[i], sizeof(selected_scaling) - 1);
+                selected_scaling[sizeof(selected_scaling) - 1] = '\0';
+                break;
+            }
+        }
+    }
+
+    g = find_gadget_by_id(GAD_QUALITY_MODE);
+    if (g && driver_quality_buffer[0]) {
+        for (i = 0; i < num_supported_quality; ++i) {
+            if (strcmp(supported_quality[i], driver_quality_buffer) == 0) {
+                GT_SetGadgetAttrs(g, win, NULL, GTCY_Active, (ULONG)i, TAG_DONE);
+                strncpy(selected_quality, supported_quality[i], sizeof(selected_quality) - 1);
+                selected_quality[sizeof(selected_quality) - 1] = '\0';
+                break;
+            }
+        }
+    }
+
+    GT_RefreshWindow(win, NULL);
+}
+
+static BOOL mintprint_test_page(struct Window *win) {
+    struct MsgPort *mp = NULL;
+    struct IODRPReq *req = NULL;
+    struct BitMap *bm = NULL;
+    struct RastPort rp;
+    ULONG mode_id = 0;
+    UBYTE depth;
+    LONG ioerr = -1;
+    BOOL print_ok = FALSE;
+    const char *title = "MintPRINT TEST PAGE";
+    const char *line2 = "printer.device -> MintPRINT -> IPP";
+    const char *line3 = "Capability-backed Unit0 defaults";
+    const char *line4 = "Media / tray / colour / quality / scaling";
+
+    if (!screen) {
+        printf("Test Print: public screen is not available\n");
+        return FALSE;
+    }
+
+    /* Test the settings the user is looking at, and make them the live Unit0. */
+    if (!save_driver_config(win)) {
+        printf("Test Print: could not save Unit0 settings\n");
+        return FALSE;
+    }
+
+    depth = screen->RastPort.BitMap->Depth;
+    if (depth < 1) depth = 1;
+
+    bm = AllocBitMap(320, 180, depth, BMF_CLEAR, screen->RastPort.BitMap);
+    if (!bm) {
+        printf("Test Print: could not allocate test bitmap\n");
+        return FALSE;
+    }
+
+    InitRastPort(&rp);
+    rp.BitMap = bm;
+    if (screen->RastPort.Font) SetFont(&rp, screen->RastPort.Font);
+
+    /* Workbench palette pens are intentional: it makes a simple colour test. */
+    SetAPen(&rp, 0);
+    RectFill(&rp, 0, 0, 319, 179);
+    SetAPen(&rp, 1);
+    RectFill(&rp, 4, 4, 315, 5);
+    RectFill(&rp, 4, 174, 315, 175);
+    RectFill(&rp, 4, 4, 5, 175);
+    RectFill(&rp, 314, 4, 315, 175);
+    Move(&rp, 16, 24);
+    Text(&rp, (STRPTR)title, strlen(title));
+    Move(&rp, 16, 40);
+    Text(&rp, (STRPTR)line2, strlen(line2));
+
+    SetAPen(&rp, depth > 1 ? 2 : 1);
+    RectFill(&rp, 16, 60, 105, 105);
+    SetAPen(&rp, depth > 1 ? 3 : 1);
+    RectFill(&rp, 115, 60, 204, 105);
+    SetAPen(&rp, 1);
+    RectFill(&rp, 214, 60, 303, 105);
+
+    SetAPen(&rp, 1);
+    Move(&rp, 16, 130);
+    Text(&rp, (STRPTR)line3, strlen(line3));
+    Move(&rp, 16, 146);
+    Text(&rp, (STRPTR)line4, strlen(line4));
+
+    mp = CreateMsgPort();
+    if (!mp) {
+        printf("Test Print: CreateMsgPort failed\n");
+        FreeBitMap(bm);
+        return FALSE;
+    }
+
+    req = (struct IODRPReq *)CreateIORequest(mp, sizeof(struct IODRPReq));
+    if (!req) {
+        printf("Test Print: CreateIORequest failed\n");
+        DeleteMsgPort(mp);
+        FreeBitMap(bm);
+        return FALSE;
+    }
+
+    if (OpenDevice((CONST_STRPTR)"printer.device", 0,
+                   (struct IORequest *)req, 0) != 0) {
+        printf("Test Print: could not open printer.device\n");
+        DeleteIORequest((struct IORequest *)req);
+        DeleteMsgPort(mp);
+        FreeBitMap(bm);
+        return FALSE;
+    }
+
+    mode_id = GetVPModeID(&screen->ViewPort);
+    if (mode_id == INVALID_ID) mode_id = 0;
+
+    req->io_Command = PRD_DUMPRPORT;
+    req->io_RastPort = &rp;
+    req->io_ColorMap = screen->ViewPort.ColorMap;
+    req->io_Modes = mode_id;
+    req->io_SrcX = 0;
+    req->io_SrcY = 0;
+    req->io_SrcWidth = 320;
+    req->io_SrcHeight = 180;
+    req->io_DestCols = 0;
+    req->io_DestRows = 0;
+    req->io_Special = SPECIAL_ASPECT | SPECIAL_CENTER;
+
+    printf("Test Print: sending page through printer.device...\n");
+    ioerr = DoIO((struct IORequest *)req);
+    if (ioerr != 0 || req->io_Error != 0) {
+        printf("Test Print failed: DoIO=%ld io_Error=%ld\n",
+               ioerr, (LONG)req->io_Error);
+    } else {
+        printf("Test Print completed successfully\n");
+        print_ok = TRUE;
+    }
+
+    CloseDevice((struct IORequest *)req);
+    DeleteIORequest((struct IORequest *)req);
+    DeleteMsgPort(mp);
+    FreeBitMap(bm);
+    return print_ok;
+}
+
+static void apply_driver_config_to_gadgets(struct Window *win) {
+    struct Gadget *g;
+
+    if (!win) return;
+
+    g = find_gadget_by_id(GAD_IP_STRING);
+    if (g)
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GTST_String, (ULONG)ip_buffer,
+                          TAG_DONE);
+
+    g = find_gadget_by_id(GAD_IPP_PATH);
+    if (g)
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GTST_String, (ULONG)driver_path_buffer,
+                          TAG_DONE);
+
+    g = find_gadget_by_id(GAD_KEEPJOB);
+    if (g)
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GTCY_Active, driver_keep_job ? 1 : 0,
+                          TAG_DONE);
+
+    g = find_gadget_by_id(GAD_ENGINE);
+    if (g)
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GTCY_Active, strcmp(driver_engine_buffer, "pwg-raster") == 0 ? 1 : 0,
+                          TAG_DONE);
+
+    GT_RefreshWindow(win, NULL);
 }
 
 // Add after successful query to rebuild media dropdown (Updated to show media (tray))
@@ -367,6 +973,7 @@ void update_media_dropdown(struct Window *win) {
         GT_SetGadgetAttrs(media_dropdown, win, NULL,
                           GTCY_Labels, (ULONG)media_dropdown_items,
                           GTCY_Active, 0,
+                          GA_Disabled, FALSE,
                           TAG_DONE);
         RefreshGList(media_dropdown, win, NULL, 1);
         GT_RefreshWindow(win, NULL);
@@ -405,6 +1012,7 @@ void update_scaling_dropdown(struct Window *win) {
         GT_SetGadgetAttrs(g, win, NULL,
                           GTCY_Labels, (ULONG)scaling_mode_labels,
                           GTCY_Active, 0,
+                          GA_Disabled, FALSE,
                           TAG_DONE);
         RefreshGList(g, win, NULL, 1);
         GT_RefreshWindow(win, NULL);
@@ -445,6 +1053,7 @@ void update_print_mode_dropdown(struct Window *win) {
         GT_SetGadgetAttrs(g, win, NULL,
                           GTCY_Labels, (ULONG)(print_mode_labels ? print_mode_labels : initial_print_mode),
                           GTCY_Active, 0,
+                          GA_Disabled, FALSE,
                           TAG_DONE);
 
         RefreshGList(g, win, NULL, 1);
@@ -480,6 +1089,7 @@ void update_quality_dropdown(struct Window *win) {
         GT_SetGadgetAttrs(g, win, NULL,
                           GTCY_Labels, (ULONG)quality_mode_labels,
                           GTCY_Active, 0,
+                          GA_Disabled, FALSE,
                           TAG_DONE);
         RefreshGList(g, win, NULL, 1);
         GT_RefreshWindow(win, NULL);
@@ -523,6 +1133,295 @@ void cleanup_dropdown_labels() {
         quality_mode_labels = NULL;
     }
 }
+
+/* MintPRINT prefs #8: capability cache.
+ *
+ * Unit0 contains selected defaults.
+ * Unit0.cache contains printer-discovered capabilities.
+ * ENV: is preferred for the current session; ENVARC: makes the cache survive
+ * reboot. A cache is only used when HOST/PORT/PATH match the current Unit0.
+ */
+#define MP_CAP_CACHE_LINE_MAX 384
+static char mp_cap_cache_line[MP_CAP_CACHE_LINE_MAX];
+
+static void mp_cache_copy(char *dst, int dst_size, const char *src) {
+    if (!dst || dst_size <= 0) return;
+    if (!src) src = "";
+    strncpy(dst, src, dst_size - 1);
+    dst[dst_size - 1] = '\0';
+}
+
+static void mp_cache_clear_capabilities(void) {
+    num_supported_formats = 0;
+    num_supported_media = 0;
+    num_supported_output_modes = 0;
+    num_supported_sides = 0;
+    num_supported_scaling = 0;
+    num_supported_orientations = 0;
+    num_supported_media_sources = 0;
+    num_supported_print_modes = 0;
+    num_supported_quality = 0;
+    num_media_tray_mappings = 0;
+    has_media_ready = FALSE;
+}
+
+static BOOL mp_cache_write_file(CONST_STRPTR filename,
+                                CONST_STRPTR host,
+                                int port,
+                                CONST_STRPTR path) {
+    BPTR fh;
+    char line[384];
+    int i;
+
+    fh = Open(filename, MODE_NEWFILE);
+    if (!fh) return FALSE;
+
+    FPuts(fh, "# MintPRINT printer capability cache\n");
+    FPuts(fh, "CACHE_VERSION=1\n");
+
+    snprintf(line, sizeof(line), "HOST=%s\n", host);
+    FPuts(fh, line);
+    snprintf(line, sizeof(line), "PORT=%d\n", port);
+    FPuts(fh, line);
+    snprintf(line, sizeof(line), "PATH=%s\n", path);
+    FPuts(fh, line);
+
+    for (i = 0; i < num_supported_formats; ++i) {
+        snprintf(line, sizeof(line), "FORMAT=%s\n", supported_formats[i]);
+        FPuts(fh, line);
+    }
+
+    for (i = 0; i < num_supported_media; ++i) {
+        snprintf(line, sizeof(line), "MEDIA_SUPPORTED=%s\n", supported_media[i]);
+        FPuts(fh, line);
+    }
+
+    for (i = 0; i < num_supported_media_sources; ++i) {
+        snprintf(line, sizeof(line), "SOURCE=%s\n", supported_media_sources[i]);
+        FPuts(fh, line);
+    }
+
+    for (i = 0; i < num_media_tray_mappings; ++i) {
+        snprintf(line, sizeof(line), "MEDIA=%s|%s|%s|%s\n",
+                 media_tray_map[i].media,
+                 media_tray_map[i].source,
+                 media_tray_map[i].trayName,
+                 media_tray_map[i].medianame);
+        FPuts(fh, line);
+    }
+
+    for (i = 0; i < num_supported_output_modes; ++i) {
+        snprintf(line, sizeof(line), "OUTPUTMODE=%s\n", supported_output_modes[i]);
+        FPuts(fh, line);
+    }
+
+    for (i = 0; i < num_supported_sides; ++i) {
+        snprintf(line, sizeof(line), "SIDE=%s\n", supported_sides[i]);
+        FPuts(fh, line);
+    }
+
+    for (i = 0; i < num_supported_scaling; ++i) {
+        snprintf(line, sizeof(line), "SCALING=%s\n", supported_scaling[i]);
+        FPuts(fh, line);
+    }
+
+    for (i = 0; i < num_supported_orientations; ++i) {
+        snprintf(line, sizeof(line), "ORIENTATION=%d\n", supported_orientations[i]);
+        FPuts(fh, line);
+    }
+
+    for (i = 0; i < num_supported_print_modes; ++i) {
+        snprintf(line, sizeof(line), "PRINTMODE=%s\n", supported_print_modes[i]);
+        FPuts(fh, line);
+    }
+
+    for (i = 0; i < num_supported_quality; ++i) {
+        snprintf(line, sizeof(line), "QUALITY=%s\n", supported_quality[i]);
+        FPuts(fh, line);
+    }
+
+    Close(fh);
+    return TRUE;
+}
+
+static BOOL save_capability_cache(CONST_STRPTR host, int port, CONST_STRPTR path) {
+    BOOL env_ok;
+    BOOL envarc_ok;
+
+    if (!host || !host[0] || port <= 0 || port > 65535 ||
+        !path || path[0] != '/') {
+        return FALSE;
+    }
+
+    if (!ensure_config_dir((CONST_STRPTR)"ENV:MintPRINT"))
+        return FALSE;
+    if (!ensure_config_dir((CONST_STRPTR)"ENVARC:MintPRINT"))
+        return FALSE;
+
+    env_ok = mp_cache_write_file((CONST_STRPTR)"ENV:MintPRINT/Unit0.cache",
+                                 host, port, path);
+    envarc_ok = mp_cache_write_file((CONST_STRPTR)"ENVARC:MintPRINT/Unit0.cache",
+                                    host, port, path);
+
+    return env_ok && envarc_ok;
+}
+
+static BOOL mp_cache_endpoint_matches(CONST_STRPTR filename,
+                                      CONST_STRPTR expected_host,
+                                      int expected_port,
+                                      CONST_STRPTR expected_path) {
+    BPTR fh;
+    char host[64] = "";
+    char path[96] = "";
+    int port = -1;
+
+    fh = Open(filename, MODE_OLDFILE);
+    if (!fh) return FALSE;
+
+    while (FGets(fh, (STRPTR)mp_cap_cache_line, sizeof(mp_cap_cache_line))) {
+        trim_config_line(mp_cap_cache_line);
+
+        if (strncmp(mp_cap_cache_line, "HOST=", 5) == 0) {
+            mp_cache_copy(host, sizeof(host), mp_cap_cache_line + 5);
+        } else if (strncmp(mp_cap_cache_line, "PORT=", 5) == 0) {
+            port = atoi(mp_cap_cache_line + 5);
+        } else if (strncmp(mp_cap_cache_line, "PATH=", 5) == 0) {
+            mp_cache_copy(path, sizeof(path), mp_cap_cache_line + 5);
+        }
+    }
+
+    Close(fh);
+
+    return strcmp(host, expected_host) == 0 &&
+           port == expected_port &&
+           strcmp(path, expected_path) == 0;
+}
+
+static void mp_cache_parse_media(char *value) {
+    char *p1;
+    char *p2;
+    char *p3;
+    int i;
+
+    if (num_media_tray_mappings >= MAX_VALUES) return;
+
+    p1 = strchr(value, '|');
+    if (!p1) return;
+    *p1++ = '\0';
+
+    p2 = strchr(p1, '|');
+    if (!p2) return;
+    *p2++ = '\0';
+
+    p3 = strchr(p2, '|');
+    if (!p3) return;
+    *p3++ = '\0';
+
+    i = num_media_tray_mappings;
+    mp_cache_copy(media_tray_map[i].media,
+                  sizeof(media_tray_map[i].media), value);
+    mp_cache_copy(media_tray_map[i].source,
+                  sizeof(media_tray_map[i].source), p1);
+    mp_cache_copy(media_tray_map[i].trayName,
+                  sizeof(media_tray_map[i].trayName), p2);
+    mp_cache_copy(media_tray_map[i].medianame,
+                  sizeof(media_tray_map[i].medianame), p3);
+    num_media_tray_mappings++;
+}
+
+static BOOL mp_cache_load_file(CONST_STRPTR filename) {
+    BPTR fh;
+
+    fh = Open(filename, MODE_OLDFILE);
+    if (!fh) return FALSE;
+
+    mp_cache_clear_capabilities();
+
+    while (FGets(fh, (STRPTR)mp_cap_cache_line, sizeof(mp_cap_cache_line))) {
+        char *value;
+
+        trim_config_line(mp_cap_cache_line);
+        if (!mp_cap_cache_line[0] ||
+            mp_cap_cache_line[0] == '#' ||
+            mp_cap_cache_line[0] == ';') {
+            continue;
+        }
+
+        if (strncmp(mp_cap_cache_line, "FORMAT=", 7) == 0) {
+            store_value(supported_formats, &num_supported_formats,
+                        mp_cap_cache_line + 7);
+        } else if (strncmp(mp_cap_cache_line, "MEDIA_SUPPORTED=", 16) == 0) {
+            store_value(supported_media, &num_supported_media,
+                        mp_cap_cache_line + 16);
+        } else if (strncmp(mp_cap_cache_line, "SOURCE=", 7) == 0) {
+            store_value(supported_media_sources, &num_supported_media_sources,
+                        mp_cap_cache_line + 7);
+        } else if (strncmp(mp_cap_cache_line, "MEDIA=", 6) == 0) {
+            value = mp_cap_cache_line + 6;
+            mp_cache_parse_media(value);
+        } else if (strncmp(mp_cap_cache_line, "OUTPUTMODE=", 11) == 0) {
+            store_value(supported_output_modes, &num_supported_output_modes,
+                        mp_cap_cache_line + 11);
+        } else if (strncmp(mp_cap_cache_line, "SIDE=", 5) == 0) {
+            store_value(supported_sides, &num_supported_sides,
+                        mp_cap_cache_line + 5);
+        } else if (strncmp(mp_cap_cache_line, "SCALING=", 8) == 0) {
+            store_value(supported_scaling, &num_supported_scaling,
+                        mp_cap_cache_line + 8);
+        } else if (strncmp(mp_cap_cache_line, "ORIENTATION=", 12) == 0) {
+            if (num_supported_orientations < MAX_VALUES)
+                supported_orientations[num_supported_orientations++] =
+                    atoi(mp_cap_cache_line + 12);
+        } else if (strncmp(mp_cap_cache_line, "PRINTMODE=", 10) == 0) {
+            store_value(supported_print_modes, &num_supported_print_modes,
+                        mp_cap_cache_line + 10);
+        } else if (strncmp(mp_cap_cache_line, "QUALITY=", 8) == 0) {
+            if (num_supported_quality < MAX_QUALITIES) {
+                mp_cache_copy(supported_quality[num_supported_quality],
+                              sizeof(supported_quality[num_supported_quality]),
+                              mp_cap_cache_line + 8);
+                num_supported_quality++;
+            }
+        }
+    }
+
+    Close(fh);
+    has_media_ready = num_media_tray_mappings > 0 ? TRUE : FALSE;
+    return TRUE;
+}
+
+static BOOL load_capability_cache_for_current_endpoint(void) {
+    char host[64];
+    int port = -1;
+    CONST_STRPTR env_cache = (CONST_STRPTR)"ENV:MintPRINT/Unit0.cache";
+    CONST_STRPTR envarc_cache = (CONST_STRPTR)"ENVARC:MintPRINT/Unit0.cache";
+
+    if (!parse_ip_and_port(ip_buffer, host, sizeof(host), &port))
+        return FALSE;
+    if (port <= 0) port = 80;
+
+    if (mp_cache_endpoint_matches(env_cache, host, port, driver_path_buffer))
+        return mp_cache_load_file(env_cache);
+
+    if (mp_cache_endpoint_matches(envarc_cache, host, port, driver_path_buffer))
+        return mp_cache_load_file(envarc_cache);
+
+    return FALSE;
+}
+
+static void apply_cached_capabilities(struct Window *win) {
+    if (!win) return;
+
+    update_media_dropdown(win);
+    update_print_mode_dropdown(win);
+    update_scaling_dropdown(win);
+    update_quality_dropdown(win);
+
+    /* Put the user's saved Unit0 choices back on top of the available lists. */
+    apply_job_defaults_to_gadgets(win);
+}
+
+
 
 // Redirect printf to buffer
 void custom_printf(const char *format, ...) {
@@ -779,6 +1678,7 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     num_supported_orientations = 0;
     num_supported_media_sources = 0;
     num_supported_print_modes = 0;
+    num_supported_quality = 0;
     num_media_tray_mappings = 0;
     has_media_ready = FALSE;
 
@@ -1789,7 +2689,6 @@ int send_print_job(const char *ip, int port, const char *filename, const char *m
 struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topborder) {
     struct NewGadget ng;
     struct Gadget *gad;
-    static const STRPTR initial_labels[] = { "Select Media...", NULL };
 
     // Initialize the gadget list
     gad = CreateContext(glistptr);
@@ -1804,11 +2703,11 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     ng.ng_Flags = NG_HIGHLABEL;
 
     // IP string gadget
-    ng.ng_LeftEdge = 130;
+    ng.ng_LeftEdge = 165;
     ng.ng_TopEdge = 5 + topborder;
     ng.ng_Width = 200;
     ng.ng_Height = 14;
-    ng.ng_GadgetText = (STRPTR)"_Printer IP:";
+    ng.ng_GadgetText = (STRPTR)"_Printer IP/Host:";
     ng.ng_GadgetID = GAD_IP_STRING;
     gad = CreateGadget(STRING_KIND, gad, &ng,
         GTST_String, (ULONG)ip_buffer,
@@ -1822,6 +2721,76 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
         return NULL;
     }
 
+
+
+    // Query button - kept beside the printer address field.
+    ng.ng_LeftEdge = 385;
+    ng.ng_Width = 75;
+    ng.ng_Height = 14;
+    ng.ng_GadgetText = (STRPTR)"_Query";
+    ng.ng_GadgetID = GAD_QUERY_BUTTON;
+    ng.ng_Flags = 0;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng,
+        GT_Underscore, '_',
+        TAG_DONE);
+    if (!gad) {
+        printf("Failed to create query button\n");
+        return NULL;
+    }
+
+    // Driver IPP path
+    ng.ng_LeftEdge = 130;
+    ng.ng_TopEdge += 20;
+    ng.ng_Width = 200;
+    ng.ng_Height = 14;
+    ng.ng_GadgetText = (STRPTR)"IPP _Path:";
+    ng.ng_GadgetID = GAD_IPP_PATH;
+    gad = CreateGadget(STRING_KIND, gad, &ng,
+        GTST_String, (ULONG)driver_path_buffer,
+        GTST_MaxChars, sizeof(driver_path_buffer) - 1,
+        GA_Immediate, TRUE,
+        GT_Underscore, '_',
+        GACT_RELVERIFY, TRUE,
+        TAG_DONE);
+    if (!gad) {
+        printf("Failed to create IPP path gadget\n");
+        return NULL;
+    }
+
+
+    // Printer document engine. JPEG is the current working backend;
+    // PWG Raster is persisted now and will be activated by the backend patch.
+    ng.ng_LeftEdge = 130;
+    ng.ng_TopEdge += 20;
+    ng.ng_Width = 180;
+    ng.ng_Height = 12;
+    ng.ng_GadgetText = (STRPTR)"Printer Engine:";
+    ng.ng_GadgetID = GAD_ENGINE;
+    gad = CreateGadget(CYCLE_KIND, gad, &ng,
+        GTCY_Labels, (ULONG)engine_labels,
+        GTCY_Active, strcmp(driver_engine_buffer, "pwg-raster") == 0 ? 1 : 0,
+        TAG_DONE);
+    if (!gad) {
+        printf("Failed to create printer engine gadget\n");
+        return NULL;
+    }
+
+    // Keep/delete the diagnostic JPEG after a successful driver print
+    ng.ng_LeftEdge = 130;
+    ng.ng_TopEdge += 20;
+    ng.ng_Width = 180;
+    ng.ng_Height = 12;
+    ng.ng_GadgetText = (STRPTR)"Debug JPEG:";
+    ng.ng_GadgetID = GAD_KEEPJOB;
+    gad = CreateGadget(CYCLE_KIND, gad, &ng,
+        GTCY_Labels, (ULONG)keep_job_labels,
+        GTCY_Active, driver_keep_job ? 1 : 0,
+        TAG_DONE);
+    if (!gad) {
+        printf("Failed to create debug JPEG gadget\n");
+        return NULL;
+    }
+
     // Media dropdown
     ng.ng_LeftEdge = 130;
     ng.ng_TopEdge += 20;
@@ -1831,30 +2800,15 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     ng.ng_GadgetID = GAD_MEDIA_DROPDOWN;
     ng.ng_Flags = NG_HIGHLABEL;
     gad = CreateGadget(CYCLE_KIND, gad, &ng,
-        GTCY_Labels, (ULONG)initial_labels,
+        GTCY_Labels, (ULONG)initial_media_labels,
         GTCY_Active, 0,
+        GA_Disabled, driver_media_buffer[0] ? FALSE : TRUE,
         TAG_DONE);
     if (!gad) {
         printf("Failed to create media dropdown\n");
         return NULL;
     }
     media_dropdown = gad;  // Save it globally
-
-    // File path string gadget
-    ng.ng_TopEdge += 20;
-    ng.ng_GadgetText = (STRPTR)"_File Path:";
-    ng.ng_GadgetID = GAD_FILE_STRING;
-    gad = CreateGadget(STRING_KIND, gad, &ng,
-        GTST_String, (ULONG)file_buffer,
-        GTST_MaxChars, sizeof(file_buffer) - 1,
-        GA_Immediate, TRUE,
-        GT_Underscore, '_',
-        GACT_RELVERIFY, TRUE,
-        TAG_DONE);
-    if (!gad) {
-        printf("Failed to create file string gadget\n");
-        return NULL;
-    }
 
     // Scaling dropdown
     ng.ng_LeftEdge = 130;
@@ -1866,6 +2820,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     gad = CreateGadget(CYCLE_KIND, gad, &ng,
     GTCY_Labels, (ULONG)scaling_mode_labels,
     GTCY_Active, 0,
+        GA_Disabled, driver_scaling_buffer[0] ? FALSE : TRUE,
     TAG_DONE);
 
     // Quality dropdown
@@ -1878,6 +2833,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     gad = CreateGadget(CYCLE_KIND, gad, &ng,
         GTCY_Labels, (ULONG)quality_mode_labels,
         GTCY_Active, 0,
+        GA_Disabled, driver_quality_buffer[0] ? FALSE : TRUE,
         TAG_DONE);
 
     // Print Mode radio buttons
@@ -1890,31 +2846,19 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     gad = CreateGadget(CYCLE_KIND, gad, &ng,
         GTCY_Labels, (ULONG)print_mode_labels,
         GTCY_Active, 0,
+        GA_Disabled, driver_color_buffer[0] ? FALSE : TRUE,
         TAG_DONE);
     if (!gad) {
         printf("Failed to create print mode radio buttons\n");
         return NULL;
     }
 
-    // Query button
+    // Test Print button
     ng.ng_LeftEdge = 10;
-    ng.ng_TopEdge += 30; // Adjusted to make room for radio buttons
+    ng.ng_TopEdge += 30;
     ng.ng_Width = 110;
     ng.ng_Height = 12;
-    ng.ng_GadgetText = (STRPTR)"_Query Printer";
-    ng.ng_GadgetID = GAD_QUERY_BUTTON;
-    ng.ng_Flags = 0;
-    gad = CreateGadget(BUTTON_KIND, gad, &ng,
-        GT_Underscore, '_',
-        TAG_DONE);
-    if (!gad) {
-        printf("Failed to create query button\n");
-        return NULL;
-    }
-
-    // Print button
-    ng.ng_LeftEdge += 120;
-    ng.ng_GadgetText = (STRPTR)"_Print File";
+    ng.ng_GadgetText = (STRPTR)"_Test Print";
     ng.ng_GadgetID = GAD_PRINT_BUTTON;
     gad = CreateGadget(BUTTON_KIND, gad, &ng,
         GT_Underscore, '_',
@@ -1924,8 +2868,23 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
         return NULL;
     }
 
+
+    // Save button - same action as File -> Save Driver Settings.
+    ng.ng_LeftEdge = 250;
+    ng.ng_Width = 90;
+    ng.ng_GadgetText = (STRPTR)"_Save";
+    ng.ng_GadgetID = GAD_SAVE_BUTTON;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng,
+        GT_Underscore, '_',
+        TAG_DONE);
+    if (!gad) {
+        printf("Failed to create save button\n");
+        return NULL;
+    }
+
     // Exit button
-    ng.ng_LeftEdge += 120;
+    ng.ng_LeftEdge = 350;
+    ng.ng_Width = 90;
     ng.ng_GadgetText = (STRPTR)"_Exit";
     ng.ng_GadgetID = GAD_EXIT_BUTTON;
     gad = CreateGadget(BUTTON_KIND, gad, &ng,
@@ -2001,25 +2960,6 @@ void process_window_events(struct Window *win) {
                             }
                         }
                         break;
-
-                        case GAD_FILE_STRING:
-                        {
-                            GT_RefreshWindow(win, NULL);
-                            char *current_file = NULL;
-                            ULONG success = GT_GetGadgetAttrs(gad, win, NULL,
-                                                              GTST_String, (ULONG)&current_file,
-                                                              TAG_DONE);
-                            if (success && current_file) {
-                                printf("Raw file string from gadget: '%s'\n", current_file);
-                                strncpy(file_buffer, current_file, sizeof(file_buffer) - 1);
-                                file_buffer[sizeof(file_buffer) - 1] = '\0';
-                                printf("File buffer after update: '%s'\n", file_buffer);
-                            } else {
-                                printf("Failed to retrieve file string from gadget\n");
-                            }
-                        }
-                        break;
-
                         case GAD_PRINT_MODE:
                         {
                             ULONG selected = ~0UL;
@@ -2090,105 +3030,31 @@ void process_window_events(struct Window *win) {
                                                           GTST_String, (ULONG)ip_buffer,
                                                           TAG_DONE);
                                     }
+                                    if (save_capability_cache(ip_only, ports_to_try[i], driver_path_buffer))
+                                        printf("Printer capabilities cached\n");
+                                    else
+                                        printf("Warning: could not save printer capability cache\n");
+                                    apply_job_defaults_to_gadgets(win);
                                     break; // Success!
                                 }
                             }
                         }
                         break;
-                        
                         case GAD_PRINT_BUTTON:
                         {
                             GT_RefreshWindow(win, NULL);
-                            struct Gadget *ip_gadget = glist;
-                            while (ip_gadget && ip_gadget->GadgetID != GAD_IP_STRING) {
-                                ip_gadget = ip_gadget->NextGadget;
-                            }
-
-                            if (ip_gadget) {
-                                char *ip_string = NULL;
-                                ULONG success = GT_GetGadgetAttrs(ip_gadget, win, NULL,
-                                                                  GTST_String, (ULONG)&ip_string,
-                                                                  TAG_DONE);
-                                if (success && ip_string) {
-                                    strncpy(ip_buffer, ip_string, sizeof(ip_buffer) - 1);
-                                    ip_buffer[sizeof(ip_buffer) - 1] = '\0';
-                                    printf("IP buffer updated to: '%s'\n", ip_buffer);
-                                } else {
-                                    printf("Failed to retrieve IP string from gadget\n");
-                                }
-                            } else {
-                                printf("IP string gadget not found!\n");
-                            }
-
-                            ULONG media_index = 0;
-                            GT_GetGadgetAttrs(media_dropdown, win, NULL, GTCY_Active, (ULONG)&media_index, TAG_DONE);
-
-                            if (media_index >= (ULONG)num_media_tray_mappings) {
-                                printf("Invalid dropdown index: %lu\n", media_index);
-                                break;
-                            }
-
-                            const char *media_str = media_tray_map[media_index].media;
-                            printf("Selected media from dropdown: %s\n", media_str);
-
-                            struct Gadget *file_gadget = glist;
-                            while (file_gadget && file_gadget->GadgetID != GAD_FILE_STRING) {
-                                file_gadget = file_gadget->NextGadget;
-                            }
-
-                            if (file_gadget) {
-                                char *file_string = NULL;
-                                ULONG success = GT_GetGadgetAttrs(file_gadget, win, NULL,
-                                                                  GTST_String, (ULONG)&file_string,
-                                                                  TAG_DONE);
-                                if (success && file_string) {
-                                    strncpy(file_buffer, file_string, sizeof(file_buffer) - 1);
-                                    file_buffer[sizeof(file_buffer) - 1] = '\0';
-                                    printf("File buffer updated to: '%s'\n", file_buffer);
-                                } else {
-                                    printf("Failed to retrieve file string from gadget\n");
-                                }
-                            } else {
-                                printf("File path gadget not found!\n");
-                            }
-                            port = (port > 0) ? port : 80;
-                            printf("Sending file to printer at %s...\n", ip_buffer);
-                            if (has_extension(file_buffer, ".iff") || has_extension(file_buffer, ".ilbm"))  {
-                                printf("IFF File selected\n");
-                                unsigned char *rgb = NULL;
-                                int w = 0, h = 0;
-                                if (load_ilbm_to_rgb(file_buffer, &rgb, &w, &h) == 0) {
-                                    unsigned char *pwg = NULL;
-                                    int pwg_len = 0;
-                                    printf("Loaded ILBM: %dx%d pixels\n", w, h);
-                                    if (rgb_to_pwg_memory(rgb, w, h, &pwg, &pwg_len) == 0) {
-                                        printf("PWG data size: %d bytes\n", pwg_len);
-                                        send_pwg_print_job(ip_only, port, media_str, selected_print_mode, pwg, pwg_len);
-                                        free(pwg);
-                                    } else {
-                                        printf("PWG conversion failed\n");
-                                    }
-                                    FreeVec(rgb);
-                                } else {
-                                    printf("Failed to load ILBM\n");
-                                }
-                            } else {
-                                char print_ip[64];
-                            int print_port = -1;
-                            if (!parse_ip_and_port(ip_buffer, print_ip, sizeof(print_ip), &print_port)) {
-                                printf("Invalid IP format in print handler\n");
-                                break;
-                            }
-                            if (print_port <= 0) print_port = 631;
-
-                            send_print_job(print_ip, print_port, file_buffer, media_str, selected_print_mode);
-                            }
-                            
+                            mintprint_test_page(win);
                         }
                         break;
-                    
 
-                    case GAD_EXIT_BUTTON:
+                        case GAD_SAVE_BUTTON:
+                            if (save_driver_config(win))
+                                printf("MintPRINT Unit0 saved to ENV: and ENVARC:\n");
+                            else
+                                printf("Failed to save MintPRINT Unit0 settings\n");
+                            break;
+
+                        case GAD_EXIT_BUTTON:
                             terminated = TRUE;
                             break;
                     }
@@ -2214,12 +3080,21 @@ void process_window_events(struct Window *win) {
                                 switch (item_num) {
                                     case 0: // Save Settings
                                         save_print_mode();
-                                        printf("Settings saved to ENV:\n");
+                                        if (save_driver_config(win))
+                                            printf("MintPRINT Unit0 saved to ENV: and ENVARC:\n");
+                                        else
+                                            printf("Failed to save MintPRINT Unit0 settings\n");
                                         break;
                     
                                     case 1: // Load Settings
+                                        if (load_driver_config())
+                                            printf("MintPRINT Unit0 loaded\n");
+                                        else
+                                            printf("No Unit0 found; using MintPRINT defaults\n");
+                                        apply_driver_config_to_gadgets(win);
+                                        apply_saved_option_state(win);
+                                        apply_job_defaults_to_gadgets(win);
                                         load_print_mode();
-                                        printf("Settings loaded from ENV:\n");
                     
                                         // Update radio button state
                                         struct Gadget *print_mode_gadget = glist;
@@ -2333,6 +3208,10 @@ int main(void) {
     print_mode_labels = initial_print_mode;
     scaling_mode_labels = initial_scaling_mode;
     quality_mode_labels = initial_quality_mode;
+    // Load the same Unit0 profile used by DEVS:Printers/MintPRINT.
+    load_driver_config();
+    seed_saved_option_labels();
+
     // Load print mode from ENV:
     load_print_mode();
     
@@ -2351,13 +3230,13 @@ int main(void) {
 
     // Open window
     window = OpenWindowTags(NULL,
-        WA_Title, (ULONG)"Amiga IPP Printer",
+        WA_Title, (ULONG)"MintPRINT Preferences / Test",
         WA_Gadgets, (ULONG)glist,
         WA_AutoAdjust, TRUE,
         WA_Width, 460,
         WA_MinWidth, 460,
-        WA_InnerHeight, 240,
-        WA_MinHeight, 240,
+        WA_InnerHeight, 355,
+        WA_MinHeight, 355,
         WA_DragBar, TRUE,
         WA_DepthGadget, TRUE,
         WA_Activate, TRUE,
@@ -2407,6 +3286,16 @@ int main(void) {
 
     // Refresh window
     GT_RefreshWindow(window, NULL);
+
+
+    if (load_capability_cache_for_current_endpoint()) {
+        apply_cached_capabilities(window);
+        printf("Loaded cached printer capabilities\\n");
+    } else {
+        apply_saved_option_state(window);
+    }
+
+
 
     // Process events
     process_window_events(window);

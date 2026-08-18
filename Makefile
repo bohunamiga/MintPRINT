@@ -4,6 +4,7 @@ NM       = $(CROSS)nm
 CFLAGS  ?= -Os -m68000 -Wall -Wextra -fomit-frame-pointer -fno-builtin
 
 IFF_DIR := Archive/Old JPEG Decode
+IFF_DIR_ESC := Archive/Old\ JPEG\ Decode
 DRIVER_BUILD := build/driver
 DRIVER_OUT := $(DRIVER_BUILD)/MintPRINT
 
@@ -20,7 +21,7 @@ help:
 
 gui: MintPRINT
 
-MintPRINT: src/IPP-Test16.c "$(IFF_DIR)/iff-loader.c" "$(IFF_DIR)/iff-loader.h"
+MintPRINT: src/IPP-Test16.c $(IFF_DIR_ESC)/iff-loader.c $(IFF_DIR_ESC)/iff-loader.h
 	$(CC) -O2 -g -I"$(IFF_DIR)" -o $@ src/IPP-Test16.c "$(IFF_DIR)/iff-loader.c" -lamiga -lm
 
 $(DRIVER_BUILD):
@@ -35,13 +36,16 @@ $(DRIVER_BUILD)/driver_core.o: driver/driver_core.c | $(DRIVER_BUILD)
 $(DRIVER_BUILD)/command_table.o: driver/command_table.c | $(DRIVER_BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(DRIVER_BUILD)/config.o: driver/config.c driver/config.h | $(DRIVER_BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
 $(DRIVER_BUILD)/jpeg_writer.o: driver/jpeg_writer.c driver/jpeg_writer.h | $(DRIVER_BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(DRIVER_BUILD)/ipp_client.o: driver/ipp_client.c driver/ipp_client.h | $(DRIVER_BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(DRIVER_OUT): $(DRIVER_BUILD)/printertag.o $(DRIVER_BUILD)/driver_core.o $(DRIVER_BUILD)/command_table.o $(DRIVER_BUILD)/jpeg_writer.o $(DRIVER_BUILD)/ipp_client.o
+$(DRIVER_OUT): $(DRIVER_BUILD)/printertag.o $(DRIVER_BUILD)/driver_core.o $(DRIVER_BUILD)/command_table.o $(DRIVER_BUILD)/config.o $(DRIVER_BUILD)/jpeg_writer.o $(DRIVER_BUILD)/ipp_client.o
 	$(CC) -m68000 -nostartfiles -Wl,-Map,$(DRIVER_BUILD)/MintPRINT.map \
 		-o $@ $^ -lamiga
 

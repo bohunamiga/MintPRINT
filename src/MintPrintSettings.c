@@ -1826,7 +1826,6 @@ static BOOL discovery_ip_seen(struct DiscoveredPrinter *results, int count, cons
 static int ssdp_discover_printers(struct DiscoveredPrinter *results, int max_results) {
     int sockfd;
     struct sockaddr_in dest;
-    long nonblock = 1;
     char msearch[256];
     char *buf;
     int count = 0;
@@ -1838,18 +1837,6 @@ static int ssdp_discover_printers(struct DiscoveredPrinter *results, int max_res
     sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sockfd < 0) {
         printf("Discovery: could not create UDP socket\n");
-        return 0;
-    }
-
-    /* Non-blocking + a fixed poll/Delay budget, rather than SO_RCVTIMEO:
-     * not every bsdsocket.library stack honours a receive timeout on a
-     * datagram socket, and relying on it left this loop able to block
-     * forever on recvfrom() after the first reply. */
-    /* This NDK's bsdsocket.h names the non-blocking ioctl FNONBIO rather
-     * than the more common BSD FIONBIO. */
-    if (IoctlSocket(sockfd, FNONBIO, (char *)&nonblock) < 0) {
-        printf("Discovery: could not set UDP socket non-blocking\n");
-        CloseSocket(sockfd);
         return 0;
     }
 
@@ -1880,12 +1867,12 @@ static int ssdp_discover_printers(struct DiscoveredPrinter *results, int max_res
     }
 
     for (poll_num = 0; poll_num < max_polls && count < max_results; poll_num++) {
+        fd_set readfds;
+        struct timeval tv;
+        long ready;
         struct sockaddr_in from;
-        socklen_t fromlen = sizeof(from);
+        socklen_t fromlen;
         ssize_t received;
-
-        memset(&from, 0, sizeof(from));
-        received = recvfrom(sockfd, buf, 1023, 0, (struct sockaddr *)&from, &fromlen);
 
         if (window) {
             struct IntuiMessage *imsg;
@@ -1894,11 +1881,24 @@ static int ssdp_discover_printers(struct DiscoveredPrinter *results, int max_res
             }
         }
 
+        /* Bound each poll to ~500ms with WaitSelect rather than trusting
+         * SO_RCVTIMEO on a datagram socket (not every bsdsocket.library
+         * stack honours it) or a non-blocking-mode ioctl (this NDK's name
+         * for it, FNONBIO, turned out not to work either). WaitSelect is
+         * the one bsdsocket.library primitive this is built directly on. */
+        FD_ZERO(&readfds);
+        FD_SET(sockfd, &readfds);
+        tv.tv_sec = 0;
+        tv.tv_usec = 500000;
+        ready = WaitSelect(sockfd + 1, &readfds, NULL, NULL, &tv, NULL);
+        if (ready <= 0) {
+            continue; /* timeout or error this poll; try again */
+        }
+
+        fromlen = sizeof(from);
+        memset(&from, 0, sizeof(from));
+        received = recvfrom(sockfd, buf, 1023, 0, (struct sockaddr *)&from, &fromlen);
         if (received <= 0) {
-            /* Non-blocking socket: nothing waiting yet. Pace the scan out
-             * over ~max_polls*500ms so replies still have time to arrive,
-             * without ever blocking indefinitely on recvfrom(). */
-            Delay(25); /* ~500ms; Amiga ticks are 50/sec */
             continue;
         }
         buf[received] = '\0';

@@ -14,15 +14,15 @@ all: gui
 
 help:
 	@echo "MintPRINT targets:"
-	@echo "  make gui      - build the existing MintPRINT setup/test GUI"
+	@echo "  make gui      - build MintPrint Settings (setup/test GUI)"
 	@echo "  make driver   - build the experimental DEVS:Printers/MintPRINT driver"
 	@echo "  make driver-symbols - show ABI symbols used by the driver"
 	@echo "  make clean"
 
-gui: MintPRINT
+gui: MintPrintSettings
 
-MintPRINT: src/IPP-Test16.c $(IFF_DIR_ESC)/iff-loader.c $(IFF_DIR_ESC)/iff-loader.h
-	$(CC) -O2 -g -I"$(IFF_DIR)" -o $@ src/IPP-Test16.c "$(IFF_DIR)/iff-loader.c" -lamiga -lm
+MintPrintSettings: src/MintPrintSettings.c $(IFF_DIR_ESC)/iff-loader.c $(IFF_DIR_ESC)/iff-loader.h
+	$(CC) -O2 -g -I"$(IFF_DIR)" -o $@ src/MintPrintSettings.c "$(IFF_DIR)/iff-loader.c" -lamiga -lm
 
 $(DRIVER_BUILD):
 	mkdir -p $@
@@ -61,4 +61,4 @@ driver: $(DRIVER_OUT)
 	@echo "Read docs/PRINTER_DEVICE_SPIKE.md before installing it."
 
 clean:
-	rm -rf build MintPRINT
+	rm -rf build MintPrintSettings

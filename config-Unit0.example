@@ -4,7 +4,7 @@ PORT=80
 PATH=/ipp/print
 ENGINE=jpeg
 KEEPJOB=1
-# Capability-backed defaults written by MintPRINT Preferences after Query Printer.
+# Capability-backed defaults written by MintPrint Settings after Query Printer.
 MEDIA=
 SOURCE=
 COLOR=

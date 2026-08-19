@@ -285,7 +285,7 @@ char driver_path_buffer[96] = "/ipp/print";
 BOOL driver_keep_job = TRUE;
 static STRPTR keep_job_labels[] = { "Delete job JPEG", "Keep debug JPEG", NULL };
 char driver_engine_buffer[32] = "jpeg";
-static STRPTR engine_labels[] = { "JPEG", "PWG Raster", NULL };
+static STRPTR engine_labels[] = { "JPEG", "PWG Raster", "PDF", NULL };
 char driver_media_buffer[MAX_ATTR_LEN] = "";
 char driver_source_buffer[MAX_ATTR_LEN] = "";
 char driver_color_buffer[MAX_ATTR_LEN] = "";
@@ -515,6 +515,13 @@ static const char *engine_mime_type(const char *engine) {
     return "image/jpeg";
 }
 
+/* engine_labels[] order: 0=JPEG, 1=PWG Raster, 2=PDF. */
+static ULONG mp_engine_active_index(void) {
+    if (strcmp(driver_engine_buffer, "pwg-raster") == 0) return 1;
+    if (strcmp(driver_engine_buffer, "pdf") == 0) return 2;
+    return 0;
+}
+
 /* Every document-format this driver's engines can actually produce. Kept
  * in sync with engine_mime_type()'s cases. */
 static const char *mp_supported_engine_mimes[] = {
@@ -624,7 +631,9 @@ static void capture_driver_settings(struct Window *win) {
         GT_GetGadgetAttrs(g, win, NULL,
                           GTCY_Active, (ULONG)&engine_active,
                           TAG_DONE);
-        strcpy(driver_engine_buffer, engine_active == 1 ? "pwg-raster" : "jpeg");
+        if (engine_active == 1) strcpy(driver_engine_buffer, "pwg-raster");
+        else if (engine_active == 2) strcpy(driver_engine_buffer, "pdf");
+        else strcpy(driver_engine_buffer, "jpeg");
         warn_if_engine_unsupported(driver_engine_buffer);
     }
 
@@ -830,6 +839,8 @@ static BOOL load_driver_config(void) {
         } else if (strncmp(line, "ENGINE=", 7) == 0) {
             if (strcmp(line + 7, "pwg-raster") == 0)
                 strcpy(driver_engine_buffer, "pwg-raster");
+            else if (strcmp(line + 7, "pdf") == 0)
+                strcpy(driver_engine_buffer, "pdf");
             else
                 strcpy(driver_engine_buffer, "jpeg");
         } else if (strncmp(line, "KEEPJOB=", 8) == 0) {
@@ -1148,7 +1159,7 @@ static void apply_driver_config_to_gadgets(struct Window *win) {
     g = find_gadget_by_id(GAD_ENGINE);
     if (g)
         GT_SetGadgetAttrs(g, win, NULL,
-                          GTCY_Active, strcmp(driver_engine_buffer, "pwg-raster") == 0 ? 1 : 0,
+                          GTCY_Active, mp_engine_active_index(),
                           TAG_DONE);
 
     g = find_gadget_by_id(GAD_MODEL_DISPLAY);
@@ -3933,8 +3944,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
         ng.ng_TopEdge = row2_top;
     }
 
-    // Printer document engine. JPEG is the current working backend;
-    // PWG Raster is persisted now and will be activated by the backend patch.
+    // Printer document engine: JPEG, PWG Raster, or PDF.
     ng.ng_LeftEdge = 130;
     ng.ng_TopEdge += 20;
     ng.ng_Width = 180;
@@ -3943,7 +3953,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     ng.ng_GadgetID = GAD_ENGINE;
     gad = CreateGadget(CYCLE_KIND, gad, &ng,
         GTCY_Labels, (ULONG)engine_labels,
-        GTCY_Active, strcmp(driver_engine_buffer, "pwg-raster") == 0 ? 1 : 0,
+        GTCY_Active, mp_engine_active_index(),
         TAG_DONE);
     if (!gad) {
         printf("Failed to create printer engine gadget\n");

@@ -53,10 +53,12 @@ printer's IP/host, IPP path, and document format in MintPrint Settings.
 
 ## Supported document formats
 
-`image/jpeg` and `image/pwg-raster` today. Any IPP Everywhere or
-AirPrint-certified printer (most network printers from roughly the last
+`image/jpeg`, `image/pwg-raster`, and `application/pdf`. Any IPP Everywhere
+or AirPrint-certified printer (most network printers from roughly the last
 decade) is required to accept PWG Raster, so most printers should already
-work.
+work with that alone - PDF is there for older or partially-compliant IPP
+printers (often office/business multifunction devices) that only advertise
+`application/pdf` and reject raster formats entirely.
 
 ## Reporting a problem
 

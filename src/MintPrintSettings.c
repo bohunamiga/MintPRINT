@@ -180,6 +180,8 @@ static struct NewMenu menu_template[] = {
     { NM_ITEM,  (STRPTR)"Save Driver Settings", 0, 0, 0, 0 },
     { NM_ITEM,  (STRPTR)"Reload Driver Settings", 0, 0, 0, 0 },
     { NM_ITEM,  NM_BARLABEL, 0, 0, 0, 0 },
+    { NM_ITEM,  (STRPTR)"About MintPRINT...", 0, 0, 0, 0 },
+    { NM_ITEM,  NM_BARLABEL, 0, 0, 0, 0 },
     { NM_ITEM,  (STRPTR)"Quit", 0, 0, 0, 0 },
     { NM_END,   NULL, 0, 0, 0, 0 }
 };
@@ -509,7 +511,55 @@ static void refresh_unit_dropdown(struct Window *win) {
 
 static const char *engine_mime_type(const char *engine) {
     if (strcmp(engine, "pwg-raster") == 0) return "image/pwg-raster";
+    if (strcmp(engine, "pdf") == 0) return "application/pdf";
     return "image/jpeg";
+}
+
+/* Every document-format this driver's engines can actually produce. Kept
+ * in sync with engine_mime_type()'s cases. */
+static const char *mp_supported_engine_mimes[] = {
+    "image/jpeg", "image/pwg-raster", "application/pdf"
+};
+#define MP_SUPPORTED_ENGINE_MIME_COUNT \
+    (sizeof(mp_supported_engine_mimes) / sizeof(mp_supported_engine_mimes[0]))
+
+/* After a successful Query, checks whether the printer advertised ANY
+ * document-format this driver can actually produce. Unlike
+ * warn_if_engine_unsupported() (which only flags a mismatch with the
+ * currently-selected engine and is purely informational), a printer that
+ * supports none of them cannot be printed to at all - a hard "this
+ * printer isn't supported" finding, worth a real requester rather than a
+ * status-box line easily missed among the rest of the Query output. */
+static void mp_check_any_engine_supported(struct Window *win) {
+    int i, j;
+    BOOL any_match = FALSE;
+    struct EasyStruct es;
+
+    if (num_supported_formats == 0) return; /* printer didn't report - can't judge */
+
+    for (i = 0; i < num_supported_formats && !any_match; i++) {
+        for (j = 0; j < (int)MP_SUPPORTED_ENGINE_MIME_COUNT; j++) {
+            if (strcasecmp(supported_formats[i], mp_supported_engine_mimes[j]) == 0) {
+                any_match = TRUE;
+                break;
+            }
+        }
+    }
+
+    if (any_match) return;
+
+    es.es_StructSize = sizeof(struct EasyStruct);
+    es.es_Flags = 0;
+    es.es_Title = (UBYTE *)"MintPrint Settings";
+    es.es_TextFormat = (UBYTE *)
+        "This printer did not advertise any document format\n"
+        "MintPRINT can produce (JPEG, PWG Raster, or PDF).\n\n"
+        "It is likely not supported yet. To help add support,\n"
+        "please log an issue at github.com/boingball/MintPRINT -\n"
+        "run windows_ipp_probe.py (from a Windows PC on the same\n"
+        "network) against this printer and attach its output.";
+    es.es_GadgetFormat = (UBYTE *)"OK";
+    EasyRequest(win, &es, NULL);
 }
 
 /* Cross-checks the chosen engine against the formats the printer actually
@@ -2041,6 +2091,22 @@ static BOOL mp_read_driver_revision(CONST_STRPTR path, UWORD *revision_out) {
     return found;
 }
 
+static void show_about(struct Window *win) {
+    struct EasyStruct es;
+
+    es.es_StructSize = sizeof(struct EasyStruct);
+    es.es_Flags = 0;
+    es.es_Title = (UBYTE *)"About MintPrint Settings";
+    es.es_TextFormat = (UBYTE *)
+        "MintPRINT - IPP/AirPrint printing for AmigaOS\n\n"
+        "Bug reports and source:\n"
+        "github.com/boingball/MintPRINT\n\n"
+        "If this saved you a trip to the printer shop:\n"
+        "buymeacoffee.com/boingball";
+    es.es_GadgetFormat = (UBYTE *)"OK";
+    EasyRequest(win, &es, NULL);
+}
+
 static void check_and_offer_driver_install(struct Window *win) {
     struct EasyStruct es;
     char msg[192];
@@ -3215,6 +3281,7 @@ static void perform_query_flow(struct Window *win, const char *ip_only, int port
                 printf("Warning: could not save printer capability cache\n");
 
             apply_job_defaults_to_gadgets(win);
+            mp_check_any_engine_supported(win);
             break;
         }
     }
@@ -4288,7 +4355,11 @@ void process_window_events(struct Window *win) {
                                         reload_current_unit(win);
                                         break;
 
-                                    case 3: // Quit
+                                    case 3: // About MintPRINT...
+                                        show_about(win);
+                                        break;
+
+                                    case 5: // Quit
                                         terminated = TRUE;
                                         break;
                                 }

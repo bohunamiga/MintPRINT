@@ -1966,9 +1966,22 @@ static BOOL mp_copy_file(CONST_STRPTR src, CONST_STRPTR dst) {
 }
 
 static void mp_launch_printer_prefs(void) {
-    if (SystemTags((CONST_STRPTR)"SYS:Prefs/Printer", SYS_Asynch, TRUE, TAG_DONE) != 0) {
+    /* SYS_Asynch without explicit SYS_Input/SYS_Output shares the CALLER's
+     * own console handles with the new process - and an async process
+     * closes its input/output when it exits, which then closes the
+     * caller's (this program's, and its launching Shell's) console out
+     * from under it. Give the child its own private NIL: handles instead
+     * so it owns and closes only those. */
+    BPTR in = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
+    BPTR out = Open((CONST_STRPTR)"NIL:", MODE_NEWFILE);
+
+    if (SystemTags((CONST_STRPTR)"SYS:Prefs/Printer", SYS_Asynch, TRUE,
+                   SYS_Input, (ULONG)in, SYS_Output, (ULONG)out,
+                   TAG_DONE) != 0) {
         printf("Could not launch SYS:Prefs/Printer automatically\n");
         printf("Please open Printer preferences manually.\n");
+        if (in) Close(in);
+        if (out) Close(out);
     }
 }
 

@@ -121,18 +121,39 @@ crash it was meant to test around, `PRTA_NoIO` is back on. This diagnostic
 line of investigation is a dead end as tested - the DPaint crash (with
 `PRTA_NoIO` on, port setting irrelevant) remains unresolved.
 
-## Status: implemented, not yet physically test-printed
+## Round 4: MultiView broke too - this whole approach reverted
 
-This fix was derived and implemented from an independent check of the
-AmigaOS Task/Process/`dos.library` rules, cross-referenced against
-documented `printer.device` driver callback behaviour and `CreateNewProc`'s
-documented tag defaults (cross-checked against AROS's dos.library
-reimplementation, which reads the same calling-process fields under the
-same tag names), and against the empirical evidence that the crash was
-caller-specific (DPaint) rather than universal, and that it moved earlier
-after the first fix attempt. That gives good confidence in the diagnosis
-and the shape of the fix. It has **not** yet been confirmed to fix the
-actual DPaint crash on real hardware/WinUAE - that is the next step.
+A clean install, tested with MultiView (not DPaint), still crashed -
+`#80000008` this time, a fourth different exception vector across four
+attempts - with `T:MintPRINT-driver.log` completely empty again. MultiView
+is a real Process, not a bare Task, and it was solidly confirmed working
+*before* `spool.c` existed ("multiview prints, graphicdump prints"). That
+breaks the entire premise rounds 1-3 were built on: the spool process has
+not been confirmed to start successfully even once, for any caller, since
+it was introduced - meaning rounds 2 and 3 were most likely debugging a
+Task/Process-specific theory on top of a regression that was never
+caller-specific at all.
+
+**`driver/driver_core.c` has been reverted to the last confirmed-working
+version** (the one before `spool.c` existed - commit `81f28f9`), restoring
+direct `dos.library` calls from the driver's own callbacks exactly as
+before this whole investigation started. `driver/spool.c` and
+`driver/spool.h` are left in the repository (still built by the Makefile,
+just no longer called from `driver_core.c`) rather than deleted, since the
+underlying Task/Process reasoning in rounds 1-2 may still be correct and
+worth revisiting - but only once re-introduced incrementally, with an
+actual confirmed-working test at each step, rather than landed as one large
+change and debugged after the fact against a moving, unconfirmed baseline.
+
+## Current status
+
+Back to the original, pre-investigation state: `DEVS:Printers/MintPRINT`
+works for MultiView and GraphicDump. The DPaint-specific crash
+(`printer.device`, error `#8000000A` on the original code) is
+**unresolved** and parked - not fixed, not actively being chased with
+further speculative changes. If revisited, the next step should be getting
+an actual PC/backtrace (WinUAE's debugger or log) before writing more code,
+rather than another round of hypothesis-and-rebuild.
 
 ## Build/install/test
 
@@ -141,15 +162,8 @@ actual DPaint crash on real hardware/WinUAE - that is the next step.
 
 Copy `build/driver/MintPRINT` to `DEVS:Printers/MintPRINT` and reboot (or
 otherwise ensure the old driver segment is unloaded) before testing - a
-stale, already-loaded driver segment will not pick up this change.
+stale, already-loaded driver segment will not pick up any driver change.
 
-Print from DPaint as usual. If it still crashes, `T:MintPRINT-driver.log`
-may not reflect the very last events (the spool process's log write for a
-given event can be interrupted by the same crash it's trying to record), so
-also note whether the crash address/exception type changed from
-`#8000000A` - a different failure would point at a different remaining bug
-rather than this one.
-
-Trace lines are unchanged in wording (still start `MintPRINT: `) since only
-*how* they reach disk changed, not their content - the JPEG/PWG traces in
-`docs/PRINTER_DEVICE_SPIKE3.md` and `docs/PWG_RASTER.md` still apply as-is.
+Trace lines are unchanged in wording (still start `MintPRINT: `) - the
+JPEG/PWG traces in `docs/PRINTER_DEVICE_SPIKE3.md` and
+`docs/PWG_RASTER.md` still apply as-is.

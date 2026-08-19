@@ -7,8 +7,9 @@ IFF_DIR := Archive/Old JPEG Decode
 IFF_DIR_ESC := Archive/Old\ JPEG\ Decode
 DRIVER_BUILD := build/driver
 DRIVER_OUT := $(DRIVER_BUILD)/MintPRINT
+RELEASE_DIR := release/MintPRINT
 
-.PHONY: all gui driver driver-symbols clean help
+.PHONY: all gui driver driver-symbols release clean help
 
 all: gui
 
@@ -17,6 +18,7 @@ help:
 	@echo "  make gui      - build MintPrint Settings (setup/test GUI)"
 	@echo "  make driver   - build the experimental DEVS:Printers/MintPRINT driver"
 	@echo "  make driver-symbols - show ABI symbols used by the driver"
+	@echo "  make release  - build both and stage a distributable bundle"
 	@echo "  make clean"
 
 gui: MintPrintSettings
@@ -66,5 +68,26 @@ driver: $(DRIVER_OUT)
 	@echo "Built experimental printer driver: $(DRIVER_OUT)"
 	@echo "Read docs/PRINTER_DEVICE_SPIKE.md before installing it."
 
+# Stages a distributable bundle: MintPrintSettings copied next to a plain
+# "MintPRINT" driver binary, matching PROGDIR:MintPRINT - the layout
+# check_and_offer_driver_install() (src/MintPrintSettings.c) expects when
+# it offers to install/update the driver from wherever MintPrintSettings
+# itself is run from. Does not generate icons - add MintPrintSettings.info
+# and MintPRINT.info inside $(RELEASE_DIR), and a drawer icon named to
+# match this folder in its parent directory, before distributing.
+release: gui driver
+	mkdir -p $(RELEASE_DIR)
+	cp MintPrintSettings $(RELEASE_DIR)/
+	cp $(DRIVER_OUT) $(RELEASE_DIR)/MintPRINT
+	@echo
+	@echo "Release bundle staged in $(RELEASE_DIR)/:"
+	@echo "  MintPrintSettings  - run this to configure/install"
+	@echo "  MintPRINT          - the driver it installs from PROGDIR: (must"
+	@echo "                       stay next to MintPrintSettings)"
+	@echo
+	@echo "No icons generated - add MintPrintSettings.info and MintPRINT.info"
+	@echo "inside $(RELEASE_DIR)/, and a drawer icon matching this folder's"
+	@echo "name in its parent directory, before distributing."
+
 clean:
-	rm -rf build MintPrintSettings
+	rm -rf build release MintPrintSettings

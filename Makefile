@@ -71,31 +71,49 @@ driver: $(DRIVER_OUT)
 	@echo "Built experimental printer driver: $(DRIVER_OUT)"
 	@echo "Read docs/PRINTER_DEVICE_SPIKE.md before installing it."
 
+ART_DIR := art
+
 # Stages a distributable bundle: MintPrintSettings copied next to a plain
 # "MintPRINT" driver binary, matching PROGDIR:MintPRINT - the layout
 # check_and_offer_driver_install() (src/MintPrintSettings.c) expects when
 # it offers to install/update the driver from wherever MintPrintSettings
-# itself is run from. Does not generate icons - add MintPrintSettings.info
-# and MintPRINT.info inside $(RELEASE_DIR), and a drawer icon named to
-# match this folder in its parent directory, before distributing.
+# itself is run from.
+#
+# Icons are copied from $(ART_DIR)/ if present there, matching AmigaOS
+# icon placement: a drawer's icon lives in its PARENT directory (so
+# MintPRINT.info lands next to $(RELEASE_DIR), not inside it), while an
+# application's icon sits right next to its binary. The driver binary
+# deliberately gets no icon at all - it is a printer.device driver
+# segment, not a runnable program, and double-clicking it is unsafe.
 release: gui driver
 	mkdir -p $(RELEASE_DIR)
 	cp MintPrintSettings $(RELEASE_DIR)/
 	cp $(DRIVER_OUT) $(RELEASE_DIR)/MintPRINT
 	cp Aminet/MintPRINT.readme release/MintPRINT.readme
+	@if [ -f $(ART_DIR)/MintPrintSettings.info ]; then \
+		cp $(ART_DIR)/MintPrintSettings.info $(RELEASE_DIR)/; \
+		echo "Copied $(ART_DIR)/MintPrintSettings.info -> $(RELEASE_DIR)/"; \
+	else \
+		echo "No $(ART_DIR)/MintPrintSettings.info found - application will have no icon"; \
+	fi
+	@if [ -f $(ART_DIR)/MintPRINT.info ]; then \
+		cp $(ART_DIR)/MintPRINT.info release/MintPRINT.info; \
+		echo "Copied $(ART_DIR)/MintPRINT.info -> release/MintPRINT.info (drawer icon)"; \
+	else \
+		echo "No $(ART_DIR)/MintPRINT.info found - release drawer will have no icon"; \
+	fi
 	@echo
 	@echo "Release bundle staged in $(RELEASE_DIR)/:"
-	@echo "  MintPrintSettings  - run this to configure/install"
-	@echo "  MintPRINT          - the driver it installs from PROGDIR: (must"
-	@echo "                       stay next to MintPrintSettings)"
+	@echo "  MintPrintSettings       - run this to configure/install"
+	@echo "  MintPRINT                - the driver it installs from PROGDIR:"
+	@echo "                            (must stay next to MintPrintSettings;"
+	@echo "                            deliberately has no icon)"
+	@echo "  MintPrintSettings.info  - if $(ART_DIR)/ had one"
 	@echo
-	@echo "release/MintPRINT.readme - the Aminet readme, staged next to the"
+	@echo "release/MintPRINT.info    - the drawer's own icon, if $(ART_DIR)/ had one"
+	@echo "release/MintPRINT.readme  - the Aminet readme, staged next to the"
 	@echo "drawer (not inside it) per Aminet convention: name it to match"
 	@echo "whatever .lha/.zip archive you make of $(RELEASE_DIR)/."
-	@echo
-	@echo "No icons generated - add MintPrintSettings.info and MintPRINT.info"
-	@echo "inside $(RELEASE_DIR)/, and a drawer icon matching this folder's"
-	@echo "name in its parent directory, before distributing."
 
 clean:
 	rm -rf build release MintPrintSettings

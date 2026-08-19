@@ -4,6 +4,8 @@ Experimental IPP/AirPrint printing tools and GUI experiments for AmigaOS.
 
 This project contains work on querying modern IPP printers from AmigaOS, parsing printer capabilities, handling media/tray mappings, and experimenting with JPEG/PWG print job submission.
 
+`MintPrintSettings.c` builds **MintPrint Settings**, the GUI setup/test tool. It can query a printer by IP, discover printers on the LAN (SSDP), report the document formats a printer advertises, and offer to install `DEVS:Printers/MintPRINT` if it's missing. See `docs/MINTPRINT_PREFS.md` for details.
+
 ## Status
 
 Experimental / work in progress.
@@ -12,7 +14,7 @@ Several historical test builds are preserved because printer firmware behaviour 
 
 ## Contents
 
-- `IPP-Test16.c` - later GUI/printing test version
+- `MintPrintSettings.c` - MintPrint Settings, the GUI/printing test and configuration front-end (formerly `IPP-Test16.c`)
 - `IPP-130725.c` - later test version from July 2025
 - `ippdump.c` - IPP attribute dump/debug utility
 - `ipp-dumper.c` - smaller IPP dumping test utility

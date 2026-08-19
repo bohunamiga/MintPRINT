@@ -1,3 +1,7 @@
+/* MintPrint Settings (formerly IPP-Test16.c / "MintPRINT Preferences").
+   Setup/test GUI for the DEVS:Printers/MintPRINT driver: LAN printer
+   discovery, IPP capability query, driver install/select helper, and
+   per-job defaults editing. */
 /* MintPRINT GUI stabilised: no live cycle-label frees; safe teardown. */
 /* MintPRINT prefs #9: compact address row and status-box fit. */
 /* MintPRINT prefs #8: capability cache and output-area layout polish. */
@@ -58,6 +62,19 @@ extern struct GfxBase *GfxBase;
 #define GAD_KEEPJOB 11
 #define GAD_ENGINE 12
 #define GAD_SAVE_BUTTON 13
+#define GAD_DISCOVER_BUTTON 14
+
+// Discovery selection dialog gadget IDs (separate window/gadget list)
+#define GAD_DISC_CYCLE  1
+#define GAD_DISC_USE    2
+#define GAD_DISC_CANCEL 3
+
+#define MAX_DISCOVERY_RESULTS 16
+
+struct DiscoveredPrinter {
+    char ip[16];
+    char label[80];
+};
 
 #define OUTPUT_TOP     270 // Below Test Print / Save / Exit row
 #define OUTPUT_LEFT    10
@@ -344,6 +361,40 @@ static BOOL ensure_config_dir(CONST_STRPTR name) {
     return TRUE;
 }
 
+/* custom_printf() itself is defined further down (it draws into the on-screen
+ * output box), but this warning needs to reach the GUI log rather than stdio,
+ * so it is forward-declared and called directly here. */
+void custom_printf(const char *format, ...);
+
+static const char *engine_mime_type(const char *engine) {
+    if (strcmp(engine, "pwg-raster") == 0) return "image/pwg-raster";
+    return "image/jpeg";
+}
+
+/* Cross-checks the chosen engine against the formats the printer actually
+ * advertised in document-format-supported (populated by a prior Query).
+ * Purely informational: it does not block Save, since a printer that has
+ * never been queried yet has an empty list and should not be warned about. */
+static void warn_if_engine_unsupported(const char *engine) {
+    const char *mime;
+    int i;
+    BOOL found;
+
+    if (num_supported_formats == 0) return;
+
+    mime = engine_mime_type(engine);
+    found = FALSE;
+    for (i = 0; i < num_supported_formats; i++) {
+        if (strcasecmp(supported_formats[i], mime) == 0) {
+            found = TRUE;
+            break;
+        }
+    }
+    if (!found) {
+        custom_printf("Warning: printer did not advertise %s support for the '%s' engine\n", mime, engine);
+    }
+}
+
 static void capture_driver_settings(struct Window *win) {
     struct Gadget *g;
     char *value = NULL;
@@ -383,6 +434,7 @@ static void capture_driver_settings(struct Window *win) {
                           GTCY_Active, (ULONG)&engine_active,
                           TAG_DONE);
         strcpy(driver_engine_buffer, engine_active == 1 ? "pwg-raster" : "jpeg");
+        warn_if_engine_unsupported(driver_engine_buffer);
     }
 
     /* Persist the capability-backed choices currently visible in the GUI. */
@@ -473,7 +525,7 @@ static BOOL write_driver_config_file(CONST_STRPTR filename) {
     file = Open(filename, MODE_NEWFILE);
     if (!file) return FALSE;
 
-    FPuts(file, "# MintPRINT Unit0 - written by MintPRINT Preferences\n");
+    FPuts(file, "# MintPRINT Unit0 - written by MintPrint Settings\n");
     snprintf(line, sizeof(line), "HOST=%s\n", host);
     FPuts(file, line);
     snprintf(line, sizeof(line), "PORT=%d\n", port);
@@ -1637,6 +1689,418 @@ int convert_to_pwg(unsigned char *rgb, int w, int h, unsigned char **pwg_out, in
     *pwg_size_out = size;
     return 0;
 }
+/* ---------------------------------------------------------------------
+ * DEVS:Printers/MintPRINT install helper
+ *
+ * MintPrint Settings ships next to the compiled MintPRINT printer.device
+ * driver (PROGDIR:MintPRINT). If the driver is not yet installed in
+ * DEVS:Printers/, offer to copy it in and point the user at Printer Prefs.
+ * ------------------------------------------------------------------- */
+#define MINTPRINT_DRIVER_DEST ((CONST_STRPTR)"DEVS:Printers/MintPRINT")
+#define MINTPRINT_DRIVER_SRC  ((CONST_STRPTR)"PROGDIR:MintPRINT")
+
+static BOOL mp_file_exists(CONST_STRPTR name) {
+    BPTR lock = Lock(name, ACCESS_READ);
+    if (lock) {
+        UnLock(lock);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static BOOL mp_copy_file(CONST_STRPTR src, CONST_STRPTR dst) {
+    BPTR in, out;
+    UBYTE *buf;
+    LONG nread;
+    BOOL ok = TRUE;
+
+    in = Open(src, MODE_OLDFILE);
+    if (!in) return FALSE;
+
+    out = Open(dst, MODE_NEWFILE);
+    if (!out) {
+        Close(in);
+        return FALSE;
+    }
+
+    buf = AllocVec(32768, MEMF_ANY);
+    if (!buf) {
+        Close(out);
+        Close(in);
+        return FALSE;
+    }
+
+    while ((nread = Read(in, buf, 32768)) > 0) {
+        if (Write(out, buf, nread) != nread) {
+            ok = FALSE;
+            break;
+        }
+    }
+    if (nread < 0) ok = FALSE;
+
+    FreeVec(buf);
+    Close(out);
+    Close(in);
+
+    if (!ok) DeleteFile(dst);
+    return ok;
+}
+
+static void mp_launch_printer_prefs(void) {
+    if (SystemTags((CONST_STRPTR)"SYS:Prefs/Printer", SYS_Asynch, TRUE, TAG_DONE) != 0) {
+        printf("Could not launch SYS:Prefs/Printer automatically\n");
+        printf("Please open Printer preferences manually.\n");
+    }
+}
+
+static void check_and_offer_driver_install(struct Window *win) {
+    struct EasyStruct es;
+
+    if (mp_file_exists(MINTPRINT_DRIVER_DEST)) {
+        return; /* already installed */
+    }
+
+    if (!mp_file_exists(MINTPRINT_DRIVER_SRC)) {
+        printf("MintPRINT driver not found next to this program; skipping install check.\n");
+        return;
+    }
+
+    es.es_StructSize = sizeof(struct EasyStruct);
+    es.es_Flags = 0;
+    es.es_Title = (UBYTE *)"MintPrint Settings";
+    es.es_TextFormat = (UBYTE *)"The MintPRINT printer driver is not installed in\nDEVS:Printers/. Install it now?";
+    es.es_GadgetFormat = (UBYTE *)"Install|Cancel";
+
+    if (EasyRequest(win, &es, NULL)) {
+        if (mp_copy_file(MINTPRINT_DRIVER_SRC, MINTPRINT_DRIVER_DEST)) {
+            printf("Installed MintPRINT driver to DEVS:Printers/MintPRINT\n");
+
+            es.es_TextFormat = (UBYTE *)"MintPRINT driver installed.\n\nOpen Printer preferences now and select\n'MintPRINT' as your printer, then save.";
+            es.es_GadgetFormat = (UBYTE *)"Open Printer Prefs|Later";
+            if (EasyRequest(win, &es, NULL)) {
+                mp_launch_printer_prefs();
+            }
+        } else {
+            es.es_TextFormat = (UBYTE *)"Could not copy the driver to DEVS:Printers/.\nCheck disk space and write access.";
+            es.es_GadgetFormat = (UBYTE *)"OK";
+            EasyRequest(win, &es, NULL);
+        }
+    }
+}
+
+/* ---------------------------------------------------------------------
+ * LAN printer discovery (SSDP)
+ *
+ * Sends a single SSDP M-SEARCH multicast and collects distinct source
+ * addresses that reply within a few seconds. Any AirPrint/network printer
+ * that answers UPnP discovery (most consumer inkjets/lasers do, alongside
+ * mDNS) shows up here as a candidate; the actual IPP capability check
+ * still goes through the same query_printer_attributes() used by the
+ * Query button once the user picks one from the list.
+ * ------------------------------------------------------------------- */
+static void ssdp_extract_server(const char *buf, char *out, int out_size) {
+    const char *p = strstr(buf, "SERVER:");
+    if (!p) p = strstr(buf, "Server:");
+    if (!p) p = strstr(buf, "server:");
+    out[0] = '\0';
+    if (p) {
+        int i = 0;
+        p += 7;
+        while (*p == ' ') p++;
+        while (*p && *p != '\r' && *p != '\n' && i < out_size - 1) {
+            out[i++] = *p++;
+        }
+        out[i] = '\0';
+    }
+}
+
+static BOOL discovery_ip_seen(struct DiscoveredPrinter *results, int count, const char *ip) {
+    int i;
+    for (i = 0; i < count; i++) {
+        if (strcmp(results[i].ip, ip) == 0) return TRUE;
+    }
+    return FALSE;
+}
+
+static int ssdp_discover_printers(struct DiscoveredPrinter *results, int max_results) {
+    int sockfd;
+    struct sockaddr_in dest;
+    struct timeval tv;
+    char msearch[256];
+    char *buf;
+    int count = 0;
+    int poll_num;
+    const int max_polls = 10; /* ~500ms per poll => ~5s total scan time */
+
+    if (max_results <= 0) return 0;
+
+    sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sockfd < 0) {
+        printf("Discovery: could not create UDP socket\n");
+        return 0;
+    }
+
+    tv.tv_sec = 0;
+    tv.tv_usec = 500000;
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+
+    memset(&dest, 0, sizeof(dest));
+    dest.sin_family = AF_INET;
+    dest.sin_port = htons(1900);
+    dest.sin_addr.s_addr = inet_addr((STRPTR)"239.255.255.250");
+
+    snprintf(msearch, sizeof(msearch),
+        "M-SEARCH * HTTP/1.1\r\n"
+        "HOST: 239.255.255.250:1900\r\n"
+        "MAN: \"ssdp:discover\"\r\n"
+        "MX: 3\r\n"
+        "ST: ssdp:all\r\n"
+        "\r\n");
+
+    if (sendto(sockfd, msearch, strlen(msearch), 0,
+               (struct sockaddr *)&dest, sizeof(dest)) < 0) {
+        printf("Discovery: SSDP send failed (no route to 239.255.255.250?)\n");
+        CloseSocket(sockfd);
+        return 0;
+    }
+
+    buf = malloc(1024);
+    if (!buf) {
+        CloseSocket(sockfd);
+        return 0;
+    }
+
+    for (poll_num = 0; poll_num < max_polls && count < max_results; poll_num++) {
+        struct sockaddr_in from;
+        int fromlen = sizeof(from);
+        ssize_t received;
+
+        memset(&from, 0, sizeof(from));
+        received = recvfrom(sockfd, buf, 1023, 0, (struct sockaddr *)&from, &fromlen);
+
+        if (window) {
+            struct IntuiMessage *imsg;
+            while ((imsg = GT_GetIMsg(window->UserPort))) {
+                GT_ReplyIMsg(imsg);
+            }
+        }
+
+        if (received <= 0) {
+            continue;
+        }
+        buf[received] = '\0';
+
+        {
+            char ipstr[16];
+            char *addr_text = inet_ntoa(from.sin_addr);
+            strncpy(ipstr, addr_text ? addr_text : "", sizeof(ipstr) - 1);
+            ipstr[sizeof(ipstr) - 1] = '\0';
+
+            if (ipstr[0] && !discovery_ip_seen(results, count, ipstr)) {
+                char server_info[64];
+                ssdp_extract_server(buf, server_info, sizeof(server_info));
+
+                strncpy(results[count].ip, ipstr, sizeof(results[count].ip) - 1);
+                results[count].ip[sizeof(results[count].ip) - 1] = '\0';
+
+                if (server_info[0]) {
+                    snprintf(results[count].label, sizeof(results[count].label),
+                             "%s (%s)", ipstr, server_info);
+                } else {
+                    snprintf(results[count].label, sizeof(results[count].label),
+                             "%s", ipstr);
+                }
+
+                printf("Discovery: found %s\n", results[count].label);
+                count++;
+            }
+        }
+    }
+
+    free(buf);
+    CloseSocket(sockfd);
+    return count;
+}
+
+/* Small GadTools dialog listing discovered candidates as a cycle gadget.
+ * Mirrors the main window's CreateContext/CreateGadget/OpenWindowTags
+ * pattern so it reuses the same, already-proven idioms. */
+static BOOL run_discovery_selection(struct Window *parent,
+                                     struct DiscoveredPrinter *results,
+                                     int count,
+                                     char *chosen_ip,
+                                     int chosen_ip_size) {
+    struct Screen *dscreen;
+    APTR dvi;
+    struct Gadget *dglist = NULL;
+    struct Gadget *gad;
+    struct NewGadget ng;
+    struct Window *dwin;
+    STRPTR *labels;
+    BOOL picked = FALSE;
+    BOOL terminated = FALSE;
+    UWORD topborder;
+    int i;
+
+    (void)parent;
+
+    if (count <= 0) return FALSE;
+
+    dscreen = LockPubScreen(NULL);
+    if (!dscreen) return FALSE;
+
+    dvi = GetVisualInfo(dscreen, TAG_DONE);
+    if (!dvi) {
+        UnlockPubScreen(NULL, dscreen);
+        return FALSE;
+    }
+
+    labels = AllocVec((count + 1) * sizeof(STRPTR), MEMF_CLEAR);
+    if (!labels) {
+        FreeVisualInfo(dvi);
+        UnlockPubScreen(NULL, dscreen);
+        return FALSE;
+    }
+    for (i = 0; i < count; i++) {
+        labels[i] = (STRPTR)results[i].label;
+    }
+    labels[count] = NULL;
+
+    topborder = dscreen->WBorTop + (dscreen->Font->ta_YSize + 1);
+
+    gad = CreateContext(&dglist);
+    if (!gad) {
+        FreeVec(labels);
+        FreeVisualInfo(dvi);
+        UnlockPubScreen(NULL, dscreen);
+        return FALSE;
+    }
+
+    ng.ng_TextAttr = &Topaz80;
+    ng.ng_VisualInfo = dvi;
+    ng.ng_Flags = 0;
+    ng.ng_LeftEdge = 10;
+    ng.ng_TopEdge = 10 + topborder;
+    ng.ng_Width = 380;
+    ng.ng_Height = 14;
+    ng.ng_GadgetText = (STRPTR)"Found:";
+    ng.ng_GadgetID = GAD_DISC_CYCLE;
+    gad = CreateGadget(CYCLE_KIND, gad, &ng,
+        GTCY_Labels, (ULONG)labels,
+        GTCY_Active, 0,
+        TAG_DONE);
+    if (!gad) {
+        FreeGadgets(dglist);
+        FreeVec(labels);
+        FreeVisualInfo(dvi);
+        UnlockPubScreen(NULL, dscreen);
+        return FALSE;
+    }
+
+    ng.ng_TopEdge += 26;
+    ng.ng_LeftEdge = 10;
+    ng.ng_Width = 100;
+    ng.ng_Height = 14;
+    ng.ng_GadgetText = (STRPTR)"_Use Selected";
+    ng.ng_GadgetID = GAD_DISC_USE;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng,
+        GT_Underscore, '_',
+        TAG_DONE);
+    if (!gad) {
+        FreeGadgets(dglist);
+        FreeVec(labels);
+        FreeVisualInfo(dvi);
+        UnlockPubScreen(NULL, dscreen);
+        return FALSE;
+    }
+
+    ng.ng_LeftEdge = 290;
+    ng.ng_Width = 100;
+    ng.ng_GadgetText = (STRPTR)"_Cancel";
+    ng.ng_GadgetID = GAD_DISC_CANCEL;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng,
+        GT_Underscore, '_',
+        TAG_DONE);
+    if (!gad) {
+        FreeGadgets(dglist);
+        FreeVec(labels);
+        FreeVisualInfo(dvi);
+        UnlockPubScreen(NULL, dscreen);
+        return FALSE;
+    }
+
+    dwin = OpenWindowTags(NULL,
+        WA_Title, (ULONG)"Select Discovered Printer",
+        WA_Gadgets, (ULONG)dglist,
+        WA_Width, 400,
+        WA_InnerHeight, 70,
+        WA_DragBar, TRUE,
+        WA_DepthGadget, TRUE,
+        WA_Activate, TRUE,
+        WA_CloseGadget, TRUE,
+        WA_SimpleRefresh, TRUE,
+        WA_IDCMP, IDCMP_CLOSEWINDOW | IDCMP_REFRESHWINDOW | BUTTONIDCMP | CYCLEIDCMP,
+        WA_PubScreen, (ULONG)dscreen,
+        TAG_DONE);
+
+    if (!dwin) {
+        FreeGadgets(dglist);
+        FreeVec(labels);
+        FreeVisualInfo(dvi);
+        UnlockPubScreen(NULL, dscreen);
+        return FALSE;
+    }
+
+    GT_RefreshWindow(dwin, NULL);
+
+    while (!terminated) {
+        struct IntuiMessage *imsg;
+
+        Wait(1L << dwin->UserPort->mp_SigBit);
+        imsg = GT_GetIMsg(dwin->UserPort);
+        while (!terminated && imsg) {
+            struct Gadget *g = (struct Gadget *)imsg->IAddress;
+            ULONG cls = imsg->Class;
+            GT_ReplyIMsg(imsg);
+
+            if (cls == IDCMP_CLOSEWINDOW) {
+                terminated = TRUE;
+            } else if (cls == IDCMP_REFRESHWINDOW) {
+                GT_BeginRefresh(dwin);
+                GT_EndRefresh(dwin, TRUE);
+            } else if (cls == IDCMP_GADGETUP) {
+                if (g->GadgetID == GAD_DISC_CANCEL) {
+                    terminated = TRUE;
+                } else if (g->GadgetID == GAD_DISC_USE) {
+                    struct Gadget *cyc = dglist;
+                    ULONG selected = 0;
+                    while (cyc && cyc->GadgetID != GAD_DISC_CYCLE) cyc = cyc->NextGadget;
+                    if (cyc) {
+                        GT_GetGadgetAttrs(cyc, dwin, NULL,
+                                          GTCY_Active, (ULONG)&selected,
+                                          TAG_DONE);
+                    }
+                    if (selected < (ULONG)count) {
+                        strncpy(chosen_ip, results[selected].ip, chosen_ip_size - 1);
+                        chosen_ip[chosen_ip_size - 1] = '\0';
+                        picked = TRUE;
+                    }
+                    terminated = TRUE;
+                }
+            }
+            imsg = GT_GetIMsg(dwin->UserPort);
+        }
+    }
+
+    CloseWindow(dwin);
+    FreeGadgets(dglist);
+    FreeVec(labels);
+    FreeVisualInfo(dvi);
+    UnlockPubScreen(NULL, dscreen);
+
+    return picked;
+}
+
 // Updated query_printer_attributes with fixed mapping logic and tray name parsing
 int query_printer_attributes(const char *ip, int port, char *response, int maxlen) {
     custom_printf("CLEAR");
@@ -1710,7 +2174,7 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     ipp_payload[offset++] = uri_len & 0xFF;
     memcpy(&ipp_payload[offset], uri, uri_len); offset += uri_len;
 
-    const char *requested = "media-source-supported,media-ready,printer-input-tray,printer-state,print-color-mode-supported,print-scaling-supported,print-quality-supported";
+    const char *requested = "media-source-supported,media-ready,printer-input-tray,printer-state,print-color-mode-supported,print-scaling-supported,print-quality-supported,document-format-supported";
     int requested_len = strlen(requested);
     ipp_payload[offset++] = 0x44; ipp_payload[offset++] = 0x00; ipp_payload[offset++] = 0x12;
     memcpy(&ipp_payload[offset], "requested-attributes", 18); offset += 18;
@@ -2059,6 +2523,8 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
                             }
                             num_supported_quality++;
                         }
+                    } else if (strcmp(name, "document-format-supported") == 0 && value_tag == 0x49) {
+                        store_value(supported_formats, &num_supported_formats, value);
                     }
                 }
 
@@ -2163,8 +2629,54 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     if (window) update_scaling_dropdown(window);
     ensure_quality_defaults();
     if (window) update_quality_dropdown(window);
+
+    if (num_supported_formats > 0) {
+        printf("Printer document formats (%d):\n", num_supported_formats);
+        for (int i = 0; i < num_supported_formats; i++) {
+            printf("- %s\n", supported_formats[i]);
+        }
+    } else {
+        printf("Printer did not report document-format-supported\n");
+    }
+
     printf("query_printer_attributes completed\n");
     return 0;
+}
+
+/* Shared by the Query button and the post-discovery "Use Selected" path:
+ * tries the given/default port then 631, and on success applies the fetched
+ * capabilities to the gadgets exactly like a manual Query click. */
+static void perform_query_flow(struct Window *win, const char *ip_only, int port_hint, char *response) {
+    int chosen_port = (port_hint > 0) ? port_hint : 80;
+    int ports_to_try[] = { chosen_port, 631 };
+    int i;
+
+    for (i = 0; i < 2; i++) {
+        printf("Trying %s:%d...\n", ip_only, ports_to_try[i]);
+        if (query_printer_attributes(ip_only, ports_to_try[i], response, MAX_BUFFER) == 0) {
+            struct Gadget *ip_gadget;
+
+            snprintf(ip_buffer, sizeof(ip_buffer), "%s:%d", ip_only, ports_to_try[i]);
+
+            ip_gadget = glist;
+            while (ip_gadget && ip_gadget->GadgetID != GAD_IP_STRING) {
+                ip_gadget = ip_gadget->NextGadget;
+            }
+            if (ip_gadget) {
+                GT_SetGadgetAttrs(ip_gadget, win, NULL,
+                                  GTST_String, (ULONG)ip_buffer,
+                                  TAG_DONE);
+            }
+
+            if (save_capability_cache(ip_only, ports_to_try[i], driver_path_buffer))
+                printf("Printer capabilities cached\n");
+            else
+                printf("Warning: could not save printer capability cache\n");
+
+            apply_job_defaults_to_gadgets(win);
+            break;
+        }
+    }
 }
 
 int send_pwg_print_job(const char *ip, int port, const char *media, const char *print_mode, unsigned char *pwg_data, int pwg_size) {
@@ -2734,6 +3246,20 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
         return NULL;
     }
 
+    // Discover button - sits directly below Query, searches the LAN for printers.
+    ng.ng_LeftEdge = 385;
+    ng.ng_Width = 75;
+    ng.ng_Height = 14;
+    ng.ng_GadgetText = (STRPTR)"_Discover";
+    ng.ng_GadgetID = GAD_DISCOVER_BUTTON;
+    ng.ng_Flags = 0;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng,
+        GT_Underscore, '_',
+        TAG_DONE);
+    if (!gad) {
+        printf("Failed to create discover button\n");
+        return NULL;
+    }
 
     // Printer document engine. JPEG is the current working backend;
     // PWG Raster is persisted now and will be activated by the backend patch.
@@ -2994,29 +3520,51 @@ void process_window_events(struct Window *win) {
                                 return;
                             }
                         
-                            // Try default + fallback ports
-                            int chosen_port = (port > 0) ? port : 80;
-                            int ports_to_try[] = { chosen_port, 631 };
-                        
-                            for (int i = 0; i < 2; i++) {
-                                printf("Trying %s:%d...\n", ip_only, ports_to_try[i]);
-                                if (query_printer_attributes(ip_only, ports_to_try[i], response, MAX_BUFFER) == 0) {
-                                    snprintf(ip_buffer, sizeof(ip_buffer), "%s:%d", ip_only, ports_to_try[i]);
-                                    if (ip_gadget) {
-                                        GT_SetGadgetAttrs(ip_gadget, win, NULL,
+                            // Try default + fallback ports, apply capabilities on success
+                            perform_query_flow(win, ip_only, port, response);
+                        }
+                        break;
+
+                        case GAD_DISCOVER_BUTTON:
+                        {
+                            struct DiscoveredPrinter found[MAX_DISCOVERY_RESULTS];
+                            int found_count;
+                            char chosen_ip[16];
+
+                            GT_RefreshWindow(win, NULL);
+                            printf("CLEAR");
+                            printf("Searching LAN for printers (SSDP)...\n");
+
+                            found_count = ssdp_discover_printers(found, MAX_DISCOVERY_RESULTS);
+
+                            if (found_count <= 0) {
+                                printf("No printers found via SSDP.\n");
+                                printf("Enter the printer IP manually and press Query.\n");
+                            } else {
+                                printf("Found %d candidate device(s).\n", found_count);
+                                if (run_discovery_selection(win, found, found_count, chosen_ip, sizeof(chosen_ip))) {
+                                    struct Gadget *disc_ip_gadget = glist;
+
+                                    strncpy(ip_buffer, chosen_ip, sizeof(ip_buffer) - 1);
+                                    ip_buffer[sizeof(ip_buffer) - 1] = '\0';
+
+                                    while (disc_ip_gadget && disc_ip_gadget->GadgetID != GAD_IP_STRING) {
+                                        disc_ip_gadget = disc_ip_gadget->NextGadget;
+                                    }
+                                    if (disc_ip_gadget) {
+                                        GT_SetGadgetAttrs(disc_ip_gadget, win, NULL,
                                                           GTST_String, (ULONG)ip_buffer,
                                                           TAG_DONE);
                                     }
-                                    if (save_capability_cache(ip_only, ports_to_try[i], driver_path_buffer))
-                                        printf("Printer capabilities cached\n");
-                                    else
-                                        printf("Warning: could not save printer capability cache\n");
-                                    apply_job_defaults_to_gadgets(win);
-                                    break; // Success!
+
+                                    perform_query_flow(win, chosen_ip, 0, response);
+                                } else {
+                                    printf("Discovery selection cancelled.\n");
                                 }
                             }
                         }
                         break;
+
                         case GAD_PRINT_BUTTON:
                         {
                             GT_RefreshWindow(win, NULL);
@@ -3207,7 +3755,7 @@ int main(void) {
 
     // Open window
     window = OpenWindowTags(NULL,
-        WA_Title, (ULONG)"MintPRINT Preferences / Test",
+        WA_Title, (ULONG)"MintPrint Settings",
         WA_Gadgets, (ULONG)glist,
         WA_AutoAdjust, TRUE,
         WA_Width, 460,
@@ -3264,6 +3812,8 @@ int main(void) {
     // Refresh window
     GT_RefreshWindow(window, NULL);
 
+    // Offer to install DEVS:Printers/MintPRINT if it is missing.
+    check_and_offer_driver_install(window);
 
     if (load_capability_cache_for_current_endpoint()) {
         apply_cached_capabilities(window);

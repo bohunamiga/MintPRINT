@@ -32,21 +32,32 @@ printer driver binary itself still requires a reboot before testing it.
 
 ## LAN printer discovery
 
-Clicking **Discover** sends a single SSDP (`M-SEARCH`) multicast to
-`239.255.255.250:1900` and listens for about 5 seconds, collecting the
-distinct addresses of any device that replies. Most network printers answer
-UPnP discovery alongside mDNS/AirPrint, so this is a practical way to find
-candidates without knowing the printer's IP in advance.
+Clicking **Discover** runs two passes, each taking about 5 seconds:
+
+1. **SSDP**: a single `M-SEARCH` multicast to `239.255.255.250:1900`,
+   catching printers/print servers that answer UPnP discovery.
+2. **mDNS**: a DNS PTR query for `_ipp._tcp.local` sent to
+   `224.0.0.251:5353` with the "unicast response" bit set, so replies come
+   straight back to MintPrint Settings without needing to join the
+   multicast group. This is the mechanism most current printers actually
+   use to advertise IPP/AirPrint, so it is the pass that matters most in
+   practice - SSDP is a bonus for devices that also happen to answer it.
+
+Both passes only look at *which address replied*, not the reply's content
+(no SSDP header or DNS record parsing) - that keeps the scan simple and
+predictable. Distinct, non-loopback responders from either pass are merged
+into one list.
 
 Results appear in a small selection window. Picking one and choosing
 **Use Selected** fills in the Printer IP/Host field and runs the same
 capability query as the **Query** button (trying the given port, then 631),
 so the fetched media/colour/quality/scaling values and the printer's
-supported document formats are pulled in immediately.
+supported document formats are pulled in immediately - this is where the
+printer's actual name/details come from, not the discovery scan itself.
 
-This is a best-effort LAN scan, not a guarantee: printers that only answer
-mDNS (no SSDP/UPnP), or that sit behind a router blocking multicast, will not
-appear. If nothing is found, enter the IP manually and use **Query** as
+This is a best-effort LAN scan, not a guarantee: a printer that answers
+neither SSDP nor mDNS, or that sits behind a router blocking multicast, will
+not appear. If nothing is found, enter the IP manually and use **Query** as
 before.
 
 ## Document format reporting

@@ -1947,6 +1947,183 @@ static int ssdp_discover_printers(struct DiscoveredPrinter *results, int max_res
     return count;
 }
 
+/* ---------------------------------------------------------------------
+ * LAN printer discovery (mDNS / Bonjour / AirPrint)
+ *
+ * Most current printers advertise IPP over mDNS-SD (_ipp._tcp.local),
+ * not SSDP, so this is the discovery path that actually matters for
+ * AirPrint-style printers. Builds a minimal DNS PTR query by hand (no
+ * name compression in the query - only ever one question) with the "QU"
+ * unicast-response bit set, so responders reply directly to our source
+ * port instead of over multicast. That means this never needs to join
+ * the 224.0.0.251 multicast group to receive replies, keeping it on the
+ * same plain send/WaitSelect/recvfrom shape already proven for SSDP.
+ *
+ * Deliberately does not decode the DNS response payload (PTR/SRV/TXT
+ * records, name-compression pointers, ...): that is real parsing work
+ * with real edge cases, and getting it wrong risks the same kind of
+ * lock-up/crash this file has already hit twice on this NDK. All that is
+ * used from a reply is which address it came from - good enough to
+ * populate the picker; the follow-up IPP query after selection is what
+ * actually pulls in the printer's real details.
+ * ------------------------------------------------------------------- */
+static int build_mdns_ptr_query(unsigned char *buf, int buf_size) {
+    static const unsigned char header[12] = {
+        0x00, 0x00, /* ID - unused, mDNS clients don't need to match it */
+        0x00, 0x00, /* Flags - standard query */
+        0x00, 0x01, /* QDCOUNT = 1 */
+        0x00, 0x00, /* ANCOUNT */
+        0x00, 0x00, /* NSCOUNT */
+        0x00, 0x00  /* ARCOUNT */
+    };
+    static const char *labels[] = { "_ipp", "_tcp", "local", NULL };
+    int off;
+    int i;
+
+    if (buf_size < 33) return 0;
+
+    memcpy(buf, header, sizeof(header));
+    off = sizeof(header);
+
+    for (i = 0; labels[i]; i++) {
+        int len = (int)strlen(labels[i]);
+        buf[off++] = (unsigned char)len;
+        memcpy(buf + off, labels[i], len);
+        off += len;
+    }
+    buf[off++] = 0x00; /* root label terminator */
+
+    buf[off++] = 0x00; buf[off++] = 0x0C; /* QTYPE = PTR (12) */
+    buf[off++] = 0x80; buf[off++] = 0x01; /* QCLASS = IN, QU bit set */
+
+    return off;
+}
+
+/* Appends newly-found, distinct, non-loopback responders to results[],
+ * starting at index *count_io, up to max_results. Returns the new count. */
+static int mdns_discover_printers(struct DiscoveredPrinter *results, int count_io, int max_results) {
+    int sockfd;
+    struct sockaddr_in dest;
+    unsigned char query[64];
+    int query_len;
+    char *buf;
+    int count = count_io;
+    int poll_num;
+    const int max_polls = 10; /* ~500ms per poll => ~5s total scan time */
+
+    if (count >= max_results) return count;
+
+    query_len = build_mdns_ptr_query(query, sizeof(query));
+    if (query_len <= 0) {
+        printf("Discovery: could not build mDNS query\n");
+        return count;
+    }
+
+    sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sockfd < 0) {
+        printf("Discovery: could not create mDNS socket\n");
+        return count;
+    }
+
+    memset(&dest, 0, sizeof(dest));
+    dest.sin_family = AF_INET;
+    dest.sin_port = htons(5353);
+    dest.sin_addr.s_addr = inet_addr((STRPTR)"224.0.0.251");
+
+    if (sendto(sockfd, (char *)query, query_len, 0,
+               (struct sockaddr *)&dest, sizeof(dest)) < 0) {
+        printf("Discovery: mDNS send failed (no route to 224.0.0.251?)\n");
+        CloseSocket(sockfd);
+        return count;
+    }
+
+    buf = malloc(1024);
+    if (!buf) {
+        CloseSocket(sockfd);
+        return count;
+    }
+
+    for (poll_num = 0; poll_num < max_polls && count < max_results; poll_num++) {
+        fd_set readfds;
+        struct timeval tv;
+        long ready;
+        struct sockaddr_in from;
+        socklen_t fromlen;
+        ssize_t received;
+
+        if (window) {
+            struct IntuiMessage *imsg;
+            while ((imsg = GT_GetIMsg(window->UserPort))) {
+                GT_ReplyIMsg(imsg);
+            }
+        }
+
+        FD_ZERO(&readfds);
+        FD_SET(sockfd, &readfds);
+        tv.tv_sec = 0;
+        tv.tv_usec = 500000;
+        ready = WaitSelect(sockfd + 1, &readfds, NULL, NULL, &tv, NULL);
+        if (ready <= 0) {
+            continue;
+        }
+
+        fromlen = sizeof(from);
+        memset(&from, 0, sizeof(from));
+        received = recvfrom(sockfd, buf, 1023, 0, (struct sockaddr *)&from, &fromlen);
+        /* A real DNS response needs at least a 12-byte header with a
+         * non-zero answer count, and a unicast QU reply comes from the
+         * responder's own port 5353. Cheap enough sanity checks to reject
+         * unrelated UDP traffic without decoding the message itself. */
+        if (received < 12 || from.sin_port != htons(5353)) {
+            continue;
+        }
+        if (buf[6] == 0 && buf[7] == 0) {
+            continue; /* ANCOUNT == 0: not actually answering anything */
+        }
+
+        {
+            char ipstr[16];
+            const unsigned char *addr_bytes = (const unsigned char *)&from.sin_addr;
+
+            snprintf(ipstr, sizeof(ipstr), "%u.%u.%u.%u",
+                     addr_bytes[0], addr_bytes[1], addr_bytes[2], addr_bytes[3]);
+
+            if (addr_bytes[0] == 127) {
+                continue;
+            }
+
+            if (!discovery_ip_seen(results, count, ipstr)) {
+                strncpy(results[count].ip, ipstr, sizeof(results[count].ip) - 1);
+                results[count].ip[sizeof(results[count].ip) - 1] = '\0';
+                snprintf(results[count].label, sizeof(results[count].label),
+                         "%s (mDNS/IPP)", ipstr);
+
+                printf("Discovery: found %s\n", results[count].label);
+                count++;
+            }
+        }
+    }
+
+    free(buf);
+    CloseSocket(sockfd);
+    return count;
+}
+
+/* Runs both discovery mechanisms and merges the results: SSDP catches
+ * printers/print servers that answer UPnP discovery, mDNS catches the
+ * more common AirPrint/Bonjour-style IPP advertisement. */
+static int discover_printers_on_lan(struct DiscoveredPrinter *results, int max_results) {
+    int count;
+
+    printf("Searching LAN for printers (SSDP)...\n");
+    count = ssdp_discover_printers(results, max_results);
+
+    printf("Searching LAN for printers (mDNS)...\n");
+    count = mdns_discover_printers(results, count, max_results);
+
+    return count;
+}
+
 /* Small GadTools dialog listing discovered candidates as a cycle gadget.
  * Mirrors the main window's CreateContext/CreateGadget/OpenWindowTags
  * pattern so it reuses the same, already-proven idioms. */
@@ -3566,12 +3743,11 @@ void process_window_events(struct Window *win) {
 
                             GT_RefreshWindow(win, NULL);
                             printf("CLEAR");
-                            printf("Searching LAN for printers (SSDP)...\n");
 
-                            found_count = ssdp_discover_printers(found, MAX_DISCOVERY_RESULTS);
+                            found_count = discover_printers_on_lan(found, MAX_DISCOVERY_RESULTS);
 
                             if (found_count <= 0) {
-                                printf("No printers found via SSDP.\n");
+                                printf("No printers found via SSDP or mDNS.\n");
                                 printf("Enter the printer IP manually and press Query.\n");
                             } else {
                                 printf("Found %d candidate device(s).\n", found_count);

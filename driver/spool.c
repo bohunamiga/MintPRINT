@@ -212,7 +212,7 @@ BOOL mp_spool_ensure_running(void)
 
     g_spool_startup_port = startup_port;
 
-    if (!CreateNewProc(NP_Entry, (ULONG)mp_spool_entry,
+    if (!CreateNewProcTags(NP_Entry, (ULONG)mp_spool_entry,
                        NP_StackSize, 8192L,
                        NP_Name, (ULONG)"MintPRINT spool",
                        NP_Priority, 0L,

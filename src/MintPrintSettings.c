@@ -66,6 +66,7 @@ extern struct GfxBase *GfxBase;
 #define GAD_DISCOVER_BUTTON 14
 #define GAD_UNIT_DROPDOWN 15
 #define GAD_SET_ACTIVE_BUTTON 16
+#define GAD_MODEL_DISPLAY 17
 
 // Discovery selection dialog gadget IDs (separate window/gadget list)
 #define GAD_DISC_CYCLE  1
@@ -84,7 +85,7 @@ struct DiscoveredPrinter {
 // switchable GUI-side profiles (e.g. for a second/third network printer).
 #define MAX_UNITS 8
 
-#define OUTPUT_TOP     245 // Below Test Print / Save / Exit row
+#define OUTPUT_TOP     265 // Below Test Print / Save / Exit row
 #define OUTPUT_LEFT    10
 #define OUTPUT_LINE_H  8
 #define OUTPUT_LINES   MAX_OUTPUT_LINES
@@ -446,7 +447,15 @@ static void refresh_unit_dropdown(struct Window *win) {
         char model[96];
         char *entry;
 
-        peek_unit_model(i, model, sizeof(model));
+        if (i == current_unit_index && printer_make_model[0]) {
+            /* Preview the just-queried, not-yet-saved model for whichever
+             * unit is currently open, rather than only showing what Save
+             * already wrote to disk. */
+            strncpy(model, printer_make_model, sizeof(model) - 1);
+            model[sizeof(model) - 1] = '\0';
+        } else {
+            peek_unit_model(i, model, sizeof(model));
+        }
 
         entry = AllocVec(128, MEMF_ANY);
         if (!entry) {
@@ -1085,6 +1094,12 @@ static void apply_driver_config_to_gadgets(struct Window *win) {
     if (g)
         GT_SetGadgetAttrs(g, win, NULL,
                           GTCY_Active, strcmp(driver_engine_buffer, "pwg-raster") == 0 ? 1 : 0,
+                          TAG_DONE);
+
+    g = find_gadget_by_id(GAD_MODEL_DISPLAY);
+    if (g)
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GTST_String, (ULONG)printer_make_model,
                           TAG_DONE);
 
     GT_RefreshWindow(win, NULL);
@@ -3046,6 +3061,18 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
         printf("Printer did not report printer-make-and-model\n");
     }
 
+    if (window) {
+        struct Gadget *model_gadget = find_gadget_by_id(GAD_MODEL_DISPLAY);
+        if (model_gadget) {
+            GT_SetGadgetAttrs(model_gadget, window, NULL,
+                              GTST_String, (ULONG)printer_make_model,
+                              TAG_DONE);
+        }
+        /* Preview the freshly-queried (not yet saved) model in the Unit
+         * dropdown's current entry, rather than waiting for Save. */
+        refresh_unit_dropdown(window);
+    }
+
     if (num_supported_formats > 0) {
         printf("Printer document formats (%d):\n", num_supported_formats);
         for (int i = 0; i < num_supported_formats; i++) {
@@ -3680,6 +3707,25 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
         return NULL;
     }
 
+    // Printer Model (read-only display) - shows printer-make-and-model
+    // from the last successful Query for this unit. Not user-editable;
+    // persisted via MODEL= in the unit's own config file on Save.
+    ng.ng_LeftEdge = 165;
+    ng.ng_TopEdge += 20;
+    ng.ng_Width = 290;
+    ng.ng_Height = 14;
+    ng.ng_GadgetText = (STRPTR)"Printer Model:";
+    ng.ng_GadgetID = GAD_MODEL_DISPLAY;
+    gad = CreateGadget(STRING_KIND, gad, &ng,
+        GTST_String, (ULONG)printer_make_model,
+        GTST_MaxChars, sizeof(printer_make_model) - 1,
+        GA_Disabled, TRUE,
+        TAG_DONE);
+    if (!gad) {
+        printf("Failed to create model display\n");
+        return NULL;
+    }
+
     // Driver IPP path
     ng.ng_LeftEdge = 130;
     ng.ng_TopEdge += 20;
@@ -4266,8 +4312,8 @@ int main(void) {
         WA_AutoAdjust, TRUE,
         WA_Width, 490,
         WA_MinWidth, 490,
-        WA_InnerHeight, 330,
-        WA_MinHeight, 330,
+        WA_InnerHeight, 350,
+        WA_MinHeight, 350,
         WA_DragBar, TRUE,
         WA_DepthGadget, TRUE,
         WA_Activate, TRUE,

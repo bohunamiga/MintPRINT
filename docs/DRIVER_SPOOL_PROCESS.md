@@ -80,6 +80,42 @@ every one of those tags explicitly - `NP_CurrentDir`, `NP_Input`,
 task's process fields at all, regardless of whether the caller is a real
 Process or a bare Task.
 
+## Round 3: it isn't dos.library calls at all - it's PRTA_NoIO
+
+After round 2's fix, a proper control test nailed this down: printing from
+DPaint to a real stock driver (PostScript, over Serial) **works, no
+crash**. Printing from DPaint to MintPRINT still crashes, with the port
+(Serial vs `FILE:`) making no difference. That's conclusive: DPaint's own
+print code is not broken (it drives PostScript fine, from the same Task),
+and this driver has no `dos.library` calls left in its own code
+(`driver/spool.c` verified) - so the remaining problem isn't a `dos.library`
+call this driver makes at all.
+
+The data points at `DriverTags`' `PRTA_NoIO` flag instead:
+
+| Driver | Caller context | Result |
+|---|---|---|
+| MintPRINT (`PRTA_NoIO`) | MultiView/GraphicDump (Process) | works |
+| MintPRINT (`PRTA_NoIO`) | DPaint (Task) | crashes |
+| PostScript (no `PRTA_NoIO`) | DPaint (same Task) | works |
+
+The crash only occurs at the intersection of `PRTA_NoIO` and a Task-context
+caller - neither alone reproduces it. `PRTA_NoIO` tells `printer.device` to
+skip opening the configured port itself (this driver does its own output
+over the network instead) - a genuinely rare flag that takes `printer.device`
+down a code path almost no other driver exercises. The likely explanation:
+that path, inside `printer.device`'s own ROM, does something
+Process-dependent that the normal (non-NoIO) path doesn't - i.e. the same
+class of bug as rounds 1-2, just now inside code this project cannot patch.
+
+**Current diagnostic build removes `PRTA_NoIO` entirely** to confirm this.
+With it removed, `printer.device` will try to manage the configured port
+itself, so testing requires setting the printer port to `NIL:` in
+Preferences (a safe do-nothing sink) rather than Serial/`FILE:`, to keep the
+test isolated to "does removing NoIO stop the crash" without a real port
+with nothing attached causing a different failure. Not yet confirmed either
+way.
+
 ## Status: implemented, not yet physically test-printed
 
 This fix was derived and implemented from an independent check of the

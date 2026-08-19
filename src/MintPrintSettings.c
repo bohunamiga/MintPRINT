@@ -3219,7 +3219,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     // IP string gadget
     ng.ng_LeftEdge = 165;
     ng.ng_TopEdge = 5 + topborder;
-    ng.ng_Width = 200;
+    ng.ng_Width = 190;
     ng.ng_Height = 14;
     ng.ng_GadgetText = (STRPTR)"_Printer IP/Host:";
     ng.ng_GadgetID = GAD_IP_STRING;
@@ -3238,7 +3238,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
 
 
     // Query button - kept beside the printer address field.
-    ng.ng_LeftEdge = 390;
+    ng.ng_LeftEdge = 370;
     ng.ng_Width = 90;
     ng.ng_Height = 12;
     ng.ng_GadgetText = (STRPTR)"_Query";
@@ -3277,7 +3277,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     // shift every row below.
     {
         UWORD row2_top = ng.ng_TopEdge;
-        ng.ng_LeftEdge = 390;
+        ng.ng_LeftEdge = 370;
         ng.ng_TopEdge = row2_top + 4;
         ng.ng_Width = 90;
         ng.ng_Height = 14;

@@ -7,9 +7,12 @@ IFF_DIR := Archive/Old JPEG Decode
 IFF_DIR_ESC := Archive/Old\ JPEG\ Decode
 DRIVER_BUILD := build/driver
 DRIVER_OUT := $(DRIVER_BUILD)/MintPRINT
+DRIVER31_BUILD := build/driver31
+DRIVER31_OUT := $(DRIVER31_BUILD)/MintPRINT
 RELEASE_DIR := release/MintPRINT
+RELEASE31_DIR := release/MintPRINT-OS31
 
-.PHONY: all gui driver driver-symbols release clean help
+.PHONY: all gui driver driver31 driver-symbols driver-symbols31 release release31 release-all clean help
 
 all: gui
 
@@ -17,8 +20,12 @@ help:
 	@echo "MintPRINT targets:"
 	@echo "  make gui      - build MintPrint Settings (setup/test GUI)"
 	@echo "  make driver   - build the experimental DEVS:Printers/MintPRINT driver"
+	@echo "  make driver31 - build the AmigaOS 3.1-compatible classic printer driver"
 	@echo "  make driver-symbols - show ABI symbols used by the driver"
+	@echo "  make driver-symbols31 - show ABI symbols used by the OS3.1 driver"
 	@echo "  make release  - build both and stage a distributable bundle"
+	@echo "  make release31 - stage the AmigaOS 3.1 bundle"
+	@echo "  make release-all - stage both modern and OS3.1 bundles"
 	@echo "  make clean"
 
 gui: MintPrintSettings
@@ -27,6 +34,9 @@ MintPrintSettings: src/MintPrintSettings.c $(IFF_DIR_ESC)/iff-loader.c $(IFF_DIR
 	$(CC) -O2 -g -I"$(IFF_DIR)" -o $@ src/MintPrintSettings.c "$(IFF_DIR)/iff-loader.c" -lamiga -lm
 
 $(DRIVER_BUILD):
+	mkdir -p $@
+
+$(DRIVER31_BUILD):
 	mkdir -p $@
 
 $(DRIVER_BUILD)/printertag.o: driver/printertag.s | $(DRIVER_BUILD)
@@ -60,16 +70,50 @@ $(DRIVER_OUT): $(DRIVER_BUILD)/printertag.o $(DRIVER_BUILD)/driver_core.o $(DRIV
 	$(CC) -m68000 -nostartfiles -Wl,-Map,$(DRIVER_BUILD)/MintPRINT.map \
 		-o $@ $^ -lamiga
 
+# AmigaOS 3.1 compatibility driver.
+#
+# printer.device V40 does not understand the V44 extended PED/tag interface
+# (PRTA_NoIO / PRTA_8BitGuns).  The classic printer tag therefore exposes the
+# pre-V44 PrinterExtendedData layout and the Render shim expands printer.device's
+# native 4-bit-per-gun Y/M/C/B intensities to the 8-bit values used internally
+# by the existing JPEG/PWG/PDF pipeline.
+#
+# Only driver_core.c is rebuilt with Render renamed.  Everything below the
+# printer.device ABI boundary is shared bit-for-bit with the normal driver.
+$(DRIVER31_BUILD)/printertag.o: driver/printertag_classic.s | $(DRIVER31_BUILD)
+	$(CC) -m68000 -c $< -o $@
+
+$(DRIVER31_BUILD)/driver_core.o: driver/driver_core.c | $(DRIVER31_BUILD)
+	$(CC) $(CFLAGS) -DRender=MintPRINT_RenderCore -c $< -o $@
+
+$(DRIVER31_BUILD)/classic_render_shim.o: driver/classic_render_shim.c | $(DRIVER31_BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(DRIVER31_OUT): $(DRIVER31_BUILD)/printertag.o $(DRIVER31_BUILD)/classic_render_shim.o $(DRIVER31_BUILD)/driver_core.o $(DRIVER_BUILD)/command_table.o $(DRIVER_BUILD)/config.o $(DRIVER_BUILD)/jpeg_writer.o $(DRIVER_BUILD)/pwg_writer.o $(DRIVER_BUILD)/pdf_writer.o $(DRIVER_BUILD)/ipp_client.o $(DRIVER_BUILD)/spool.o
+	$(CC) -m68000 -nostartfiles -Wl,-Map,$(DRIVER31_BUILD)/MintPRINT.map \
+		-o $@ $^ -lamiga
+
 # The printer tag assembly expects classic Amiga leading-underscore C symbols.
 # This target makes ABI mismatches obvious before installing anything on AmigaOS.
 driver-symbols: $(DRIVER_BUILD)/driver_core.o $(DRIVER_BUILD)/command_table.o
 	$(NM) $(DRIVER_BUILD)/driver_core.o | grep -E '(_Init|_Expunge|_DriverOpen|_DriverClose|_DoSpecial|_Render|_DriverTags|_PEDData)' || true
 	$(NM) $(DRIVER_BUILD)/command_table.o | grep -E '_CommandTable' || true
 
+driver-symbols31: $(DRIVER31_BUILD)/driver_core.o $(DRIVER31_BUILD)/classic_render_shim.o $(DRIVER_BUILD)/command_table.o
+	$(NM) $(DRIVER31_BUILD)/driver_core.o | grep -E '(_Init|_Expunge|_DriverOpen|_DriverClose|_DoSpecial|_MintPRINT_RenderCore|_DriverTags)' || true
+	$(NM) $(DRIVER31_BUILD)/classic_render_shim.o | grep -E '(_Render|_MintPRINT_RenderCore)' || true
+	$(NM) $(DRIVER_BUILD)/command_table.o | grep -E '_CommandTable' || true
+
 driver: $(DRIVER_OUT)
 	@echo
 	@echo "Built experimental printer driver: $(DRIVER_OUT)"
 	@echo "Read docs/PRINTER_DEVICE_SPIKE.md before installing it."
+
+driver31: $(DRIVER31_OUT)
+	@echo
+	@echo "Built AmigaOS 3.1 compatibility driver: $(DRIVER31_OUT)"
+	@echo "Requires a bsdsocket.library-compatible TCP/IP stack (Roadshow/AmiTCP/Miami etc.)."
+	@echo "See docs/OS31_SUPPORT.md before installing it."
 
 ART_DIR := art
 
@@ -114,6 +158,40 @@ release: gui driver
 	@echo "release/MintPRINT.readme  - the Aminet readme, staged next to the"
 	@echo "drawer (not inside it) per Aminet convention: name it to match"
 	@echo "whatever .lha/.zip archive you make of $(RELEASE_DIR)/."
+
+# Separate OS3.1 bundle.  The driver is still named PROGDIR:MintPRINT inside
+# this drawer, so the existing Settings installer needs no OS-specific code:
+# users simply download the bundle appropriate for their AmigaOS version.
+release31: gui driver31
+	mkdir -p $(RELEASE31_DIR)
+	cp MintPrintSettings $(RELEASE31_DIR)/
+	cp $(DRIVER31_OUT) $(RELEASE31_DIR)/MintPRINT
+	cp Aminet/MintPRINT.readme release/MintPRINT-OS31.readme
+	@if [ -f $(ART_DIR)/MintPrintSettings.info ]; then \
+		cp $(ART_DIR)/MintPrintSettings.info $(RELEASE31_DIR)/; \
+		echo "Copied $(ART_DIR)/MintPrintSettings.info -> $(RELEASE31_DIR)/"; \
+	else \
+		echo "No $(ART_DIR)/MintPrintSettings.info found - application will have no icon"; \
+	fi
+	@if [ -f $(ART_DIR)/MintPRINT.info ]; then \
+		cp $(ART_DIR)/MintPRINT.info release/MintPRINT-OS31.info; \
+		echo "Copied $(ART_DIR)/MintPRINT.info -> release/MintPRINT-OS31.info (drawer icon)"; \
+	else \
+		echo "No $(ART_DIR)/MintPRINT.info found - OS3.1 release drawer will have no icon"; \
+	fi
+	@echo
+	@echo "OS3.1 release bundle staged in $(RELEASE31_DIR)/:"
+	@echo "  MintPrintSettings       - same setup/test GUI"
+	@echo "  MintPRINT               - classic pre-V44 printer.device driver"
+	@echo "                            (4-bit gun input expanded to 8-bit internally)"
+	@echo "  MintPrintSettings.info  - if $(ART_DIR)/ had one"
+	@echo
+	@echo "IMPORTANT: OS3.1 requires a working bsdsocket.library TCP/IP stack."
+	@echo "The classic build is new and must be test-printed before public release."
+
+release-all: release release31
+	@echo
+	@echo "Both MintPRINT release bundles are staged under release/."
 
 clean:
 	rm -rf build release MintPrintSettings

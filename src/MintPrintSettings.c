@@ -110,8 +110,20 @@ BOOL has_extension(const char *filename, const char *ext) {
     if (!dot) return FALSE;
     return strcasecmp(dot, ext) == 0;
 }
-// Stack cookie to request a minimum stack size of 362 KB (102,400 bytes)
-static const char USED min_stack[] = "$STACK:362144";
+/*
+ * Classic AmigaOS / libnix stack request.
+ *
+ * The "$STACK:" cookie is useful on newer AmigaOS startup code, but classic
+ * m68k AmigaOS programs built with the GCC/libnix runtime use the __stack
+ * variable.  Keep this comfortably large because the Settings Query path
+ * has deep parsing / GadTools / bsdsocket call chains.
+ *
+ * 384 KiB = 393216 bytes.
+ */
+unsigned long __stack = 393216UL;
+
+/* Keep the cookie as harmless metadata for newer startup code too. */
+static const char USED min_stack[] = "$STACK:393216";
 
 // Structure to map media sizes to trays (Updated to include tray name and medianame)
 struct MediaTrayMap {
@@ -151,24 +163,53 @@ char selected_print_mode[MAX_ATTR_LEN] = "monochrome"; // Default fallback
 char selected_scaling[MAX_ATTR_LEN] = "auto"; // Default
 static char initial_scaling_value[MAX_ATTR_LEN] = "Not Detected";
 static STRPTR initial_scaling_mode[] = { initial_scaling_value, NULL };
-STRPTR *scaling_mode_labels = NULL;
+/* MintPRINT stable Cycle gadget label storage (OS3.1-safe).
+ *
+ * Classic GadTools is much happier when GTCY_Labels keeps the same array
+ * address for the complete lifetime of a live CYCLE_KIND gadget. Earlier
+ * versions repeatedly AllocVec'd new arrays during Query/Save and retargeted
+ * the live gadgets. That could leave V37 GadTools with stale bookkeeping,
+ * producing delayed memory alerts or a hard lock during a later Query/Exit.
+ *
+ * Keep both the pointer arrays and their text backing in static storage.
+ * Query rewrites the contents in-place and re-applies THE SAME pointer.
+ */
+#define MP_MEDIA_LABEL_LEN   (MAX_ATTR_LEN + 32)
+#define MP_UNIT_LABEL_LEN    128
+
+static char mp_media_label_storage[MAX_VALUES + 1][MP_MEDIA_LABEL_LEN];
+static STRPTR mp_media_label_ptrs[MAX_VALUES + 2];
+
+static char mp_scaling_label_storage[MAX_VALUES + 1][MAX_ATTR_LEN];
+static STRPTR mp_scaling_label_ptrs[MAX_VALUES + 2];
+
+static char mp_print_mode_label_storage[MAX_VALUES + 1][MAX_ATTR_LEN];
+static STRPTR mp_print_mode_label_ptrs[MAX_VALUES + 2];
+
+static char mp_quality_label_storage[MAX_VALUES + 1][32];
+static STRPTR mp_quality_label_ptrs[MAX_VALUES + 2];
+
+static char mp_unit_label_storage[MAX_UNITS][MP_UNIT_LABEL_LEN];
+static STRPTR mp_unit_label_ptrs[MAX_UNITS + 1];
+
+STRPTR *scaling_mode_labels = mp_scaling_label_ptrs;
 char selected_quality[16] = "auto"; // Default
 char supported_quality[MAX_QUALITIES][16];
 int num_supported_quality = 0;
-STRPTR *quality_mode_labels = NULL;
+STRPTR *quality_mode_labels = mp_quality_label_ptrs;
 static char initial_quality_value[32] = "Not Detected";
 static STRPTR initial_quality_mode[] = { initial_quality_value, NULL };
 // Media dropdown state
 char *selected_media = NULL;
 struct Gadget *media_dropdown = NULL;
-STRPTR *media_dropdown_items = NULL;
+STRPTR *media_dropdown_items = mp_media_label_ptrs;
 BOOL has_media_ready = FALSE;
 struct Menu *menu = NULL;
 struct MediaTrayMap media_tray_map[MAX_VALUES];
 int num_media_tray_mappings = 0;
 
 // Radio button labels for print mode
-STRPTR *print_mode_labels = NULL;
+STRPTR *print_mode_labels = mp_print_mode_label_ptrs;
 
 static char initial_media_value[160] = "Not Detected";
 static STRPTR initial_media_labels[] = { initial_media_value, NULL };
@@ -294,7 +335,7 @@ char driver_scaling_buffer[MAX_ATTR_LEN] = "";
 char driver_sides_buffer[MAX_ATTR_LEN] = "";
 int current_unit_index = 0;
 char printer_make_model[128] = "";
-STRPTR *unit_dropdown_labels = NULL;
+STRPTR *unit_dropdown_labels = mp_unit_label_ptrs;
 /* MintPRINT prefs #6: queried job defaults are saved into Unit0. */
 /* MintPRINT prefs #7: saved-state placeholders, ghosting, layout and engine selector. */
 char file_buffer[256] = "UHD:test.jpg";
@@ -449,52 +490,32 @@ static void peek_unit_model(int idx, char *out, int out_size) {
 static void refresh_unit_dropdown(struct Window *win) {
     int i;
 
-    unit_dropdown_labels = AllocVec((MAX_UNITS + 1) * sizeof(STRPTR), MEMF_CLEAR);
-    if (!unit_dropdown_labels) {
-        printf("Failed to allocate unit dropdown labels\n");
-        return;
-    }
-
     for (i = 0; i < MAX_UNITS; i++) {
         char model[96];
-        char *entry;
+
+        mp_unit_label_ptrs[i] = mp_unit_label_storage[i];
+        mp_unit_label_storage[i][0] = '\0';
 
         if (i == current_unit_index && printer_make_model[0]) {
-            /* Preview the just-queried, not-yet-saved model for whichever
-             * unit is currently open, rather than only showing what Save
-             * already wrote to disk. */
             strncpy(model, printer_make_model, sizeof(model) - 1);
             model[sizeof(model) - 1] = '\0';
         } else {
             peek_unit_model(i, model, sizeof(model));
         }
 
-        entry = AllocVec(128, MEMF_ANY);
-        if (!entry) {
-            /* Bail out cleanly rather than leave a premature NULL in the
-             * middle of the array, which GadTools would read as the end
-             * of the label list and silently drop the rest. */
-            int j;
-            printf("Failed to allocate unit dropdown entry %d\n", i);
-            for (j = 0; j < i; j++) {
-                FreeVec(unit_dropdown_labels[j]);
-                unit_dropdown_labels[j] = NULL;
-            }
-            FreeVec(unit_dropdown_labels);
-            unit_dropdown_labels = NULL;
-            return;
-        }
-
         if (model[0]) {
-            snprintf(entry, 128, "Unit%d - %s", i, model);
+            snprintf(mp_unit_label_storage[i], MP_UNIT_LABEL_LEN,
+                     "Unit%d - %s", i, model);
         } else if (unit_file_exists(i)) {
-            snprintf(entry, 128, "Unit%d", i);
+            snprintf(mp_unit_label_storage[i], MP_UNIT_LABEL_LEN,
+                     "Unit%d", i);
         } else {
-            snprintf(entry, 128, "Unit%d (empty)", i);
+            snprintf(mp_unit_label_storage[i], MP_UNIT_LABEL_LEN,
+                     "Unit%d (empty)", i);
         }
-        unit_dropdown_labels[i] = entry;
     }
-    unit_dropdown_labels[MAX_UNITS] = NULL;
+    mp_unit_label_ptrs[MAX_UNITS] = NULL;
+    unit_dropdown_labels = mp_unit_label_ptrs;
 
     if (win) {
         struct Gadget *g = find_gadget_by_id(GAD_UNIT_DROPDOWN);
@@ -778,7 +799,21 @@ static BOOL save_driver_config(struct Window *win) {
     env_ok = write_driver_config_file((CONST_STRPTR)env_path);
     envarc_ok = write_driver_config_file((CONST_STRPTR)envarc_path);
 
-    if (env_ok && envarc_ok) refresh_unit_dropdown(win);
+    /*
+     * Do NOT replace the live Unit cycle gadget's GTCY_Labels here.
+     *
+     * On classic GadTools (OS3.1/V37), repeatedly swapping a CYCLE_KIND
+     * label array while the gadget is live can leave internal gadget state
+     * pointing at the old label list.  The failure shows up later during
+     * GUI teardown (Save -> Exit can hard-lock the machine), not necessarily
+     * at the GT_SetGadgetAttrs() call itself.
+     *
+     * Saving does not actually require a Unit dropdown rebuild: the current
+     * Unit number is unchanged, and a freshly queried model is already
+     * previewed by the query path.  Leave the existing live labels alone.
+     * They will be rebuilt normally the next time Settings is launched.
+     */
+    (void)win;
 
     return env_ok && envarc_ok;
 }
@@ -903,6 +938,35 @@ static void seed_saved_option_labels(void) {
                  driver_quality_buffer);
     else
         strcpy(initial_quality_value, "Not Detected");
+
+    mp_media_label_ptrs[0] = mp_media_label_storage[0];
+    strncpy(mp_media_label_storage[0], initial_media_value,
+            sizeof(mp_media_label_storage[0]) - 1);
+    mp_media_label_storage[0][sizeof(mp_media_label_storage[0]) - 1] = '\0';
+    mp_media_label_ptrs[1] = NULL;
+
+    mp_print_mode_label_ptrs[0] = mp_print_mode_label_storage[0];
+    strncpy(mp_print_mode_label_storage[0], initial_print_mode_value,
+            sizeof(mp_print_mode_label_storage[0]) - 1);
+    mp_print_mode_label_storage[0][sizeof(mp_print_mode_label_storage[0]) - 1] = '\0';
+    mp_print_mode_label_ptrs[1] = NULL;
+
+    mp_scaling_label_ptrs[0] = mp_scaling_label_storage[0];
+    strncpy(mp_scaling_label_storage[0], initial_scaling_value,
+            sizeof(mp_scaling_label_storage[0]) - 1);
+    mp_scaling_label_storage[0][sizeof(mp_scaling_label_storage[0]) - 1] = '\0';
+    mp_scaling_label_ptrs[1] = NULL;
+
+    mp_quality_label_ptrs[0] = mp_quality_label_storage[0];
+    strncpy(mp_quality_label_storage[0], initial_quality_value,
+            sizeof(mp_quality_label_storage[0]) - 1);
+    mp_quality_label_storage[0][sizeof(mp_quality_label_storage[0]) - 1] = '\0';
+    mp_quality_label_ptrs[1] = NULL;
+
+    media_dropdown_items = mp_media_label_ptrs;
+    print_mode_labels = mp_print_mode_label_ptrs;
+    scaling_mode_labels = mp_scaling_label_ptrs;
+    quality_mode_labels = mp_quality_label_ptrs;
 }
 
 static void apply_saved_option_state(struct Window *win) {
@@ -915,7 +979,7 @@ static void apply_saved_option_state(struct Window *win) {
         g = find_gadget_by_id(GAD_MEDIA_DROPDOWN);
         if (g)
             GT_SetGadgetAttrs(g, win, NULL,
-                              GTCY_Labels, (ULONG)initial_media_labels,
+                              GTCY_Labels, (ULONG)media_dropdown_items,
                               GTCY_Active, 0,
                               GA_Disabled, driver_media_buffer[0] ? FALSE : TRUE,
                               TAG_DONE);
@@ -925,7 +989,7 @@ static void apply_saved_option_state(struct Window *win) {
         g = find_gadget_by_id(GAD_SCALING_MODE);
         if (g)
             GT_SetGadgetAttrs(g, win, NULL,
-                              GTCY_Labels, (ULONG)initial_scaling_mode,
+                              GTCY_Labels, (ULONG)scaling_mode_labels,
                               GTCY_Active, 0,
                               GA_Disabled, driver_scaling_buffer[0] ? FALSE : TRUE,
                               TAG_DONE);
@@ -935,7 +999,7 @@ static void apply_saved_option_state(struct Window *win) {
         g = find_gadget_by_id(GAD_QUALITY_MODE);
         if (g)
             GT_SetGadgetAttrs(g, win, NULL,
-                              GTCY_Labels, (ULONG)initial_quality_mode,
+                              GTCY_Labels, (ULONG)quality_mode_labels,
                               GTCY_Active, 0,
                               GA_Disabled, driver_quality_buffer[0] ? FALSE : TRUE,
                               TAG_DONE);
@@ -945,7 +1009,7 @@ static void apply_saved_option_state(struct Window *win) {
         g = find_gadget_by_id(GAD_PRINT_MODE);
         if (g)
             GT_SetGadgetAttrs(g, win, NULL,
-                              GTCY_Labels, (ULONG)initial_print_mode,
+                              GTCY_Labels, (ULONG)print_mode_labels,
                               GTCY_Active, 0,
                               GA_Disabled, driver_color_buffer[0] ? FALSE : TRUE,
                               TAG_DONE);
@@ -1126,10 +1190,19 @@ static BOOL mintprint_test_page(struct Window *win) {
         print_ok = TRUE;
     }
 
+    printf("Test Print cleanup: before CloseDevice\n");
     CloseDevice((struct IORequest *)req);
+    printf("Test Print cleanup: after CloseDevice\n");
+
     DeleteIORequest((struct IORequest *)req);
+    printf("Test Print cleanup: after DeleteIORequest\n");
+
     DeleteMsgPort(mp);
+    printf("Test Print cleanup: after DeleteMsgPort\n");
+
     FreeBitMap(bm);
+    printf("Test Print cleanup: after FreeBitMap\n");
+
     return print_ok;
 }
 
@@ -1173,84 +1246,40 @@ static void apply_driver_config_to_gadgets(struct Window *win) {
 
 // Add after successful query to rebuild media dropdown (Updated to show media (tray))
 void update_media_dropdown(struct Window *win) {
+    int i;
+    int count = num_media_tray_mappings;
+
     printf("Updating media dropdown, num_mappings=%d\n", num_media_tray_mappings);
 
-    /* Keep the previous label block alive until shutdown. GadTools may still
-     * reference GTCY_Labels while a live cycle gadget is being retargeted.
-     * Re-querying a printer leaks only a tiny label block for this process,
-     * which is preferable to a use-after-free on classic AmigaOS.
-     */
-
-    // Determine the number of items to allocate (at least 1 for "No Media Available")
-    int num_items = (num_media_tray_mappings > 0) ? num_media_tray_mappings : 1;
-
-    // Allocate new array
-    media_dropdown_items = AllocVec((num_items + 1) * sizeof(STRPTR), MEMF_CLEAR);
-    if (!media_dropdown_items) {
-        printf("Failed to allocate media dropdown items\n");
-        return;
-    }
-
-    if (num_media_tray_mappings == 0) {
-        printf("No media-tray mappings found, adding default entry.\n");
-        media_dropdown_items[0] = AllocVec(strlen("No Media Available") + 1, MEMF_CLEAR);
-        if (!media_dropdown_items[0]) {
-            printf("Failed to allocate memory for default dropdown item\n");
-            FreeVec(media_dropdown_items);
-            media_dropdown_items = NULL;
-            return;
-        }
-        strcpy(media_dropdown_items[0], "No Media Available");
-        media_dropdown_items[1] = NULL;
+    if (count <= 0) {
+        count = 1;
+        mp_media_label_ptrs[0] = mp_media_label_storage[0];
+        strcpy(mp_media_label_storage[0], "No Media Available");
     } else {
-        // Fill with "Media (Tray)" format
-        int i;
-        for (i = 0; i < num_media_tray_mappings; i++) {
-            // Dynamically allocate entry buffer
-            char *entry = AllocVec(MAX_ATTR_LEN + 20, MEMF_CLEAR);
-            if (!entry) {
-                printf("Failed to allocate memory for entry buffer at index %d\n", i);
-                // Free all previously allocated strings and the array
-                for (int j = 0; j < i; j++) {
-                    FreeVec(media_dropdown_items[j]);
-                    media_dropdown_items[j] = NULL;
-                }
-                FreeVec(media_dropdown_items);
-                media_dropdown_items = NULL;
-                return;
-            }
+        if (count > MAX_VALUES) count = MAX_VALUES;
+        for (i = 0; i < count; i++) {
+            const char *media = media_tray_map[i].media[0]
+                              ? media_tray_map[i].media : "Unknown";
+            const char *tray = media_tray_map[i].trayName[0]
+                             ? media_tray_map[i].trayName : "Unknown";
 
-            // Validate media and trayName to avoid crashes
-            const char *media = media_tray_map[i].media ? media_tray_map[i].media : "Unknown";
-            const char *trayName = media_tray_map[i].trayName ? media_tray_map[i].trayName : "Unknown";
-            snprintf(entry, MAX_ATTR_LEN + 20, "%s (%s)", media, trayName);
-
-            media_dropdown_items[i] = AllocVec(strlen(entry) + 1, MEMF_CLEAR);
-            if (!media_dropdown_items[i]) {
-                printf("Failed to allocate memory for dropdown item %d\n", i);
-                FreeVec(entry);
-                // Free all previously allocated strings and the array
-                for (int j = 0; j < i; j++) {
-                    FreeVec(media_dropdown_items[j]);
-                    media_dropdown_items[j] = NULL;
-                }
-                FreeVec(media_dropdown_items);
-                media_dropdown_items = NULL;
-                return;
-            }
-            strcpy(media_dropdown_items[i], entry);
-            printf("Dropdown item %d: %s\n", i, media_dropdown_items[i]);
-            FreeVec(entry);
+            mp_media_label_ptrs[i] = mp_media_label_storage[i];
+            snprintf(mp_media_label_storage[i],
+                     sizeof(mp_media_label_storage[i]),
+                     "%s (%s)", media, tray);
+            printf("Dropdown item %d: %s\n",
+                   i, mp_media_label_storage[i]);
         }
-        media_dropdown_items[num_media_tray_mappings] = NULL;
     }
 
-    // Update gadget
+    mp_media_label_ptrs[count] = NULL;
+    media_dropdown_items = mp_media_label_ptrs;
+
     if (media_dropdown && win) {
         GT_SetGadgetAttrs(media_dropdown, win, NULL,
                           GTCY_Labels, (ULONG)media_dropdown_items,
                           GTCY_Active, 0,
-                          GA_Disabled, FALSE,
+                          GA_Disabled, num_media_tray_mappings > 0 ? FALSE : TRUE,
                           TAG_DONE);
         RefreshGList(media_dropdown, win, NULL, 1);
         GT_RefreshWindow(win, NULL);
@@ -1258,32 +1287,34 @@ void update_media_dropdown(struct Window *win) {
 }
 
 void update_scaling_dropdown(struct Window *win) {
-    /* Do not FreeVec() the current live GTCY_Labels block here. */
+    struct Gadget *g;
+    int i;
+    int count = num_supported_scaling;
 
-    scaling_mode_labels = AllocVec((num_supported_scaling + 1) * sizeof(STRPTR), MEMF_ANY);
-    if (!scaling_mode_labels) {
-        printf("Failed to allocate scaling_mode_labels\n");
-        return;
-    }
-
-    for (int i = 0; i < num_supported_scaling; i++) {
-        scaling_mode_labels[i] = AllocVec(strlen(supported_scaling[i]) + 1, MEMF_ANY);
-        if (scaling_mode_labels[i]) {
-            strcpy(scaling_mode_labels[i], supported_scaling[i]);
+    if (count <= 0) {
+        count = 1;
+        mp_scaling_label_ptrs[0] = mp_scaling_label_storage[0];
+        strncpy(mp_scaling_label_storage[0], initial_scaling_value,
+                sizeof(mp_scaling_label_storage[0]) - 1);
+        mp_scaling_label_storage[0][sizeof(mp_scaling_label_storage[0]) - 1] = '\0';
+    } else {
+        if (count > MAX_VALUES) count = MAX_VALUES;
+        for (i = 0; i < count; i++) {
+            mp_scaling_label_ptrs[i] = mp_scaling_label_storage[i];
+            strncpy(mp_scaling_label_storage[i], supported_scaling[i],
+                    sizeof(mp_scaling_label_storage[i]) - 1);
+            mp_scaling_label_storage[i][sizeof(mp_scaling_label_storage[i]) - 1] = '\0';
         }
     }
-    scaling_mode_labels[num_supported_scaling] = NULL;
+    mp_scaling_label_ptrs[count] = NULL;
+    scaling_mode_labels = mp_scaling_label_ptrs;
 
-    // Find and update the gadget
-    struct Gadget *g = glist;
-    while (g && g->GadgetID != GAD_SCALING_MODE)
-        g = g->NextGadget;
-
+    g = find_gadget_by_id(GAD_SCALING_MODE);
     if (g && win) {
         GT_SetGadgetAttrs(g, win, NULL,
                           GTCY_Labels, (ULONG)scaling_mode_labels,
                           GTCY_Active, 0,
-                          GA_Disabled, FALSE,
+                          GA_Disabled, num_supported_scaling > 0 ? FALSE : TRUE,
                           TAG_DONE);
         RefreshGList(g, win, NULL, 1);
         GT_RefreshWindow(win, NULL);
@@ -1291,62 +1322,69 @@ void update_scaling_dropdown(struct Window *win) {
 }
 
 void update_print_mode_dropdown(struct Window *win) {
-    /* Do not FreeVec() the current live GTCY_Labels block here. */
+    struct Gadget *g;
+    int i;
+    int count = num_supported_print_modes;
 
-    print_mode_labels = AllocVec((num_supported_print_modes + 1) * sizeof(STRPTR), MEMF_ANY);
-    if (!print_mode_labels) {
-        printf("Failed to allocate memory for print_mode_labels\n");
-        return;
-    }
-
-    for (int i = 0; i < num_supported_print_modes; i++) {
-        print_mode_labels[i] = AllocVec(strlen(supported_print_modes[i]) + 1, MEMF_ANY);
-        if (print_mode_labels[i]) {
-            strcpy(print_mode_labels[i], supported_print_modes[i]);
+    if (count <= 0) {
+        count = 1;
+        mp_print_mode_label_ptrs[0] = mp_print_mode_label_storage[0];
+        strncpy(mp_print_mode_label_storage[0], initial_print_mode_value,
+                sizeof(mp_print_mode_label_storage[0]) - 1);
+        mp_print_mode_label_storage[0][sizeof(mp_print_mode_label_storage[0]) - 1] = '\0';
+    } else {
+        if (count > MAX_VALUES) count = MAX_VALUES;
+        for (i = 0; i < count; i++) {
+            mp_print_mode_label_ptrs[i] = mp_print_mode_label_storage[i];
+            strncpy(mp_print_mode_label_storage[i], supported_print_modes[i],
+                    sizeof(mp_print_mode_label_storage[i]) - 1);
+            mp_print_mode_label_storage[i][sizeof(mp_print_mode_label_storage[i]) - 1] = '\0';
         }
     }
-    print_mode_labels[num_supported_print_modes] = NULL;
+    mp_print_mode_label_ptrs[count] = NULL;
+    print_mode_labels = mp_print_mode_label_ptrs;
 
-    // Update gadget if already created
-    struct Gadget *g = glist;
-    while (g && g->GadgetID != GAD_PRINT_MODE)
-        g = g->NextGadget;
-    
+    g = find_gadget_by_id(GAD_PRINT_MODE);
     if (g && win) {
         GT_SetGadgetAttrs(g, win, NULL,
-                          GTCY_Labels, (ULONG)(print_mode_labels ? print_mode_labels : initial_print_mode),
+                          GTCY_Labels, (ULONG)print_mode_labels,
                           GTCY_Active, 0,
-                          GA_Disabled, FALSE,
+                          GA_Disabled, num_supported_print_modes > 0 ? FALSE : TRUE,
                           TAG_DONE);
-
         RefreshGList(g, win, NULL, 1);
         GT_RefreshWindow(win, NULL);
     }
 }
 
 void update_quality_dropdown(struct Window *win) {
-    /* Do not FreeVec() the current live GTCY_Labels block here. */
+    struct Gadget *g;
+    int i;
+    int count = num_supported_quality;
 
-    quality_mode_labels = AllocVec((num_supported_quality + 1) * sizeof(STRPTR), MEMF_ANY);
-    if (!quality_mode_labels) return;
-
-    for (int i = 0; i < num_supported_quality; i++) {
-        quality_mode_labels[i] = AllocVec(strlen(supported_quality[i]) + 1, MEMF_ANY);
-        if (quality_mode_labels[i]) {
-            strcpy(quality_mode_labels[i], supported_quality[i]);
+    if (count <= 0) {
+        count = 1;
+        mp_quality_label_ptrs[0] = mp_quality_label_storage[0];
+        strncpy(mp_quality_label_storage[0], initial_quality_value,
+                sizeof(mp_quality_label_storage[0]) - 1);
+        mp_quality_label_storage[0][sizeof(mp_quality_label_storage[0]) - 1] = '\0';
+    } else {
+        if (count > MAX_VALUES) count = MAX_VALUES;
+        for (i = 0; i < count; i++) {
+            mp_quality_label_ptrs[i] = mp_quality_label_storage[i];
+            strncpy(mp_quality_label_storage[i], supported_quality[i],
+                    sizeof(mp_quality_label_storage[i]) - 1);
+            mp_quality_label_storage[i][sizeof(mp_quality_label_storage[i]) - 1] = '\0';
         }
     }
-    quality_mode_labels[num_supported_quality] = NULL;
+    mp_quality_label_ptrs[count] = NULL;
+    quality_mode_labels = mp_quality_label_ptrs;
 
-    struct Gadget *g = glist;
-    while (g && g->GadgetID != GAD_QUALITY_MODE)
-        g = g->NextGadget;
-
+    g = find_gadget_by_id(GAD_QUALITY_MODE);
     if (g && win) {
         GT_SetGadgetAttrs(g, win, NULL,
                           GTCY_Labels, (ULONG)quality_mode_labels,
                           GTCY_Active, 0,
-                          GA_Disabled, FALSE,
+                          GA_Disabled, num_supported_quality > 0 ? FALSE : TRUE,
                           TAG_DONE);
         RefreshGList(g, win, NULL, 1);
         GT_RefreshWindow(win, NULL);
@@ -1354,51 +1392,11 @@ void update_quality_dropdown(struct Window *win) {
 }
 
 void cleanup_dropdown_labels() {
-    // Print Mode Labels
-    if (print_mode_labels && print_mode_labels != initial_print_mode) {
-        for (int i = 0; print_mode_labels[i]; i++) {
-            if (print_mode_labels[i]) {
-                FreeVec(print_mode_labels[i]);
-                print_mode_labels[i] = NULL;
-            }
-        }
-        FreeVec(print_mode_labels);
-        print_mode_labels = NULL;
-    }
-
-    // Scaling Mode Labels
-    if (scaling_mode_labels && scaling_mode_labels != initial_scaling_mode) {
-        for (int i = 0; scaling_mode_labels[i]; i++) {
-            if (scaling_mode_labels[i]) {
-                FreeVec(scaling_mode_labels[i]);
-                scaling_mode_labels[i] = NULL;
-            }
-        }
-        FreeVec(scaling_mode_labels);
-        scaling_mode_labels = NULL;
-    }
-
-    // Quality Mode Labels
-    if (quality_mode_labels && quality_mode_labels != initial_quality_mode) {
-        for (int i = 0; quality_mode_labels[i]; i++) {
-            if (quality_mode_labels[i]) {
-                FreeVec(quality_mode_labels[i]);
-                quality_mode_labels[i] = NULL;
-            }
-        }
-        FreeVec(quality_mode_labels);
-        quality_mode_labels = NULL;
-    }
-
-    // Unit Dropdown Labels
-    if (unit_dropdown_labels) {
-        for (int i = 0; unit_dropdown_labels[i]; i++) {
-            FreeVec(unit_dropdown_labels[i]);
-            unit_dropdown_labels[i] = NULL;
-        }
-        FreeVec(unit_dropdown_labels);
-        unit_dropdown_labels = NULL;
-    }
+    /*
+     * All CYCLE_KIND label arrays and strings are static process-lifetime
+     * storage. FreeGadgets() has already detached GadTools from them, and
+     * there is intentionally nothing to FreeVec here.
+     */
 }
 
 /* MintPRINT prefs #8: capability cache.
@@ -3985,7 +3983,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     ng.ng_GadgetID = GAD_MEDIA_DROPDOWN;
     ng.ng_Flags = NG_HIGHLABEL;
     gad = CreateGadget(CYCLE_KIND, gad, &ng,
-        GTCY_Labels, (ULONG)initial_media_labels,
+        GTCY_Labels, (ULONG)media_dropdown_items,
         GTCY_Active, 0,
         GA_Disabled, driver_media_buffer[0] ? FALSE : TRUE,
         TAG_DONE);
@@ -4463,9 +4461,8 @@ int main(void) {
 
     // Calculate top border
     topborder = screen->WBorTop + (screen->Font->ta_YSize + 1);
-    print_mode_labels = initial_print_mode;
-    scaling_mode_labels = initial_scaling_mode;
-    quality_mode_labels = initial_quality_mode;
+    /* Cycle label pointers already target process-lifetime static storage.
+     * seed_saved_option_labels() populated those arrays above. */
     // Load the same Unit0 profile used by DEVS:Printers/MintPRINT.
     load_driver_config();
     seed_saved_option_labels();
@@ -4599,15 +4596,7 @@ int main(void) {
         glist = NULL;
     }
 
-    if (media_dropdown_items) {
-        for (int i = 0; media_dropdown_items[i]; i++) {
-            FreeVec(media_dropdown_items[i]);
-            media_dropdown_items[i] = NULL;
-        }
-        FreeVec(media_dropdown_items);
-        media_dropdown_items = NULL;
-    }
-
+    /* Cycle gadget labels are static process-lifetime storage. */
     cleanup_dropdown_labels();
 
     if (menu) {
@@ -4615,19 +4604,31 @@ int main(void) {
         menu = NULL;
     }
 
-    // Unlock the screen
-    if (screen) {
-        UnlockPubScreen(NULL, screen);
-        screen = NULL;
-    }
-
-    // Free VisualInfo (after unlocking the screen)
+    /*
+     * GadTools VisualInfo belongs to the screen it was obtained from.
+     * It must be released while the public-screen lock is still held.
+     *
+     * The old order did UnlockPubScreen() first and only then called
+     * FreeVisualInfo().  That leaves GadTools using screen-related state
+     * after our guarantee that the Screen pointer is still valid has gone,
+     * and is particularly unfriendly to the classic OS3.1 libraries.
+     *
+     * Correct lifetime:
+     *   FreeGadgets / FreeMenus
+     *   FreeVisualInfo
+     *   UnlockPubScreen
+     */
     if (vi) {
         FreeVisualInfo(vi);
         vi = NULL;
     }
 
-    // Close the font
+    if (screen) {
+        UnlockPubScreen(NULL, screen);
+        screen = NULL;
+    }
+
+    // Close the font only after GadTools no longer has VisualInfo using it.
     if (font) {
         CloseFont(font);
         font = NULL;

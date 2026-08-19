@@ -91,6 +91,7 @@ static LONG mp_spool_entry(void)
 {
     struct MsgPort *port;
     struct MsgPort *startup_reply_to = g_spool_startup_port;
+    struct MPSpoolMsg *quit_msg = NULL;
     BOOL running = TRUE;
     BPTR job_fh = 0;
 
@@ -167,12 +168,32 @@ static LONG mp_spool_entry(void)
 
                 case MP_SPOOL_CMD_QUIT:
                 default:
+                    /*
+                     * Do not wake the shutdown caller yet.
+                     *
+                     * This Process is executing code from the MintPRINT
+                     * driver segment.  If we ReplyMsg() here, classic
+                     * printer.device can continue through CloseDevice(),
+                     * call Expunge(), and unload that segment while this
+                     * Process is still executing its teardown.
+                     *
+                     * Keep the caller blocked until the public spool port
+                     * has been removed/deleted.  The final reply is sent as
+                     * the last useful action before this entry function
+                     * returns to dos.library's process startup code.
+                     */
                     mp_spool_proc_close_job(&job_fh);
                     m->result = 0;
+                    quit_msg = m;
                     running = FALSE;
                     break;
             }
-            ReplyMsg((struct Message *)m);
+
+            if (m != quit_msg)
+                ReplyMsg((struct Message *)m);
+
+            if (!running)
+                break;
         }
     }
 
@@ -180,6 +201,15 @@ static LONG mp_spool_entry(void)
     RemPort(port);
     Permit();
     DeleteMsgPort(port);
+
+    /*
+     * The worker is created above the normal caller's priority.  Once this
+     * reply wakes CloseDevice()/Expunge, the worker therefore keeps the CPU
+     * long enough to complete the tiny return epilogue and leave the driver
+     * segment before the caller can unload it.
+     */
+    if (quit_msg)
+        ReplyMsg((struct Message *)quit_msg);
 
     return 0;
 }
@@ -225,7 +255,8 @@ BOOL mp_spool_ensure_running(void)
     if (!CreateNewProcTags(NP_Entry, (ULONG)mp_spool_entry,
                        NP_StackSize, 8192L,
                        NP_Name, (ULONG)"MintPRINT spool",
-                       NP_Priority, 0L,
+                       /* See deferred QUIT reply in mp_spool_entry(). */
+                       NP_Priority, 1L,
                        NP_CurrentDir, 0L,
                        NP_Input, 0L,
                        NP_CloseInput, FALSE,

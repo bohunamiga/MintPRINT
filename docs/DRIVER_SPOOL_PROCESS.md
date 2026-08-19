@@ -172,9 +172,16 @@ confirmed. Only once that's a solid yes does DPaint get retried.
 
 ## Current status
 
-Re-wired (see Round 5) and awaiting that MultiView + log-file checkpoint.
-Not yet confirmed working or broken - this is a genuinely open test, not a
-claimed fix.
+**Round 5 checkpoint passed.** Confirmed working end-to-end via MultiView
+and MintPrint Settings' own Test Print - real print jobs completing
+successfully through the spool process (log, job file open/write/close,
+and IPP submit all routed through it). This is the first time the spool
+process has been confirmed to actually work, for any caller, since it was
+introduced.
+
+DPaint has not yet been retried against this build. That remains the
+actual point of this whole architecture - see the top of this document -
+and is the next test.
 
 ## Build/install/test
 

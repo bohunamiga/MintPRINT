@@ -37,6 +37,16 @@ typedef long ssize_t;
 #include <stdlib.h>
 #include <fcntl.h> // for O_NONBLOCK
 #include "iff-loader.h"
+
+/* All status/progress output goes to the on-screen status box, never a
+ * console - the end user may have launched this from Workbench, where
+ * there is no console to see it in. custom_printf() itself is defined
+ * further down (it draws into the on-screen output box); forward-declare
+ * it and redirect printf() to it here, before any of this file's own
+ * printf() calls, so every one of them lands in the box consistently. */
+void custom_printf(const char *format, ...);
+#define printf custom_printf
+
 extern struct GfxBase *GfxBase;
 #define MAX_VALUES 32
 #define MAX_ATTR_LEN 64
@@ -170,6 +180,8 @@ static struct NewMenu menu_template[] = {
     { NM_ITEM,  (STRPTR)"Save Driver Settings", 0, 0, 0, 0 },
     { NM_ITEM,  (STRPTR)"Reload Driver Settings", 0, 0, 0, 0 },
     { NM_ITEM,  NM_BARLABEL, 0, 0, 0, 0 },
+    { NM_ITEM,  (STRPTR)"About MintPRINT...", 0, 0, 0, 0 },
+    { NM_ITEM,  NM_BARLABEL, 0, 0, 0, 0 },
     { NM_ITEM,  (STRPTR)"Quit", 0, 0, 0, 0 },
     { NM_END,   NULL, 0, 0, 0, 0 }
 };
@@ -273,7 +285,7 @@ char driver_path_buffer[96] = "/ipp/print";
 BOOL driver_keep_job = TRUE;
 static STRPTR keep_job_labels[] = { "Delete job JPEG", "Keep debug JPEG", NULL };
 char driver_engine_buffer[32] = "jpeg";
-static STRPTR engine_labels[] = { "JPEG", "PWG Raster", NULL };
+static STRPTR engine_labels[] = { "JPEG", "PWG Raster", "PDF", NULL };
 char driver_media_buffer[MAX_ATTR_LEN] = "";
 char driver_source_buffer[MAX_ATTR_LEN] = "";
 char driver_color_buffer[MAX_ATTR_LEN] = "";
@@ -497,14 +509,64 @@ static void refresh_unit_dropdown(struct Window *win) {
     }
 }
 
-/* custom_printf() itself is defined further down (it draws into the on-screen
- * output box), but this warning needs to reach the GUI log rather than stdio,
- * so it is forward-declared and called directly here. */
-void custom_printf(const char *format, ...);
-
 static const char *engine_mime_type(const char *engine) {
     if (strcmp(engine, "pwg-raster") == 0) return "image/pwg-raster";
+    if (strcmp(engine, "pdf") == 0) return "application/pdf";
     return "image/jpeg";
+}
+
+/* engine_labels[] order: 0=JPEG, 1=PWG Raster, 2=PDF. */
+static ULONG mp_engine_active_index(void) {
+    if (strcmp(driver_engine_buffer, "pwg-raster") == 0) return 1;
+    if (strcmp(driver_engine_buffer, "pdf") == 0) return 2;
+    return 0;
+}
+
+/* Every document-format this driver's engines can actually produce. Kept
+ * in sync with engine_mime_type()'s cases. */
+static const char *mp_supported_engine_mimes[] = {
+    "image/jpeg", "image/pwg-raster", "application/pdf"
+};
+#define MP_SUPPORTED_ENGINE_MIME_COUNT \
+    (sizeof(mp_supported_engine_mimes) / sizeof(mp_supported_engine_mimes[0]))
+
+/* After a successful Query, checks whether the printer advertised ANY
+ * document-format this driver can actually produce. Unlike
+ * warn_if_engine_unsupported() (which only flags a mismatch with the
+ * currently-selected engine and is purely informational), a printer that
+ * supports none of them cannot be printed to at all - a hard "this
+ * printer isn't supported" finding, worth a real requester rather than a
+ * status-box line easily missed among the rest of the Query output. */
+static void mp_check_any_engine_supported(struct Window *win) {
+    int i, j;
+    BOOL any_match = FALSE;
+    struct EasyStruct es;
+
+    if (num_supported_formats == 0) return; /* printer didn't report - can't judge */
+
+    for (i = 0; i < num_supported_formats && !any_match; i++) {
+        for (j = 0; j < (int)MP_SUPPORTED_ENGINE_MIME_COUNT; j++) {
+            if (strcasecmp(supported_formats[i], mp_supported_engine_mimes[j]) == 0) {
+                any_match = TRUE;
+                break;
+            }
+        }
+    }
+
+    if (any_match) return;
+
+    es.es_StructSize = sizeof(struct EasyStruct);
+    es.es_Flags = 0;
+    es.es_Title = (UBYTE *)"MintPrint Settings";
+    es.es_TextFormat = (UBYTE *)
+        "This printer did not advertise any document format\n"
+        "MintPRINT can produce (JPEG, PWG Raster, or PDF).\n\n"
+        "It is likely not supported yet. To help add support,\n"
+        "please log an issue at github.com/boingball/MintPRINT -\n"
+        "run windows_ipp_probe.py (from a Windows PC on the same\n"
+        "network) against this printer and attach its output.";
+    es.es_GadgetFormat = (UBYTE *)"OK";
+    EasyRequest(win, &es, NULL);
 }
 
 /* Cross-checks the chosen engine against the formats the printer actually
@@ -569,7 +631,9 @@ static void capture_driver_settings(struct Window *win) {
         GT_GetGadgetAttrs(g, win, NULL,
                           GTCY_Active, (ULONG)&engine_active,
                           TAG_DONE);
-        strcpy(driver_engine_buffer, engine_active == 1 ? "pwg-raster" : "jpeg");
+        if (engine_active == 1) strcpy(driver_engine_buffer, "pwg-raster");
+        else if (engine_active == 2) strcpy(driver_engine_buffer, "pdf");
+        else strcpy(driver_engine_buffer, "jpeg");
         warn_if_engine_unsupported(driver_engine_buffer);
     }
 
@@ -775,6 +839,8 @@ static BOOL load_driver_config(void) {
         } else if (strncmp(line, "ENGINE=", 7) == 0) {
             if (strcmp(line + 7, "pwg-raster") == 0)
                 strcpy(driver_engine_buffer, "pwg-raster");
+            else if (strcmp(line + 7, "pdf") == 0)
+                strcpy(driver_engine_buffer, "pdf");
             else
                 strcpy(driver_engine_buffer, "jpeg");
         } else if (strncmp(line, "KEEPJOB=", 8) == 0) {
@@ -1093,7 +1159,7 @@ static void apply_driver_config_to_gadgets(struct Window *win) {
     g = find_gadget_by_id(GAD_ENGINE);
     if (g)
         GT_SetGadgetAttrs(g, win, NULL,
-                          GTCY_Active, strcmp(driver_engine_buffer, "pwg-raster") == 0 ? 1 : 0,
+                          GTCY_Active, mp_engine_active_index(),
                           TAG_DONE);
 
     g = find_gadget_by_id(GAD_MODEL_DISPLAY);
@@ -1672,33 +1738,59 @@ static void reload_current_unit(struct Window *win) {
 
 
 // Redirect printf to buffer
+/* Draws the status box border and whatever lines output_buffer/output_line
+ * currently hold. This is the box's ENTIRE on-screen paint, and it is only
+ * ever a side effect of custom_printf() being called - the window is
+ * WA_SimpleRefresh, so nothing repaints this non-gadget area automatically.
+ * That includes IDCMP_REFRESHWINDOW: GT_BeginRefresh/GT_EndRefresh there
+ * only repaints GadTools gadgets, never this hand-drawn area, so without
+ * this being called from that handler too, anything that forces a refresh
+ * (another window opening on top and closing again, dragging this window
+ * partly offscreen, etc.) leaves the box LOOKING empty - output_buffer's
+ * data is untouched throughout, only the paint was lost. */
+static void redraw_output_box(void) {
+    struct RastPort *rp;
+    int line_height, output_area_top, output_area_bottom, start_line, i;
+
+    if (!window) return;
+
+    rp = window->RPort;
+    if (font) SetFont(rp, font);
+    SetAPen(rp, 1); // Text color
+    SetBPen(rp, 0); // Background color
+    SetDrMd(rp, JAM2);
+
+    // Calculate the output area dimensions
+    line_height = font->tf_YSize + 2;
+    output_area_top = OUTPUT_TOP;
+    output_area_bottom = output_area_top + (MAX_OUTPUT_LINES * line_height) - 1;
+
+    // Draw the border
+    SetAPen(rp, 1); // Border color
+    RectFill(rp, OUTPUT_LEFT - 2, output_area_top - 2, OUTPUT_RIGHT + 2, output_area_top - 1); // Top
+    RectFill(rp, OUTPUT_LEFT - 2, output_area_bottom + 1, OUTPUT_RIGHT + 2, output_area_bottom + 2); // Bottom
+    RectFill(rp, OUTPUT_LEFT - 2, output_area_top - 2, OUTPUT_LEFT - 1, output_area_bottom + 2); // Left
+    RectFill(rp, OUTPUT_RIGHT + 1, output_area_top - 2, OUTPUT_RIGHT + 2, output_area_bottom + 2); // Right
+
+    // Clear the output area
+    SetAPen(rp, 0); // Background color
+    RectFill(rp, OUTPUT_LEFT, output_area_top, OUTPUT_RIGHT, output_area_bottom);
+
+    // Draw the most recent lines (scrolling effect)
+    start_line = (output_line > MAX_OUTPUT_LINES) ? (output_line - MAX_OUTPUT_LINES) : 0;
+    for (i = 0; i < MAX_OUTPUT_LINES && (start_line + i) < output_line; i++) {
+        int y = output_area_top + (i * line_height) + font->tf_Baseline;
+        Move(rp, OUTPUT_LEFT, y);
+        SetAPen(rp, 1); // Text color
+        Text(rp, output_buffer[start_line + i], strlen(output_buffer[start_line + i]));
+    }
+}
+
 void custom_printf(const char *format, ...) {
     // Special case: clear the output area if the format string is "CLEAR"
     if (strcmp(format, "CLEAR") == 0) {
         output_line = 0;
-        if (window) {
-            struct RastPort *rp = window->RPort;
-            if (font) SetFont(rp, font);
-            SetAPen(rp, 1); // Text color
-            SetBPen(rp, 0); // Background color
-            SetDrMd(rp, JAM2);
-
-            // Calculate the output area dimensions
-            int line_height = font->tf_YSize + 2;
-            int output_area_top = OUTPUT_TOP;
-            int output_area_bottom = output_area_top + (MAX_OUTPUT_LINES * line_height) - 1;
-
-            // Draw the border
-            SetAPen(rp, 1); // Border color
-            RectFill(rp, OUTPUT_LEFT - 2, output_area_top - 2, OUTPUT_RIGHT + 2, output_area_top - 1); // Top
-            RectFill(rp, OUTPUT_LEFT - 2, output_area_bottom + 1, OUTPUT_RIGHT + 2, output_area_bottom + 2); // Bottom
-            RectFill(rp, OUTPUT_LEFT - 2, output_area_top - 2, OUTPUT_LEFT - 1, output_area_bottom + 2); // Left
-            RectFill(rp, OUTPUT_RIGHT + 1, output_area_top - 2, OUTPUT_RIGHT + 2, output_area_bottom + 2); // Right
-
-            // Clear the output area
-            SetAPen(rp, 0); // Background color
-            RectFill(rp, OUTPUT_LEFT, output_area_top, OUTPUT_RIGHT, output_area_bottom);
-        }
+        redraw_output_box();
         return;
     }
 
@@ -1738,42 +1830,8 @@ void custom_printf(const char *format, ...) {
     // Free the temp buffer
     free(temp);
 
-    // Refresh GUI output
-    if (window) {
-        struct RastPort *rp = window->RPort;
-        if (font) SetFont(rp, font);
-        SetAPen(rp, 1); // Text color
-        SetBPen(rp, 0); // Background color
-        SetDrMd(rp, JAM2);
-
-        // Calculate the output area dimensions
-        int line_height = font->tf_YSize + 2;
-        int output_area_top = OUTPUT_TOP;
-        int output_area_bottom = output_area_top + (MAX_OUTPUT_LINES * line_height) - 1;
-
-        // Draw the border
-        SetAPen(rp, 1); // Border color
-        RectFill(rp, OUTPUT_LEFT - 2, output_area_top - 2, OUTPUT_RIGHT + 2, output_area_top - 1); // Top
-        RectFill(rp, OUTPUT_LEFT - 2, output_area_bottom + 1, OUTPUT_RIGHT + 2, output_area_bottom + 2); // Bottom
-        RectFill(rp, OUTPUT_LEFT - 2, output_area_top - 2, OUTPUT_LEFT - 1, output_area_bottom + 2); // Left
-        RectFill(rp, OUTPUT_RIGHT + 1, output_area_top - 2, OUTPUT_RIGHT + 2, output_area_bottom + 2); // Right
-
-        // Clear the output area
-        SetAPen(rp, 0); // Background color
-        RectFill(rp, OUTPUT_LEFT, output_area_top, OUTPUT_RIGHT, output_area_bottom);
-
-        // Draw the most recent lines (scrolling effect)
-        int start_line = (output_line > MAX_OUTPUT_LINES) ? (output_line - MAX_OUTPUT_LINES) : 0;
-        for (int i = 0; i < MAX_OUTPUT_LINES && (start_line + i) < output_line; i++) {
-            int y = output_area_top + (i * line_height) + font->tf_Baseline;
-            Move(rp, OUTPUT_LEFT, y);
-            SetAPen(rp, 1); // Text color
-            Text(rp, output_buffer[start_line + i], strlen(output_buffer[start_line + i]));
-        }
-    }
+    redraw_output_box();
 }
-// Override printf
-#define printf custom_printf
 
 int load_ilbm_to_rgb(const char *filename, unsigned char **rgb_out, int *width_out, int *height_out) {
     struct jpeg_data data;
@@ -1966,18 +2024,105 @@ static BOOL mp_copy_file(CONST_STRPTR src, CONST_STRPTR dst) {
 }
 
 static void mp_launch_printer_prefs(void) {
-    if (SystemTags((CONST_STRPTR)"SYS:Prefs/Printer", SYS_Asynch, TRUE, TAG_DONE) != 0) {
+    /* SYS_Asynch without explicit SYS_Input/SYS_Output shares the CALLER's
+     * own console handles with the new process - and an async process
+     * closes its input/output when it exits, which then closes the
+     * caller's (this program's, and its launching Shell's) console out
+     * from under it. Give the child its own private NIL: handles instead
+     * so it owns and closes only those. */
+    BPTR in = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
+    BPTR out = Open((CONST_STRPTR)"NIL:", MODE_NEWFILE);
+
+    if (SystemTags((CONST_STRPTR)"SYS:Prefs/Printer", SYS_Asynch, TRUE,
+                   SYS_Input, (ULONG)in, SYS_Output, (ULONG)out,
+                   TAG_DONE) != 0) {
         printf("Could not launch SYS:Prefs/Printer automatically\n");
         printf("Please open Printer preferences manually.\n");
+        if (in) Close(in);
+        if (out) Close(out);
     }
+}
+
+/* Reads this project's own driver build-counter out of a driver file, by
+ * scanning for the literal "MPDRVREV:<decimal>" marker embedded in
+ * printertag.s (see there for why: the compiled driver FILE on disk is a
+ * standard AmigaDOS hunk-format load module, not a raw blob starting at
+ * its code entry point, so there is no reliable FIXED BYTE OFFSET to read
+ * this from - a scannable marker is the same approach AmigaOS's own
+ * "Version" command uses for "$VER:" strings). Returns FALSE if the file
+ * can't be opened or the marker isn't found. */
+#define MP_DRIVER_REV_MARKER "MPDRVREV:"
+#define MP_DRIVER_REV_SCAN_MAX 65536
+
+static BOOL mp_read_driver_revision(CONST_STRPTR path, UWORD *revision_out) {
+    BPTR file;
+    UBYTE *buf;
+    LONG got;
+    LONG marker_len = (LONG)strlen(MP_DRIVER_REV_MARKER);
+    LONG i;
+    BOOL found = FALSE;
+
+    file = Open(path, MODE_OLDFILE);
+    if (!file) return FALSE;
+
+    buf = AllocVec(MP_DRIVER_REV_SCAN_MAX, MEMF_ANY);
+    if (!buf) {
+        Close(file);
+        return FALSE;
+    }
+
+    got = Read(file, buf, MP_DRIVER_REV_SCAN_MAX);
+    Close(file);
+
+    if (got < marker_len) {
+        FreeVec(buf);
+        return FALSE;
+    }
+
+    for (i = 0; i <= got - marker_len; i++) {
+        if (memcmp(buf + i, MP_DRIVER_REV_MARKER, marker_len) == 0) {
+            LONG j = i + marker_len;
+            ULONG value = 0;
+            BOOL any_digit = FALSE;
+
+            while (j < got && buf[j] >= '0' && buf[j] <= '9') {
+                value = value * 10UL + (ULONG)(buf[j] - '0');
+                any_digit = TRUE;
+                j++;
+            }
+            if (any_digit) {
+                *revision_out = (UWORD)value;
+                found = TRUE;
+            }
+            break;
+        }
+    }
+
+    FreeVec(buf);
+    return found;
+}
+
+static void show_about(struct Window *win) {
+    struct EasyStruct es;
+
+    es.es_StructSize = sizeof(struct EasyStruct);
+    es.es_Flags = 0;
+    es.es_Title = (UBYTE *)"About MintPrint Settings";
+    es.es_TextFormat = (UBYTE *)
+        "MintPRINT v1.0 - IPP/AirPrint printing for AmigaOS\n\n"
+        "Bug reports and source:\n"
+        "github.com/boingball/MintPRINT\n\n"
+        "If this saved you a trip to the printer shop:\n"
+        "buymeacoffee.com/boingball";
+    es.es_GadgetFormat = (UBYTE *)"OK";
+    EasyRequest(win, &es, NULL);
 }
 
 static void check_and_offer_driver_install(struct Window *win) {
     struct EasyStruct es;
-
-    if (mp_file_exists(MINTPRINT_DRIVER_DEST)) {
-        return; /* already installed */
-    }
+    char msg[192];
+    UWORD src_rev, dest_rev;
+    BOOL have_src_rev, have_dest_rev;
 
     if (!mp_file_exists(MINTPRINT_DRIVER_SRC)) {
         printf("MintPRINT driver not found next to this program; skipping install check.\n");
@@ -1987,6 +2132,36 @@ static void check_and_offer_driver_install(struct Window *win) {
     es.es_StructSize = sizeof(struct EasyStruct);
     es.es_Flags = 0;
     es.es_Title = (UBYTE *)"MintPrint Settings";
+
+    if (mp_file_exists(MINTPRINT_DRIVER_DEST)) {
+        /* Already installed - only bother the user if the copy bundled
+         * next to this program is a newer build than what's installed. */
+        have_src_rev = mp_read_driver_revision(MINTPRINT_DRIVER_SRC, &src_rev);
+        have_dest_rev = mp_read_driver_revision(MINTPRINT_DRIVER_DEST, &dest_rev);
+
+        if (!have_src_rev || !have_dest_rev || src_rev <= dest_rev) {
+            return; /* up to date, or revision unreadable - leave it alone */
+        }
+
+        snprintf(msg, sizeof(msg),
+                 "A newer MintPRINT driver is available\n(installed: rev %u, bundled: rev %u).\nUpdate DEVS:Printers/MintPRINT now?",
+                 (unsigned)dest_rev, (unsigned)src_rev);
+        es.es_TextFormat = (UBYTE *)msg;
+        es.es_GadgetFormat = (UBYTE *)"Update|Later";
+
+        if (!EasyRequest(win, &es, NULL)) return;
+
+        if (mp_copy_file(MINTPRINT_DRIVER_SRC, MINTPRINT_DRIVER_DEST)) {
+            printf("Updated MintPRINT driver to rev %u in DEVS:Printers/MintPRINT\n", (unsigned)src_rev);
+            printf("Reboot (or otherwise unload the old driver segment) before printing.\n");
+        } else {
+            es.es_TextFormat = (UBYTE *)"Could not copy the driver to DEVS:Printers/.\nCheck disk space and write access.";
+            es.es_GadgetFormat = (UBYTE *)"OK";
+            EasyRequest(win, &es, NULL);
+        }
+        return;
+    }
+
     es.es_TextFormat = (UBYTE *)"The MintPRINT printer driver is not installed in\nDEVS:Printers/. Install it now?";
     es.es_GadgetFormat = (UBYTE *)"Install|Cancel";
 
@@ -1994,7 +2169,7 @@ static void check_and_offer_driver_install(struct Window *win) {
         if (mp_copy_file(MINTPRINT_DRIVER_SRC, MINTPRINT_DRIVER_DEST)) {
             printf("Installed MintPRINT driver to DEVS:Printers/MintPRINT\n");
 
-            es.es_TextFormat = (UBYTE *)"MintPRINT driver installed.\n\nOpen Printer preferences now and select\n'MintPRINT' as your printer, then save.";
+            es.es_TextFormat = (UBYTE *)"MintPRINT driver installed.\n\nOpen Printer preferences now and select\n'MintPRINT' as your printer, then save.\n\nReboot before printing - a driver segment already\nresident in memory will not pick up this file until then.";
             es.es_GadgetFormat = (UBYTE *)"Open Printer Prefs|Later";
             if (EasyRequest(win, &es, NULL)) {
                 mp_launch_printer_prefs();
@@ -3117,6 +3292,7 @@ static void perform_query_flow(struct Window *win, const char *ip_only, int port
                 printf("Warning: could not save printer capability cache\n");
 
             apply_job_defaults_to_gadgets(win);
+            mp_check_any_engine_supported(win);
             break;
         }
     }
@@ -3768,8 +3944,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
         ng.ng_TopEdge = row2_top;
     }
 
-    // Printer document engine. JPEG is the current working backend;
-    // PWG Raster is persisted now and will be activated by the backend patch.
+    // Printer document engine: JPEG, PWG Raster, or PDF.
     ng.ng_LeftEdge = 130;
     ng.ng_TopEdge += 20;
     ng.ng_Width = 180;
@@ -3778,7 +3953,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     ng.ng_GadgetID = GAD_ENGINE;
     gad = CreateGadget(CYCLE_KIND, gad, &ng,
         GTCY_Labels, (ULONG)engine_labels,
-        GTCY_Active, strcmp(driver_engine_buffer, "pwg-raster") == 0 ? 1 : 0,
+        GTCY_Active, mp_engine_active_index(),
         TAG_DONE);
     if (!gad) {
         printf("Failed to create printer engine gadget\n");
@@ -4161,6 +4336,12 @@ void process_window_events(struct Window *win) {
                 case IDCMP_REFRESHWINDOW:
                     GT_BeginRefresh(win);
                     GT_EndRefresh(win, TRUE);
+                    /* GT_BeginRefresh/EndRefresh only repaints GadTools
+                     * gadgets - the status box is hand-drawn and needs its
+                     * own replay here, or it looks emptied out any time
+                     * something forces a refresh (e.g. Printer Prefs
+                     * opening on top of this window and closing again). */
+                    redraw_output_box();
                     break;
 
                     case IDCMP_MENUPICK:
@@ -4184,7 +4365,11 @@ void process_window_events(struct Window *win) {
                                         reload_current_unit(win);
                                         break;
 
-                                    case 3: // Quit
+                                    case 3: // About MintPRINT...
+                                        show_about(win);
+                                        break;
+
+                                    case 5: // Quit
                                         terminated = TRUE;
                                         break;
                                 }
@@ -4278,7 +4463,6 @@ int main(void) {
 
     // Calculate top border
     topborder = screen->WBorTop + (screen->Font->ta_YSize + 1);
-    printf("Window inner height: %d, topborder: %d\n", window ? window->Height - topborder : 0, topborder);
     print_mode_labels = initial_print_mode;
     scaling_mode_labels = initial_scaling_mode;
     quality_mode_labels = initial_quality_mode;
@@ -4337,6 +4521,10 @@ int main(void) {
         CloseLibrary((struct Library *)IntuitionBase);
         return 1;
     }
+
+    /* Draw the status box's empty border immediately, rather than leaving
+     * it invisible until the first status line happens to draw it. */
+    custom_printf("CLEAR");
 
     // Set the initial state of the print mode radio buttons
     struct Gadget *print_mode_gadget = glist;

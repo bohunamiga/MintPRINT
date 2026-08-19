@@ -29,7 +29,13 @@ _start:
         /* MOVEQ #0,D0 ; RTS -- safe if somebody tries to execute driver */
         .byte   0x70,0x00,0x4e,0x75
 
-        /* PrinterSegment version/revision. V44 enables extended PED tags. */
+        /* PrinterSegment version/revision. Version must stay 44 - it is
+         * printer.device's own ABI marker for the V44 extended PED tags
+         * this driver uses, not a MintPRINT project number. Revision is
+         * unused by this project (there is no reliable fixed byte offset
+         * to read it back at from the raw file on disk - see
+         * MP_DRIVER_REV_MARKER below for why, and for this project's own
+         * build-counter marker). */
         .word   44
         .word   1
 
@@ -65,4 +71,26 @@ _PEDData:
 
 printerName:
         .asciz  "MintPRINT"
+        .even
+
+/*
+ * This project's own driver build-counter, for MintPrint Settings' own
+ * update-detection - NOT read by printer.device.
+ *
+ * The compiled driver FILE on disk is a standard AmigaDOS hunk-format load
+ * module (HUNK_HEADER followed by HUNK_CODE/HUNK_DATA/... hunks, same as
+ * any other linked Amiga program - "-nostartfiles" only omits the C
+ * runtime startup code, it does not change the container format), not a
+ * raw blob starting at _start. There is no reliable FIXED BYTE OFFSET for
+ * anything in that raw file: the hunk header's own size varies (resident
+ * library name list, hunk count/sizes), so a byte offset that happens to
+ * land on this revision word in one build can land somewhere else
+ * entirely in the next. A scannable ASCII marker sidesteps that
+ * completely - it only needs to appear ANYWHERE in the file's bytes, the
+ * same approach AmigaOS's own "Version" command uses for "$VER:" strings.
+ * Bump the trailing number whenever a driver rebuild actually changes
+ * behaviour - a config-only or GUI-only change does not need a bump.
+ */
+mp_driver_revision_marker:
+        .asciz  "MPDRVREV:2"
         .even

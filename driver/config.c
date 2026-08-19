@@ -153,6 +153,8 @@ LONG mp_config_load(struct MPConfig *cfg)
             value = g_config_line + 7;
             if (mp_cfg_starts(value, "pwg-raster") && mp_cfg_len(value) == 10) {
                 mp_cfg_copy(cfg->engine, sizeof(cfg->engine), "pwg-raster");
+            } else if (mp_cfg_starts(value, "pdf") && mp_cfg_len(value) == 3) {
+                mp_cfg_copy(cfg->engine, sizeof(cfg->engine), "pdf");
             } else {
                 mp_cfg_copy(cfg->engine, sizeof(cfg->engine), "jpeg");
             }

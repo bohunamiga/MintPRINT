@@ -4,3 +4,6 @@
 *.lha
 *.zip
 .vscode/
+*:Zone.Identifier
+build/
+release/

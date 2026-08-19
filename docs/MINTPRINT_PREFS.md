@@ -19,7 +19,7 @@ Layout:
 - Unit sits at the top - which saved printer profile is being viewed/edited.
 - Query Printer sits beside Printer IP/Host.
 - Discover sits directly below Query and searches the LAN for printers.
-- Printer Engine offers JPEG and PWG Raster.
+- Printer Engine offers JPEG, PWG Raster, and PDF.
 - Save sits beside Exit.
 - Test Print prints the built-in test page through `printer.device`.
 
@@ -51,11 +51,13 @@ worth keeping, save them to an empty unit slot first. Activate on Unit0
 itself is a no-op (it is already active); on a unit with nothing saved yet
 it just reports that there is nothing to copy.
 
-`ENGINE=jpeg` and `ENGINE=pwg-raster` are persisted by the preferences program
-and both are real driver backends: `DEVS:Printers/MintPRINT` reads Unit0's
-`ENGINE=` and produces either a JPEG or a PWG Raster (`image/pwg-raster`)
-document accordingly. See `docs/PWG_RASTER.md` for how the PWG Raster
-encoder works and what has and hasn't been physically test-printed yet.
+`ENGINE=jpeg`, `ENGINE=pwg-raster`, and `ENGINE=pdf` are persisted by the
+preferences program and all three are real driver backends:
+`DEVS:Printers/MintPRINT` reads Unit0's `ENGINE=` and produces a JPEG, a
+PWG Raster (`image/pwg-raster`), or a PDF (`application/pdf`) document
+accordingly. See `docs/PWG_RASTER.md` and `docs/PDF_ENGINE.md` for how
+each encoder works and what has and hasn't been physically test-printed
+yet.
 
 The driver reloads Unit0 at the start of every graphics print. Replacing the
 printer driver binary itself still requires a reboot before testing it.
@@ -105,11 +107,15 @@ been saved there at all).
 Query Printer now also requests `document-format-supported` and logs the
 printer's full advertised list (e.g. `image/jpeg`, `image/pwg-raster`,
 `application/pdf`, ...) to the output area. This is informational: the driver
-only implements two of those itself (JPEG and PWG Raster, selected by
-`Printer Engine`); anything else in the list is just what the printer also
-happens to accept from other clients. If **Save** is pressed with `Printer Engine` set to a format the
-most recent query did not see advertised, a warning is logged (Save still
-succeeds - this is a heads-up, not a hard block).
+only implements three of those itself (JPEG, PWG Raster, and PDF, selected
+by `Printer Engine`); anything else in the list is just what the printer
+also happens to accept from other clients. If **Save** is pressed with
+`Printer Engine` set to a format the most recent query did not see
+advertised, a warning is logged (Save still succeeds - this is a
+heads-up, not a hard block). If the printer's advertised list contains
+**none** of the three formats MintPRINT can produce, a requester points at
+filing a GitHub issue with `windows_ipp_probe.py` output attached, since
+that printer is not supported yet.
 
 ## Driver install helper
 

@@ -212,10 +212,27 @@ BOOL mp_spool_ensure_running(void)
 
     g_spool_startup_port = startup_port;
 
+    /* CreateNewProc()'s undocumented-to-first-glance danger: any of these
+     * tags left unspecified default to "duplicate the CALLING process's own
+     * field" (current dir, home dir, console task, window pointer) - which
+     * means dereferencing pr_CurrentDir/pr_HomeDir/pr_ConsoleTask/
+     * pr_WindowPtr on whatever FindTask(NULL) returns, cast straight to
+     * struct Process* with no check that it actually is one. From a bare
+     * Task (exactly the DPaint background-print case this file exists for)
+     * those fields do not exist, so the "duplicate from caller" default is
+     * itself an unsafe dos.library access - pin every one of them
+     * explicitly so CreateNewProc never reads anything from the caller. */
     if (!CreateNewProcTags(NP_Entry, (ULONG)mp_spool_entry,
                        NP_StackSize, 8192L,
                        NP_Name, (ULONG)"MintPRINT spool",
                        NP_Priority, 0L,
+                       NP_CurrentDir, 0L,
+                       NP_Input, 0L,
+                       NP_CloseInput, FALSE,
+                       NP_Output, 0L,
+                       NP_CloseOutput, FALSE,
+                       NP_ConsoleTask, 0L,
+                       NP_WindowPtr, -1L,
                        TAG_DONE)) {
         g_spool_startup_port = NULL;
         DeleteMsgPort(startup_port);

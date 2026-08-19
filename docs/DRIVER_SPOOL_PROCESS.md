@@ -54,15 +54,44 @@ in-memory struct field assignment, no `dos.library` call) still runs
 directly in the caller's context as a fallback so a config struct is never
 left uninitialised if the spool process cannot be reached.
 
+## Round 2: CreateNewProc() itself turned out to be part of the problem
+
+The first version of this fix still crashed under DPaint, immediately and
+before even the trace log file was created - meaning the crash had moved
+*earlier*, to inside `mp_spool_ensure_running()` itself, before the spool
+process ever got to run a single line of its own code.
+
+The remaining culprit: `CreateNewProc()` is itself a `dos.library` function,
+and several of its tags - `NP_CurrentDir`, `NP_HomeDir`, `NP_ConsoleTask`,
+`NP_WindowPtr` - default, when left unspecified, to *duplicating the
+calling process's own field*. Concretely, that means dereferencing
+`pr_CurrentDir` / `pr_ConsoleTask` / `pr_WindowPtr` on whatever
+`FindTask(NULL)` returns, cast straight to `struct Process *` with no check
+that it actually is one. From a bare Task - exactly DPaint's
+background-print case - those fields don't exist, so the "duplicate from
+caller" default is itself the unsafe access, deep inside the one `dos.library`
+call (`CreateNewProc`) this design had assumed was the safe, documented
+exception.
+
+The fix (already in `driver/spool.c`'s `mp_spool_ensure_running()`): pin
+every one of those tags explicitly - `NP_CurrentDir`, `NP_Input`,
+`NP_CloseInput`, `NP_Output`, `NP_CloseOutput`, `NP_ConsoleTask`,
+`NP_WindowPtr` - so `CreateNewProc` never reads anything from the calling
+task's process fields at all, regardless of whether the caller is a real
+Process or a bare Task.
+
 ## Status: implemented, not yet physically test-printed
 
 This fix was derived and implemented from an independent check of the
 AmigaOS Task/Process/`dos.library` rules, cross-referenced against
-documented `printer.device` driver callback behaviour, and against the
-empirical evidence that the crash was caller-specific (DPaint) rather than
-universal. That gives good confidence in the diagnosis and the shape of the
-fix. It has **not** yet been confirmed to fix the actual DPaint crash on
-real hardware/WinUAE - that is the next step.
+documented `printer.device` driver callback behaviour and `CreateNewProc`'s
+documented tag defaults (cross-checked against AROS's dos.library
+reimplementation, which reads the same calling-process fields under the
+same tag names), and against the empirical evidence that the crash was
+caller-specific (DPaint) rather than universal, and that it moved earlier
+after the first fix attempt. That gives good confidence in the diagnosis
+and the shape of the fix. It has **not** yet been confirmed to fix the
+actual DPaint crash on real hardware/WinUAE - that is the next step.
 
 ## Build/install/test
 

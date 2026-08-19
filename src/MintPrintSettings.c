@@ -37,6 +37,16 @@ typedef long ssize_t;
 #include <stdlib.h>
 #include <fcntl.h> // for O_NONBLOCK
 #include "iff-loader.h"
+
+/* All status/progress output goes to the on-screen status box, never a
+ * console - the end user may have launched this from Workbench, where
+ * there is no console to see it in. custom_printf() itself is defined
+ * further down (it draws into the on-screen output box); forward-declare
+ * it and redirect printf() to it here, before any of this file's own
+ * printf() calls, so every one of them lands in the box consistently. */
+void custom_printf(const char *format, ...);
+#define printf custom_printf
+
 extern struct GfxBase *GfxBase;
 #define MAX_VALUES 32
 #define MAX_ATTR_LEN 64
@@ -496,11 +506,6 @@ static void refresh_unit_dropdown(struct Window *win) {
         }
     }
 }
-
-/* custom_printf() itself is defined further down (it draws into the on-screen
- * output box), but this warning needs to reach the GUI log rather than stdio,
- * so it is forward-declared and called directly here. */
-void custom_printf(const char *format, ...);
 
 static const char *engine_mime_type(const char *engine) {
     if (strcmp(engine, "pwg-raster") == 0) return "image/pwg-raster";
@@ -1772,8 +1777,6 @@ void custom_printf(const char *format, ...) {
         }
     }
 }
-// Override printf
-#define printf custom_printf
 
 int load_ilbm_to_rgb(const char *filename, unsigned char **rgb_out, int *width_out, int *height_out) {
     struct jpeg_data data;
@@ -4291,7 +4294,6 @@ int main(void) {
 
     // Calculate top border
     topborder = screen->WBorTop + (screen->Font->ta_YSize + 1);
-    printf("Window inner height: %d, topborder: %d\n", window ? window->Height - topborder : 0, topborder);
     print_mode_labels = initial_print_mode;
     scaling_mode_labels = initial_scaling_mode;
     quality_mode_labels = initial_quality_mode;
@@ -4350,6 +4352,10 @@ int main(void) {
         CloseLibrary((struct Library *)IntuitionBase);
         return 1;
     }
+
+    /* Draw the status box's empty border immediately, rather than leaving
+     * it invisible until the first status line happens to draw it. */
+    custom_printf("CLEAR");
 
     // Set the initial state of the print mode radio buttons
     struct Gadget *print_mode_gadget = glist;

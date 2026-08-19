@@ -2055,7 +2055,7 @@ static void check_and_offer_driver_install(struct Window *win) {
         if (mp_copy_file(MINTPRINT_DRIVER_SRC, MINTPRINT_DRIVER_DEST)) {
             printf("Installed MintPRINT driver to DEVS:Printers/MintPRINT\n");
 
-            es.es_TextFormat = (UBYTE *)"MintPRINT driver installed.\n\nOpen Printer preferences now and select\n'MintPRINT' as your printer, then save.";
+            es.es_TextFormat = (UBYTE *)"MintPRINT driver installed.\n\nOpen Printer preferences now and select\n'MintPRINT' as your printer, then save.\n\nReboot before printing - a driver segment already\nresident in memory will not pick up this file until then.";
             es.es_GadgetFormat = (UBYTE *)"Open Printer Prefs|Later";
             if (EasyRequest(win, &es, NULL)) {
                 mp_launch_printer_prefs();

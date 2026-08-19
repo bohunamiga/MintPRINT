@@ -1,0 +1,115 @@
+Short:        IPP/AirPrint printing driver and setup tool
+Author:       Darren Banfi (boingball)
+Uploader:     boingball gmail com (Darren Banfi)
+Type:         util/misc
+Version:      1.0.0
+Requires:     68000+; TCP/IP stack (bsdsocket.library) for all printing;
+              AmigaOS 3.5+, or 3.2 with an updated printer.device, for the
+              DEVS:Printers/MintPRINT driver's V44 extended driver tags
+Architecture: m68k-amigaos >= 3.5.0
+
+MintPRINT
+=========
+
+MintPRINT lets classic AmigaOS applications print to modern network
+printers - the same IPP/AirPrint printers phones and modern computers
+already use - with no printer-specific software needed on the printer
+side. It is a real DEVS:Printers/ printer.device driver plus MintPrint
+Settings, a GUI setup and test tool.
+
+Print from any application that already supports Amiga's standard printer
+graphics dump (MultiView, GraphicDump, and most paint/DTP software) - the
+driver converts printer.device's raster callbacks into a JPEG, PWG Raster,
+or PDF document and submits it straight to the printer's IPP endpoint over
+the network.
+
+This archive contains one drawer:
+
+  MintPRINT/
+    MintPrintSettings       GUI setup, discovery and test tool
+    MintPRINT                the printer.device driver
+
+Features
+--------
+
+  - Real DEVS:Printers/ driver - no add-on print spooler required
+  - Prints JPEG, PWG Raster, or PDF, selectable per printer
+  - LAN printer discovery (SSDP and mDNS)
+  - IPP capability query - reads the printer's supported media, trays,
+    colour modes, quality settings, and document formats directly
+  - Up to eight saved printer profiles (Unit0-Unit7), with one made
+    active for printing at a time
+  - Printer make/model shown after a successful query
+  - Built-in test page, printed straight through printer.device
+  - Warns if a printer advertises none of the formats MintPRINT can
+    produce, with a pointer to reporting it for support
+  - Detects and offers to install or update the driver automatically
+
+Requirements
+------------
+
+  - AmigaOS 3.0 or later for MintPrint Settings itself (gadtools.library,
+    intuition.library, graphics.library v39)
+  - AmigaOS 3.5 or later - or 3.2 with an updated printer.device - for
+    the driver's V44 extended driver tags to take effect
+  - A running TCP/IP stack providing bsdsocket.library - required for
+    every printing path, since MintPRINT always talks to the printer over
+    the network
+  - A network-attached printer supporting IPP, with AirPrint or "IPP
+    Everywhere" support covering the vast majority of network printers
+    from roughly the last decade
+
+Installation
+------------
+
+Extract the archive. Copy the MintPRINT drawer wherever you like, then run
+MintPrintSettings. On first run it detects that DEVS:Printers/MintPRINT is
+missing and offers to install it; on later runs, if a newer driver is
+bundled next to MintPrintSettings than the one installed, it offers to
+update it instead.
+
+**Reboot after any driver install or update** - a driver segment already
+resident in memory will not pick up a replaced file until then. This is a
+real AmigaOS printer.device driver, and the OS does not reload the file
+just because it changed.
+
+After rebooting, open Prefs/Printer, select MintPRINT as your printer,
+and configure your printer's IP/host, IPP path, and document format in
+MintPrint Settings. Query Printer (or Discover, to search the LAN) reads
+back the printer's real capabilities and fills the rest in.
+
+Reporting a problem
+--------------------
+
+If MintPrint Settings' Query reports that your printer doesn't support
+any format MintPRINT can produce, or printing otherwise fails, please
+open an issue at:
+
+  https://github.com/boingball/MintPRINT/issues
+
+and attach the output of windows_ipp_probe.py (included in the source
+repository) run against your printer from a Windows PC on the same
+network - it isolates printer-side from Amiga-side issues without needing
+any Amiga-specific tooling.
+
+Source Code
+-----------
+
+Source code, build instructions and development history:
+
+  https://github.com/boingball/MintPRINT
+
+Credits
+-------
+
+Driver, GUI, IPP client, and the JPEG/PWG Raster/PDF document encoders
+by Darren Banfi (boingball), developed with assistance from Anthropic
+Claude.
+
+History
+-------
+
+1.0.0  Initial Aminet release. DEVS:Printers/MintPRINT driver with JPEG,
+       PWG Raster, and PDF document backends; MintPrint Settings GUI with
+       LAN discovery, IPP capability query, multi-printer profiles, and
+       driver install/update.

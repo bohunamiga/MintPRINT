@@ -2109,7 +2109,7 @@ static void show_about(struct Window *win) {
     es.es_Flags = 0;
     es.es_Title = (UBYTE *)"About MintPrint Settings";
     es.es_TextFormat = (UBYTE *)
-        "MintPRINT - IPP/AirPrint printing for AmigaOS\n\n"
+        "MintPRINT v1.0 - IPP/AirPrint printing for AmigaOS\n\n"
         "Bug reports and source:\n"
         "github.com/boingball/MintPRINT\n\n"
         "If this saved you a trip to the printer shop:\n"

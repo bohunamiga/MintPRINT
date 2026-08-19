@@ -82,11 +82,16 @@ release: gui driver
 	mkdir -p $(RELEASE_DIR)
 	cp MintPrintSettings $(RELEASE_DIR)/
 	cp $(DRIVER_OUT) $(RELEASE_DIR)/MintPRINT
+	cp Aminet/MintPRINT.readme release/MintPRINT.readme
 	@echo
 	@echo "Release bundle staged in $(RELEASE_DIR)/:"
 	@echo "  MintPrintSettings  - run this to configure/install"
 	@echo "  MintPRINT          - the driver it installs from PROGDIR: (must"
 	@echo "                       stay next to MintPrintSettings)"
+	@echo
+	@echo "release/MintPRINT.readme - the Aminet readme, staged next to the"
+	@echo "drawer (not inside it) per Aminet convention: name it to match"
+	@echo "whatever .lha/.zip archive you make of $(RELEASE_DIR)/."
 	@echo
 	@echo "No icons generated - add MintPrintSettings.info and MintPRINT.info"
 	@echo "inside $(RELEASE_DIR)/, and a drawer icon matching this folder's"

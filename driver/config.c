@@ -87,6 +87,7 @@ void mp_config_defaults(struct MPConfig *cfg)
     cfg->port = 80;
     mp_cfg_copy(cfg->path, sizeof(cfg->path), "/ipp/print");
     cfg->keep_job = TRUE;
+    mp_cfg_copy(cfg->engine, sizeof(cfg->engine), "jpeg");
     cfg->media[0] = 0;
     cfg->source[0] = 0;
     cfg->color[0] = 0;
@@ -145,6 +146,16 @@ LONG mp_config_load(struct MPConfig *cfg)
         if (mp_cfg_starts(g_config_line, "KEEPJOB=")) {
             value = g_config_line + 8;
             cfg->keep_job = (value[0] == '0') ? FALSE : TRUE;
+            continue;
+        }
+
+        if (mp_cfg_starts(g_config_line, "ENGINE=")) {
+            value = g_config_line + 7;
+            if (mp_cfg_starts(value, "pwg-raster") && mp_cfg_len(value) == 10) {
+                mp_cfg_copy(cfg->engine, sizeof(cfg->engine), "pwg-raster");
+            } else {
+                mp_cfg_copy(cfg->engine, sizeof(cfg->engine), "jpeg");
+            }
             continue;
         }
 

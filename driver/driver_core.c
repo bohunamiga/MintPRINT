@@ -1,11 +1,13 @@
 /*
  * MintPRINT printer.device integration working driver path.
  *
- * Converts printer.device raster rows into a low-memory streaming JPEG and
- * then submits that JPEG to the known-good IPP Print-Job endpoint.
+ * Converts printer.device raster rows into a low-memory streaming document
+ * (JPEG, or PWG Raster per Unit0's ENGINE= setting) and submits it to the
+ * configured IPP Print-Job endpoint.
  *
  * Trace output: T:MintPRINT-driver.log
- * Debug JPEG:  T:MintPRINT-job.jpg
+ * Debug JPEG:      T:MintPRINT-job.jpg
+ * Debug PWG Raster: T:MintPRINT-job.pwg
  */
 
 #include <exec/types.h>
@@ -23,6 +25,7 @@
 
 #include "config.h"
 #include "jpeg_writer.h"
+#include "pwg_writer.h"
 #include "ipp_client.h"
 
 struct ExecBase *SysBase = NULL;
@@ -44,20 +47,32 @@ struct TagItem DriverTags[] = {
     { TAG_DONE,      0 }
 };
 
+#define MP_JOB_FILE_JPEG ((CONST_STRPTR)"T:MintPRINT-job.jpg")
+#define MP_JOB_FILE_PWG  ((CONST_STRPTR)"T:MintPRINT-job.pwg")
+
 static ULONG g_page_width = 0;
 static ULONG g_page_height = 0;
 static ULONG g_rows_seen = 0;
 
-static BPTR g_jpeg_fh = 0;
+static BPTR g_job_fh = 0;
 static UBYTE *g_rgb_row = NULL;
 static ULONG g_rgb_row_bytes = 0;
 static UBYTE *g_jpeg_scratch = NULL;
 static ULONG g_jpeg_scratch_bytes = 0;
-static ULONG g_jpeg_rows_written = 0;
-static BOOL g_jpeg_failed = FALSE;
+static UBYTE *g_pwg_scratch = NULL;
+static ULONG g_pwg_scratch_bytes = 0;
+static ULONG g_job_rows_written = 0;
+static BOOL g_job_failed = FALSE;
+static BOOL g_using_pwg = FALSE;
 static MPJpegEncoder g_jpeg;
+static MPPwgEncoder g_pwg;
 static struct MPConfig g_config;
 static LONG g_config_source = MP_CONFIG_SOURCE_DEFAULTS;
+
+static CONST_STRPTR mp_job_filename(void)
+{
+    return g_using_pwg ? MP_JOB_FILE_PWG : MP_JOB_FILE_JPEG;
+}
 
 static ULONG mp_strlen(const char *s)
 {
@@ -166,6 +181,7 @@ static void mp_log_config(const struct MPConfig *cfg, LONG source)
     if (cfg->quality[0]) { mp_write_text(fh, " quality="); mp_write_text(fh, cfg->quality); }
     if (cfg->scaling[0]) { mp_write_text(fh, " scaling="); mp_write_text(fh, cfg->scaling); }
     if (cfg->sides[0]) { mp_write_text(fh, " sides="); mp_write_text(fh, cfg->sides); }
+    mp_write_text(fh, " engine="); mp_write_text(fh, cfg->engine[0] ? cfg->engine : "jpeg");
     mp_write_text(fh, "\n");
     Close(fh);
 }
@@ -185,17 +201,17 @@ static BOOL mp_write_all(BPTR fh, const UBYTE *data, ULONG length)
     return TRUE;
 }
 
-static long mp_jpeg_file_write(void *ctx, const unsigned char *data, unsigned long length)
+static long mp_job_file_write(void *ctx, const unsigned char *data, unsigned long length)
 {
     (void)ctx;
-    return mp_write_all(g_jpeg_fh, (const UBYTE *)data, (ULONG)length) ? (long)length : -1;
+    return mp_write_all(g_job_fh, (const UBYTE *)data, (ULONG)length) ? (long)length : -1;
 }
 
 static void mp_job_cleanup(void)
 {
-    if (g_jpeg_fh) {
-        Close(g_jpeg_fh);
-        g_jpeg_fh = 0;
+    if (g_job_fh) {
+        Close(g_job_fh);
+        g_job_fh = 0;
     }
     if (g_rgb_row) {
         FreeMem(g_rgb_row, g_rgb_row_bytes);
@@ -205,54 +221,91 @@ static void mp_job_cleanup(void)
         FreeMem(g_jpeg_scratch, g_jpeg_scratch_bytes);
         g_jpeg_scratch = NULL;
     }
+    if (g_pwg_scratch) {
+        FreeMem(g_pwg_scratch, g_pwg_scratch_bytes);
+        g_pwg_scratch = NULL;
+    }
     g_rgb_row_bytes = 0;
     g_jpeg_scratch_bytes = 0;
+    g_pwg_scratch_bytes = 0;
 }
 
 static BOOL mp_job_begin(ULONG width, ULONG height)
 {
+    ULONG need;
+
     mp_job_cleanup();
-    g_jpeg_rows_written = 0;
-    g_jpeg_failed = FALSE;
+    g_job_rows_written = 0;
+    g_job_failed = FALSE;
+    g_using_pwg = (g_config.engine[0] == 'p');
 
     if (!DOSBase || width == 0 || height == 0 || width > 65535UL || height > 65535UL) {
-        mp_log_text("JPEG begin rejected invalid dimensions");
+        mp_log_text("Job begin rejected invalid dimensions");
         return FALSE;
     }
 
     g_rgb_row_bytes = width * 3UL;
-    g_jpeg_scratch_bytes = mp_jpeg_scratch_size(width);
-    if (!g_jpeg_scratch_bytes) {
-        mp_log_text("JPEG scratch size rejected width");
-        return FALSE;
-    }
-
     g_rgb_row = (UBYTE *)AllocMem(g_rgb_row_bytes, MEMF_PUBLIC);
-    g_jpeg_scratch = (UBYTE *)AllocMem(g_jpeg_scratch_bytes, MEMF_PUBLIC);
-    if (!g_rgb_row || !g_jpeg_scratch) {
-        mp_log_text("JPEG row/scratch allocation failed");
+    if (!g_rgb_row) {
+        mp_log_text("RGB row allocation failed");
         mp_job_cleanup();
         return FALSE;
     }
 
-    g_jpeg_fh = Open((CONST_STRPTR)"T:MintPRINT-job.jpg", MODE_NEWFILE);
-    if (!g_jpeg_fh) {
-        mp_log_text("JPEG open failed for T:MintPRINT-job.jpg");
+    need = g_using_pwg ? mp_pwg_scratch_size(width) : mp_jpeg_scratch_size(width);
+    if (!need) {
+        mp_log_text("Encoder scratch size rejected width");
         mp_job_cleanup();
         return FALSE;
     }
 
-    if (!mp_jpeg_begin(&g_jpeg, width, height, g_jpeg_scratch,
-                       g_jpeg_scratch_bytes, mp_jpeg_file_write,
-                       NULL)) {
-        mp_log_text("JPEG encoder begin failed");
-        g_jpeg_failed = TRUE;
+    if (g_using_pwg) {
+        g_pwg_scratch_bytes = need;
+        g_pwg_scratch = (UBYTE *)AllocMem(need, MEMF_PUBLIC);
+        if (!g_pwg_scratch) {
+            mp_log_text("PWG scratch allocation failed");
+            mp_job_cleanup();
+            return FALSE;
+        }
+    } else {
+        g_jpeg_scratch_bytes = need;
+        g_jpeg_scratch = (UBYTE *)AllocMem(need, MEMF_PUBLIC);
+        if (!g_jpeg_scratch) {
+            mp_log_text("JPEG scratch allocation failed");
+            mp_job_cleanup();
+            return FALSE;
+        }
+    }
+
+    g_job_fh = Open(mp_job_filename(), MODE_NEWFILE);
+    if (!g_job_fh) {
+        mp_log_text("Job open failed for output file");
         mp_job_cleanup();
         return FALSE;
     }
 
-    mp_log_3("JPEG begin width/height/scratch",
-             (LONG)width, (LONG)height, (LONG)g_jpeg_scratch_bytes);
+    if (g_using_pwg) {
+        if (!mp_pwg_begin(&g_pwg, width, height, g_pwg_scratch,
+                          g_pwg_scratch_bytes, mp_job_file_write, NULL)) {
+            mp_log_text("PWG encoder begin failed");
+            g_job_failed = TRUE;
+            mp_job_cleanup();
+            return FALSE;
+        }
+        mp_log_3("PWG begin width/height/scratch",
+                 (LONG)width, (LONG)height, (LONG)g_pwg_scratch_bytes);
+    } else {
+        if (!mp_jpeg_begin(&g_jpeg, width, height, g_jpeg_scratch,
+                           g_jpeg_scratch_bytes, mp_job_file_write, NULL)) {
+            mp_log_text("JPEG encoder begin failed");
+            g_job_failed = TRUE;
+            mp_job_cleanup();
+            return FALSE;
+        }
+        mp_log_3("JPEG begin width/height/scratch",
+                 (LONG)width, (LONG)height, (LONG)g_jpeg_scratch_bytes);
+    }
+
     return TRUE;
 }
 
@@ -262,7 +315,7 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
     ULONG dst_x;
     ULONG i;
 
-    if (!g_jpeg_fh || !g_rgb_row || !pi || !pi->pi_ColorInt) return FALSE;
+    if (!g_job_fh || !g_rgb_row || !pi || !pi->pi_ColorInt) return FALSE;
 
     for (i = 0; i < g_rgb_row_bytes; ++i) g_rgb_row[i] = 255;
     dst_x = (ULONG)pi->pi_xpos;
@@ -283,21 +336,31 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
         }
     }
 
-    if (row_number != g_jpeg_rows_written) {
-        mp_log_3("JPEG non-sequential row got/expected/height",
-                 (LONG)row_number, (LONG)g_jpeg_rows_written,
+    if (row_number != g_job_rows_written) {
+        mp_log_3("Non-sequential row got/expected/height",
+                 (LONG)row_number, (LONG)g_job_rows_written,
                  (LONG)g_page_height);
     }
 
-    if (!mp_jpeg_write_scanline(&g_jpeg, g_rgb_row)) {
-        mp_log_3("JPEG scanline failed row/written/expected",
-                 (LONG)row_number, (LONG)g_jpeg_rows_written,
-                 (LONG)g_page_height);
-        g_jpeg_failed = TRUE;
-        return FALSE;
+    if (g_using_pwg) {
+        if (!mp_pwg_write_scanline(&g_pwg, g_rgb_row)) {
+            mp_log_3("PWG scanline failed row/written/expected",
+                     (LONG)row_number, (LONG)g_job_rows_written,
+                     (LONG)g_page_height);
+            g_job_failed = TRUE;
+            return FALSE;
+        }
+    } else {
+        if (!mp_jpeg_write_scanline(&g_jpeg, g_rgb_row)) {
+            mp_log_3("JPEG scanline failed row/written/expected",
+                     (LONG)row_number, (LONG)g_job_rows_written,
+                     (LONG)g_page_height);
+            g_job_failed = TRUE;
+            return FALSE;
+        }
     }
 
-    ++g_jpeg_rows_written;
+    ++g_job_rows_written;
     return TRUE;
 }
 
@@ -305,17 +368,16 @@ static BOOL mp_job_finish(void)
 {
     BOOL ok = FALSE;
 
-    if (!g_jpeg_failed && g_jpeg_fh &&
-        g_jpeg_rows_written == g_page_height) {
-        ok = mp_jpeg_finish(&g_jpeg) ? TRUE : FALSE;
-        if (!ok) g_jpeg_failed = TRUE;
+    if (!g_job_failed && g_job_fh && g_job_rows_written == g_page_height) {
+        ok = (g_using_pwg ? mp_pwg_finish(&g_pwg) : mp_jpeg_finish(&g_jpeg)) ? TRUE : FALSE;
+        if (!ok) g_job_failed = TRUE;
     } else {
-        g_jpeg_failed = TRUE;
+        g_job_failed = TRUE;
     }
 
-    mp_log_3("JPEG end rows/expected/failed",
-             (LONG)g_jpeg_rows_written, (LONG)g_page_height,
-             g_jpeg_failed ? 1 : 0);
+    mp_log_3(g_using_pwg ? "PWG end rows/expected/failed" : "JPEG end rows/expected/failed",
+             (LONG)g_job_rows_written, (LONG)g_page_height,
+             g_job_failed ? 1 : 0);
     mp_job_cleanup();
     return ok;
 }
@@ -459,7 +521,7 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                 mp_log_row(pi, (ULONG)y);
             }
 
-            if (!g_jpeg_failed && !mp_job_write_row(pi, (ULONG)y))
+            if (!g_job_failed && !mp_job_write_row(pi, (ULONG)y))
                 return PDERR_CANCEL;
 
             return PDERR_NOERR;
@@ -475,19 +537,20 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             mp_log_3("Render end status/rows/expected", ct,
                      (LONG)g_rows_seen, (LONG)g_page_height);
             {
-                BOOL jpeg_ok = mp_job_finish();
-                if (ct == 0 && jpeg_ok) {
+                BOOL job_ok = mp_job_finish();
+                if (ct == 0 && job_ok) {
                     struct MPIPPResult result;
                     LONG ipp_rc;
-                    ipp_rc = mp_ipp_print_jpeg(&g_config,
-                                                 (CONST_STRPTR)"T:MintPRINT-job.jpg",
-                                                 &result);
+                    CONST_STRPTR fname = mp_job_filename();
+                    CONST_STRPTR fmt = g_using_pwg ? (CONST_STRPTR)"image/pwg-raster"
+                                                    : (CONST_STRPTR)"image/jpeg";
+                    ipp_rc = mp_ipp_print_document(&g_config, fname, fmt, &result);
                     mp_log_3("IPP result error/http/status",
                              result.error, result.http_status,
                              (LONG)result.ipp_status);
                     if (ipp_rc != 0) return PDERR_CANCEL;
                     if (!g_config.keep_job)
-                        DeleteFile((CONST_STRPTR)"T:MintPRINT-job.jpg");
+                        DeleteFile(fname);
                 }
             }
             return PDERR_NOERR;

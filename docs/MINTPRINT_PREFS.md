@@ -51,10 +51,11 @@ worth keeping, save them to an empty unit slot first. Activate on Unit0
 itself is a no-op (it is already active); on a unit with nothing saved yet
 it just reports that there is nothing to copy.
 
-`ENGINE=jpeg` and `ENGINE=pwg-raster` are persisted by the preferences program.
-JPEG is still the active driver backend in this GUI-polish pass; PWG Raster is
-staged for the dedicated backend patch rather than silently pretending it is
-already implemented.
+`ENGINE=jpeg` and `ENGINE=pwg-raster` are persisted by the preferences program
+and both are real driver backends: `DEVS:Printers/MintPRINT` reads Unit0's
+`ENGINE=` and produces either a JPEG or a PWG Raster (`image/pwg-raster`)
+document accordingly. See `docs/PWG_RASTER.md` for how the PWG Raster
+encoder works and what has and hasn't been physically test-printed yet.
 
 The driver reloads Unit0 at the start of every graphics print. Replacing the
 printer driver binary itself still requires a reboot before testing it.
@@ -103,9 +104,10 @@ been saved there at all).
 
 Query Printer now also requests `document-format-supported` and logs the
 printer's full advertised list (e.g. `image/jpeg`, `image/pwg-raster`,
-`application/pdf`, ...) to the output area. This is informational: MintPRINT
-still only ships a working JPEG encoder in the driver, with PWG Raster
-staged. If **Save** is pressed with `Printer Engine` set to a format the
+`application/pdf`, ...) to the output area. This is informational: the driver
+only implements two of those itself (JPEG and PWG Raster, selected by
+`Printer Engine`); anything else in the list is just what the printer also
+happens to accept from other clients. If **Save** is pressed with `Printer Engine` set to a format the
 most recent query did not see advertised, a warning is logged (Save still
 succeeds - this is a heads-up, not a hard block).
 

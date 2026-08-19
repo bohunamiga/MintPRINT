@@ -6,6 +6,7 @@
 #define MP_CONFIG_HOST_MAX 64
 #define MP_CONFIG_PATH_MAX 96
 #define MP_CONFIG_OPTION_MAX 64
+#define MP_CONFIG_ENGINE_MAX 16
 
 #define MP_CONFIG_SOURCE_DEFAULTS 0
 #define MP_CONFIG_SOURCE_ENV      1
@@ -16,6 +17,7 @@ struct MPConfig {
     UWORD port;
     char path[MP_CONFIG_PATH_MAX];
     BOOL keep_job;
+    char engine[MP_CONFIG_ENGINE_MAX];
     char media[MP_CONFIG_OPTION_MAX];
     char source[MP_CONFIG_OPTION_MAX];
     char color[MP_CONFIG_OPTION_MAX];

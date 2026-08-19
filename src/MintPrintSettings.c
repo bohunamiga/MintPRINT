@@ -1845,7 +1845,9 @@ static int ssdp_discover_printers(struct DiscoveredPrinter *results, int max_res
      * not every bsdsocket.library stack honours a receive timeout on a
      * datagram socket, and relying on it left this loop able to block
      * forever on recvfrom() after the first reply. */
-    if (IoctlSocket(sockfd, FIONBIO, (char *)&nonblock) < 0) {
+    /* This NDK's bsdsocket.h names the non-blocking ioctl FNONBIO rather
+     * than the more common BSD FIONBIO. */
+    if (IoctlSocket(sockfd, FNONBIO, (char *)&nonblock) < 0) {
         printf("Discovery: could not set UDP socket non-blocking\n");
         CloseSocket(sockfd);
         return 0;

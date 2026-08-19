@@ -14,6 +14,7 @@
 #include <proto/exec.h>
 #include <ctype.h> // for tolower()
 #include <proto/dos.h>
+#include <dos/dostags.h> // for SYS_Asynch (SystemTags)
 #include <proto/intuition.h>
 #include <proto/datatypes.h>
 #include <proto/gadtools.h>
@@ -1872,7 +1873,7 @@ static int ssdp_discover_printers(struct DiscoveredPrinter *results, int max_res
 
     for (poll_num = 0; poll_num < max_polls && count < max_results; poll_num++) {
         struct sockaddr_in from;
-        int fromlen = sizeof(from);
+        socklen_t fromlen = sizeof(from);
         ssize_t received;
 
         memset(&from, 0, sizeof(from));
@@ -1892,9 +1893,14 @@ static int ssdp_discover_printers(struct DiscoveredPrinter *results, int max_res
 
         {
             char ipstr[16];
-            char *addr_text = inet_ntoa(from.sin_addr);
-            strncpy(ipstr, addr_text ? addr_text : "", sizeof(ipstr) - 1);
-            ipstr[sizeof(ipstr) - 1] = '\0';
+            const unsigned char *addr_bytes = (const unsigned char *)&from.sin_addr;
+
+            /* sin_addr is already in network (big-endian) byte order, so the
+             * raw bytes are the dotted-decimal octets left to right. Formats
+             * manually rather than via inet_ntoa(), which this NDK does not
+             * declare for bsdsocket.library. */
+            snprintf(ipstr, sizeof(ipstr), "%u.%u.%u.%u",
+                     addr_bytes[0], addr_bytes[1], addr_bytes[2], addr_bytes[3]);
 
             if (ipstr[0] && !discovery_ip_seen(results, count, ipstr)) {
                 char server_info[64];

@@ -77,7 +77,7 @@ struct DiscoveredPrinter {
     char label[80];
 };
 
-#define OUTPUT_TOP     270 // Below Test Print / Save / Exit row
+#define OUTPUT_TOP     225 // Below Test Print / Save / Exit row
 #define OUTPUT_LEFT    10
 #define OUTPUT_LINE_H  8
 #define OUTPUT_LINES   MAX_OUTPUT_LINES
@@ -1826,7 +1826,7 @@ static BOOL discovery_ip_seen(struct DiscoveredPrinter *results, int count, cons
 static int ssdp_discover_printers(struct DiscoveredPrinter *results, int max_results) {
     int sockfd;
     struct sockaddr_in dest;
-    struct timeval tv;
+    long nonblock = 1;
     char msearch[256];
     char *buf;
     int count = 0;
@@ -1841,9 +1841,15 @@ static int ssdp_discover_printers(struct DiscoveredPrinter *results, int max_res
         return 0;
     }
 
-    tv.tv_sec = 0;
-    tv.tv_usec = 500000;
-    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+    /* Non-blocking + a fixed poll/Delay budget, rather than SO_RCVTIMEO:
+     * not every bsdsocket.library stack honours a receive timeout on a
+     * datagram socket, and relying on it left this loop able to block
+     * forever on recvfrom() after the first reply. */
+    if (IoctlSocket(sockfd, FIONBIO, (char *)&nonblock) < 0) {
+        printf("Discovery: could not set UDP socket non-blocking\n");
+        CloseSocket(sockfd);
+        return 0;
+    }
 
     memset(&dest, 0, sizeof(dest));
     dest.sin_family = AF_INET;
@@ -1887,6 +1893,10 @@ static int ssdp_discover_printers(struct DiscoveredPrinter *results, int max_res
         }
 
         if (received <= 0) {
+            /* Non-blocking socket: nothing waiting yet. Pace the scan out
+             * over ~max_polls*500ms so replies still have time to arrive,
+             * without ever blocking indefinitely on recvfrom(). */
+            Delay(25); /* ~500ms; Amiga ticks are 50/sec */
             continue;
         }
         buf[received] = '\0';
@@ -1901,6 +1911,13 @@ static int ssdp_discover_printers(struct DiscoveredPrinter *results, int max_res
              * declare for bsdsocket.library. */
             snprintf(ipstr, sizeof(ipstr), "%u.%u.%u.%u",
                      addr_bytes[0], addr_bytes[1], addr_bytes[2], addr_bytes[3]);
+
+            /* Skip loopback replies (e.g. the host's own SSDP responder
+             * echoing back through some emulated/NAT network setups) -
+             * never a real network printer. */
+            if (addr_bytes[0] == 127) {
+                continue;
+            }
 
             if (ipstr[0] && !discovery_ip_seen(results, count, ipstr)) {
                 char server_info[64];
@@ -1987,7 +2004,7 @@ static BOOL run_discovery_selection(struct Window *parent,
     ng.ng_Flags = 0;
     ng.ng_LeftEdge = 10;
     ng.ng_TopEdge = 10 + topborder;
-    ng.ng_Width = 380;
+    ng.ng_Width = 410;
     ng.ng_Height = 14;
     ng.ng_GadgetText = (STRPTR)"Found:";
     ng.ng_GadgetID = GAD_DISC_CYCLE;
@@ -2005,7 +2022,7 @@ static BOOL run_discovery_selection(struct Window *parent,
 
     ng.ng_TopEdge += 26;
     ng.ng_LeftEdge = 10;
-    ng.ng_Width = 100;
+    ng.ng_Width = 120;
     ng.ng_Height = 14;
     ng.ng_GadgetText = (STRPTR)"_Use Selected";
     ng.ng_GadgetID = GAD_DISC_USE;
@@ -2021,7 +2038,7 @@ static BOOL run_discovery_selection(struct Window *parent,
     }
 
     ng.ng_LeftEdge = 290;
-    ng.ng_Width = 100;
+    ng.ng_Width = 120;
     ng.ng_GadgetText = (STRPTR)"_Cancel";
     ng.ng_GadgetID = GAD_DISC_CANCEL;
     gad = CreateGadget(BUTTON_KIND, gad, &ng,
@@ -2038,7 +2055,7 @@ static BOOL run_discovery_selection(struct Window *parent,
     dwin = OpenWindowTags(NULL,
         WA_Title, (ULONG)"Select Discovered Printer",
         WA_Gadgets, (ULONG)dglist,
-        WA_Width, 400,
+        WA_Width, 430,
         WA_InnerHeight, 70,
         WA_DragBar, TRUE,
         WA_DepthGadget, TRUE,
@@ -3219,8 +3236,8 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
 
 
     // Query button - kept beside the printer address field.
-    ng.ng_LeftEdge = 385;
-    ng.ng_Width = 75;
+    ng.ng_LeftEdge = 390;
+    ng.ng_Width = 90;
     ng.ng_Height = 14;
     ng.ng_GadgetText = (STRPTR)"_Query";
     ng.ng_GadgetID = GAD_QUERY_BUTTON;
@@ -3253,8 +3270,8 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     }
 
     // Discover button - sits directly below Query, searches the LAN for printers.
-    ng.ng_LeftEdge = 385;
-    ng.ng_Width = 75;
+    ng.ng_LeftEdge = 390;
+    ng.ng_Width = 90;
     ng.ng_Height = 14;
     ng.ng_GadgetText = (STRPTR)"_Discover";
     ng.ng_GadgetID = GAD_DISCOVER_BUTTON;
@@ -3764,10 +3781,10 @@ int main(void) {
         WA_Title, (ULONG)"MintPrint Settings",
         WA_Gadgets, (ULONG)glist,
         WA_AutoAdjust, TRUE,
-        WA_Width, 460,
-        WA_MinWidth, 460,
-        WA_InnerHeight, 355,
-        WA_MinHeight, 355,
+        WA_Width, 490,
+        WA_MinWidth, 490,
+        WA_InnerHeight, 310,
+        WA_MinHeight, 310,
         WA_DragBar, TRUE,
         WA_DepthGadget, TRUE,
         WA_Activate, TRUE,

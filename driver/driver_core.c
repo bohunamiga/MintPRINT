@@ -39,19 +39,18 @@ extern struct PrinterExtendedData PEDData;
 /*
  * OS 3.5+/3.2 extended printer-driver features:
  * - PRTA_NoIO: printer.device must not open parallel/serial transport.
- *   DIAGNOSTIC BUILD: temporarily removed. Every DPaint crash so far only
- *   occurs with this flag set (MultiView/GraphicDump - real Processes -
- *   tolerate it fine; DPaint, apparently printing from a bare Task, does
- *   not; a normal, non-NoIO driver like PostScript works fine from DPaint's
- *   same Task). That points at printer.device's own rarely-exercised NoIO
- *   code path, not at this driver's code. Testing with NoIO removed to
- *   confirm - see docs/DRIVER_SPOOL_PROCESS.md. Set the printer port to
- *   NIL: in Preferences while NoIO is off, since printer.device will now
- *   try to manage that port itself.
+ *   Reinstated - removing it (to test whether printer.device's NoIO code
+ *   path was the DPaint crash trigger) made things worse: WinUAE itself
+ *   crashed (a host-level MiniDump, not a guest Software Failure) once
+ *   printer.device actually tried to manage a real Serial/Parallel port.
+ *   That result doesn't confirm or deny the NoIO theory - a host crash is
+ *   a different failure class entirely - but it's strictly worse than what
+ *   this flag prevents, so it stays on. See docs/DRIVER_SPOOL_PROCESS.md.
  * - PRTA_8BitGuns: request 8-bit Y/M/C/B intensity components, which is
  *   exactly what the future JPEG scanline backend wants.
  */
 struct TagItem DriverTags[] = {
+    { PRTA_NoIO,     TRUE },
     { PRTA_8BitGuns, TRUE },
     { TAG_DONE,      0 }
 };

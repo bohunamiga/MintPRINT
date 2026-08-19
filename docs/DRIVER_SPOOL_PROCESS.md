@@ -108,13 +108,18 @@ that path, inside `printer.device`'s own ROM, does something
 Process-dependent that the normal (non-NoIO) path doesn't - i.e. the same
 class of bug as rounds 1-2, just now inside code this project cannot patch.
 
-**Current diagnostic build removes `PRTA_NoIO` entirely** to confirm this.
-With it removed, `printer.device` will try to manage the configured port
-itself, so testing requires setting the printer port to `NIL:` in
-Preferences (a safe do-nothing sink) rather than Serial/`FILE:`, to keep the
-test isolated to "does removing NoIO stop the crash" without a real port
-with nothing attached causing a different failure. Not yet confirmed either
-way.
+**Tested and reverted.** Removing `PRTA_NoIO` made things worse rather than
+better or neutral: with it off, `printer.device` tried to actually manage
+the configured port (Serial or Parallel were tested), and **WinUAE itself
+crashed** - a host-level MiniDump, not a guest-side "Software Failure"
+alert. That's a different failure class entirely (something in WinUAE's own
+device emulation choking on real port I/O, not necessarily anything to do
+with the Task/Process theory this driver's own code addresses), and it
+doesn't cleanly confirm or refute whether `printer.device`'s NoIO code path
+was the original DPaint crash's cause. Since it's strictly worse than the
+crash it was meant to test around, `PRTA_NoIO` is back on. This diagnostic
+line of investigation is a dead end as tested - the DPaint crash (with
+`PRTA_NoIO` on, port setting irrelevant) remains unresolved.
 
 ## Status: implemented, not yet physically test-printed
 

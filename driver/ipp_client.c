@@ -296,8 +296,9 @@ static LONG mp_find_body(const UBYTE *buf, ULONG len)
     return -1;
 }
 
-LONG mp_ipp_print_jpeg(const struct MPConfig *cfg, CONST_STRPTR filename,
-                       struct MPIPPResult *result)
+LONG mp_ipp_print_document(const struct MPConfig *cfg, CONST_STRPTR filename,
+                           CONST_STRPTR document_format,
+                           struct MPIPPResult *result)
 {
     BPTR fh = 0;
     LONG fsize;
@@ -322,7 +323,7 @@ LONG mp_ipp_print_jpeg(const struct MPConfig *cfg, CONST_STRPTR filename,
         result->document_bytes = 0;
     }
     if (!DOSBase || !cfg || !cfg->host[0] || cfg->port == 0 ||
-        cfg->path[0] != '/' || !filename) return -1;
+        cfg->path[0] != '/' || !filename || !document_format) return -1;
 
     fh = Open(filename, MODE_OLDFILE);
     if (!fh) { rc = -2; goto done; }
@@ -348,7 +349,7 @@ LONG mp_ipp_print_jpeg(const struct MPConfig *cfg, CONST_STRPTR filename,
         !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x45, "printer-uri", uri) ||
         !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x42, "requesting-user-name", "Amiga") ||
         !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x42, "job-name", "MintPRINT AmigaOS") ||
-        !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x49, "document-format", "image/jpeg")) {
+        !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x49, "document-format", (const char *)document_format)) {
         rc = -5; goto done;
     }
 

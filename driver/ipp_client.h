@@ -11,7 +11,8 @@ struct MPIPPResult {
     ULONG document_bytes;
 };
 
-LONG mp_ipp_print_jpeg(const struct MPConfig *cfg, CONST_STRPTR filename,
-                       struct MPIPPResult *result);
+LONG mp_ipp_print_document(const struct MPConfig *cfg, CONST_STRPTR filename,
+                           CONST_STRPTR document_format,
+                           struct MPIPPResult *result);
 
 #endif

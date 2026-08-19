@@ -42,10 +42,13 @@ $(DRIVER_BUILD)/config.o: driver/config.c driver/config.h | $(DRIVER_BUILD)
 $(DRIVER_BUILD)/jpeg_writer.o: driver/jpeg_writer.c driver/jpeg_writer.h | $(DRIVER_BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(DRIVER_BUILD)/pwg_writer.o: driver/pwg_writer.c driver/pwg_writer.h | $(DRIVER_BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
 $(DRIVER_BUILD)/ipp_client.o: driver/ipp_client.c driver/ipp_client.h | $(DRIVER_BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(DRIVER_OUT): $(DRIVER_BUILD)/printertag.o $(DRIVER_BUILD)/driver_core.o $(DRIVER_BUILD)/command_table.o $(DRIVER_BUILD)/config.o $(DRIVER_BUILD)/jpeg_writer.o $(DRIVER_BUILD)/ipp_client.o
+$(DRIVER_OUT): $(DRIVER_BUILD)/printertag.o $(DRIVER_BUILD)/driver_core.o $(DRIVER_BUILD)/command_table.o $(DRIVER_BUILD)/config.o $(DRIVER_BUILD)/jpeg_writer.o $(DRIVER_BUILD)/pwg_writer.o $(DRIVER_BUILD)/ipp_client.o
 	$(CC) -m68000 -nostartfiles -Wl,-Map,$(DRIVER_BUILD)/MintPRINT.map \
 		-o $@ $^ -lamiga
 

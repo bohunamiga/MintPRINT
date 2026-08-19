@@ -3240,7 +3240,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     // Query button - kept beside the printer address field.
     ng.ng_LeftEdge = 390;
     ng.ng_Width = 90;
-    ng.ng_Height = 14;
+    ng.ng_Height = 12;
     ng.ng_GadgetText = (STRPTR)"_Query";
     ng.ng_GadgetID = GAD_QUERY_BUTTON;
     ng.ng_Flags = 0;
@@ -3271,19 +3271,27 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
         return NULL;
     }
 
-    // Discover button - sits directly below Query, searches the LAN for printers.
-    ng.ng_LeftEdge = 390;
-    ng.ng_Width = 90;
-    ng.ng_Height = 14;
-    ng.ng_GadgetText = (STRPTR)"_Discover";
-    ng.ng_GadgetID = GAD_DISCOVER_BUTTON;
-    ng.ng_Flags = 0;
-    gad = CreateGadget(BUTTON_KIND, gad, &ng,
-        GT_Underscore, '_',
-        TAG_DONE);
-    if (!gad) {
-        printf("Failed to create discover button\n");
-        return NULL;
+    // Discover button - sits below Query, searches the LAN for printers.
+    // Nudged a few px below the shared IPP Path row so its bevel has
+    // clear space from Query's above it, then restored so it doesn't
+    // shift every row below.
+    {
+        UWORD row2_top = ng.ng_TopEdge;
+        ng.ng_LeftEdge = 390;
+        ng.ng_TopEdge = row2_top + 4;
+        ng.ng_Width = 90;
+        ng.ng_Height = 14;
+        ng.ng_GadgetText = (STRPTR)"_Discover";
+        ng.ng_GadgetID = GAD_DISCOVER_BUTTON;
+        ng.ng_Flags = 0;
+        gad = CreateGadget(BUTTON_KIND, gad, &ng,
+            GT_Underscore, '_',
+            TAG_DONE);
+        if (!gad) {
+            printf("Failed to create discover button\n");
+            return NULL;
+        }
+        ng.ng_TopEdge = row2_top;
     }
 
     // Printer document engine. JPEG is the current working backend;

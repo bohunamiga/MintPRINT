@@ -1677,33 +1677,59 @@ static void reload_current_unit(struct Window *win) {
 
 
 // Redirect printf to buffer
+/* Draws the status box border and whatever lines output_buffer/output_line
+ * currently hold. This is the box's ENTIRE on-screen paint, and it is only
+ * ever a side effect of custom_printf() being called - the window is
+ * WA_SimpleRefresh, so nothing repaints this non-gadget area automatically.
+ * That includes IDCMP_REFRESHWINDOW: GT_BeginRefresh/GT_EndRefresh there
+ * only repaints GadTools gadgets, never this hand-drawn area, so without
+ * this being called from that handler too, anything that forces a refresh
+ * (another window opening on top and closing again, dragging this window
+ * partly offscreen, etc.) leaves the box LOOKING empty - output_buffer's
+ * data is untouched throughout, only the paint was lost. */
+static void redraw_output_box(void) {
+    struct RastPort *rp;
+    int line_height, output_area_top, output_area_bottom, start_line, i;
+
+    if (!window) return;
+
+    rp = window->RPort;
+    if (font) SetFont(rp, font);
+    SetAPen(rp, 1); // Text color
+    SetBPen(rp, 0); // Background color
+    SetDrMd(rp, JAM2);
+
+    // Calculate the output area dimensions
+    line_height = font->tf_YSize + 2;
+    output_area_top = OUTPUT_TOP;
+    output_area_bottom = output_area_top + (MAX_OUTPUT_LINES * line_height) - 1;
+
+    // Draw the border
+    SetAPen(rp, 1); // Border color
+    RectFill(rp, OUTPUT_LEFT - 2, output_area_top - 2, OUTPUT_RIGHT + 2, output_area_top - 1); // Top
+    RectFill(rp, OUTPUT_LEFT - 2, output_area_bottom + 1, OUTPUT_RIGHT + 2, output_area_bottom + 2); // Bottom
+    RectFill(rp, OUTPUT_LEFT - 2, output_area_top - 2, OUTPUT_LEFT - 1, output_area_bottom + 2); // Left
+    RectFill(rp, OUTPUT_RIGHT + 1, output_area_top - 2, OUTPUT_RIGHT + 2, output_area_bottom + 2); // Right
+
+    // Clear the output area
+    SetAPen(rp, 0); // Background color
+    RectFill(rp, OUTPUT_LEFT, output_area_top, OUTPUT_RIGHT, output_area_bottom);
+
+    // Draw the most recent lines (scrolling effect)
+    start_line = (output_line > MAX_OUTPUT_LINES) ? (output_line - MAX_OUTPUT_LINES) : 0;
+    for (i = 0; i < MAX_OUTPUT_LINES && (start_line + i) < output_line; i++) {
+        int y = output_area_top + (i * line_height) + font->tf_Baseline;
+        Move(rp, OUTPUT_LEFT, y);
+        SetAPen(rp, 1); // Text color
+        Text(rp, output_buffer[start_line + i], strlen(output_buffer[start_line + i]));
+    }
+}
+
 void custom_printf(const char *format, ...) {
     // Special case: clear the output area if the format string is "CLEAR"
     if (strcmp(format, "CLEAR") == 0) {
         output_line = 0;
-        if (window) {
-            struct RastPort *rp = window->RPort;
-            if (font) SetFont(rp, font);
-            SetAPen(rp, 1); // Text color
-            SetBPen(rp, 0); // Background color
-            SetDrMd(rp, JAM2);
-
-            // Calculate the output area dimensions
-            int line_height = font->tf_YSize + 2;
-            int output_area_top = OUTPUT_TOP;
-            int output_area_bottom = output_area_top + (MAX_OUTPUT_LINES * line_height) - 1;
-
-            // Draw the border
-            SetAPen(rp, 1); // Border color
-            RectFill(rp, OUTPUT_LEFT - 2, output_area_top - 2, OUTPUT_RIGHT + 2, output_area_top - 1); // Top
-            RectFill(rp, OUTPUT_LEFT - 2, output_area_bottom + 1, OUTPUT_RIGHT + 2, output_area_bottom + 2); // Bottom
-            RectFill(rp, OUTPUT_LEFT - 2, output_area_top - 2, OUTPUT_LEFT - 1, output_area_bottom + 2); // Left
-            RectFill(rp, OUTPUT_RIGHT + 1, output_area_top - 2, OUTPUT_RIGHT + 2, output_area_bottom + 2); // Right
-
-            // Clear the output area
-            SetAPen(rp, 0); // Background color
-            RectFill(rp, OUTPUT_LEFT, output_area_top, OUTPUT_RIGHT, output_area_bottom);
-        }
+        redraw_output_box();
         return;
     }
 
@@ -1743,39 +1769,7 @@ void custom_printf(const char *format, ...) {
     // Free the temp buffer
     free(temp);
 
-    // Refresh GUI output
-    if (window) {
-        struct RastPort *rp = window->RPort;
-        if (font) SetFont(rp, font);
-        SetAPen(rp, 1); // Text color
-        SetBPen(rp, 0); // Background color
-        SetDrMd(rp, JAM2);
-
-        // Calculate the output area dimensions
-        int line_height = font->tf_YSize + 2;
-        int output_area_top = OUTPUT_TOP;
-        int output_area_bottom = output_area_top + (MAX_OUTPUT_LINES * line_height) - 1;
-
-        // Draw the border
-        SetAPen(rp, 1); // Border color
-        RectFill(rp, OUTPUT_LEFT - 2, output_area_top - 2, OUTPUT_RIGHT + 2, output_area_top - 1); // Top
-        RectFill(rp, OUTPUT_LEFT - 2, output_area_bottom + 1, OUTPUT_RIGHT + 2, output_area_bottom + 2); // Bottom
-        RectFill(rp, OUTPUT_LEFT - 2, output_area_top - 2, OUTPUT_LEFT - 1, output_area_bottom + 2); // Left
-        RectFill(rp, OUTPUT_RIGHT + 1, output_area_top - 2, OUTPUT_RIGHT + 2, output_area_bottom + 2); // Right
-
-        // Clear the output area
-        SetAPen(rp, 0); // Background color
-        RectFill(rp, OUTPUT_LEFT, output_area_top, OUTPUT_RIGHT, output_area_bottom);
-
-        // Draw the most recent lines (scrolling effect)
-        int start_line = (output_line > MAX_OUTPUT_LINES) ? (output_line - MAX_OUTPUT_LINES) : 0;
-        for (int i = 0; i < MAX_OUTPUT_LINES && (start_line + i) < output_line; i++) {
-            int y = output_area_top + (i * line_height) + font->tf_Baseline;
-            Move(rp, OUTPUT_LEFT, y);
-            SetAPen(rp, 1); // Text color
-            Text(rp, output_buffer[start_line + i], strlen(output_buffer[start_line + i]));
-        }
-    }
+    redraw_output_box();
 }
 
 int load_ilbm_to_rgb(const char *filename, unsigned char **rgb_out, int *width_out, int *height_out) {
@@ -1988,12 +1982,33 @@ static void mp_launch_printer_prefs(void) {
     }
 }
 
+/* Reads the printer-segment revision word (see printertag.s - fixed byte
+ * offset 6, right after the 4-byte run-alert stub and the ABI version
+ * word) straight out of a driver file, without loading/executing it.
+ * Returns FALSE if the file can't be opened or is too short to hold one. */
+static BOOL mp_read_driver_revision(CONST_STRPTR path, UWORD *revision_out) {
+    BPTR file;
+    UBYTE header[8];
+    LONG got;
+
+    file = Open(path, MODE_OLDFILE);
+    if (!file) return FALSE;
+
+    got = Read(file, header, sizeof(header));
+    Close(file);
+
+    if (got != (LONG)sizeof(header)) return FALSE;
+
+    /* Big-endian 68k word at offset 6. */
+    *revision_out = (UWORD)((header[6] << 8) | header[7]);
+    return TRUE;
+}
+
 static void check_and_offer_driver_install(struct Window *win) {
     struct EasyStruct es;
-
-    if (mp_file_exists(MINTPRINT_DRIVER_DEST)) {
-        return; /* already installed */
-    }
+    char msg[192];
+    UWORD src_rev, dest_rev;
+    BOOL have_src_rev, have_dest_rev;
 
     if (!mp_file_exists(MINTPRINT_DRIVER_SRC)) {
         printf("MintPRINT driver not found next to this program; skipping install check.\n");
@@ -2003,6 +2018,36 @@ static void check_and_offer_driver_install(struct Window *win) {
     es.es_StructSize = sizeof(struct EasyStruct);
     es.es_Flags = 0;
     es.es_Title = (UBYTE *)"MintPrint Settings";
+
+    if (mp_file_exists(MINTPRINT_DRIVER_DEST)) {
+        /* Already installed - only bother the user if the copy bundled
+         * next to this program is a newer build than what's installed. */
+        have_src_rev = mp_read_driver_revision(MINTPRINT_DRIVER_SRC, &src_rev);
+        have_dest_rev = mp_read_driver_revision(MINTPRINT_DRIVER_DEST, &dest_rev);
+
+        if (!have_src_rev || !have_dest_rev || src_rev <= dest_rev) {
+            return; /* up to date, or revision unreadable - leave it alone */
+        }
+
+        snprintf(msg, sizeof(msg),
+                 "A newer MintPRINT driver is available\n(installed: rev %u, bundled: rev %u).\nUpdate DEVS:Printers/MintPRINT now?",
+                 (unsigned)dest_rev, (unsigned)src_rev);
+        es.es_TextFormat = (UBYTE *)msg;
+        es.es_GadgetFormat = (UBYTE *)"Update|Later";
+
+        if (!EasyRequest(win, &es, NULL)) return;
+
+        if (mp_copy_file(MINTPRINT_DRIVER_SRC, MINTPRINT_DRIVER_DEST)) {
+            printf("Updated MintPRINT driver to rev %u in DEVS:Printers/MintPRINT\n", (unsigned)src_rev);
+            printf("Reboot (or otherwise unload the old driver segment) before printing.\n");
+        } else {
+            es.es_TextFormat = (UBYTE *)"Could not copy the driver to DEVS:Printers/.\nCheck disk space and write access.";
+            es.es_GadgetFormat = (UBYTE *)"OK";
+            EasyRequest(win, &es, NULL);
+        }
+        return;
+    }
+
     es.es_TextFormat = (UBYTE *)"The MintPRINT printer driver is not installed in\nDEVS:Printers/. Install it now?";
     es.es_GadgetFormat = (UBYTE *)"Install|Cancel";
 
@@ -4177,6 +4222,12 @@ void process_window_events(struct Window *win) {
                 case IDCMP_REFRESHWINDOW:
                     GT_BeginRefresh(win);
                     GT_EndRefresh(win, TRUE);
+                    /* GT_BeginRefresh/EndRefresh only repaints GadTools
+                     * gadgets - the status box is hand-drawn and needs its
+                     * own replay here, or it looks emptied out any time
+                     * something forces a refresh (e.g. Printer Prefs
+                     * opening on top of this window and closing again). */
+                    redraw_output_box();
                     break;
 
                     case IDCMP_MENUPICK:

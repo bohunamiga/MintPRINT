@@ -29,9 +29,19 @@ _start:
         /* MOVEQ #0,D0 ; RTS -- safe if somebody tries to execute driver */
         .byte   0x70,0x00,0x4e,0x75
 
-        /* PrinterSegment version/revision. V44 enables extended PED tags. */
+        /* PrinterSegment version/revision. Version must stay 44 - it is
+         * printer.device's own ABI marker for the V44 extended PED tags
+         * this driver uses, not a MintPRINT project number.
+         *
+         * Revision IS this project's own driver build counter: MintPrint
+         * Settings reads it (at this fixed byte offset, 6, in both the
+         * bundled PROGDIR:MintPRINT and the installed DEVS:Printers/
+         * MintPRINT) to detect when a newer driver is available and offer
+         * to update the installed copy. Bump it whenever a driver rebuild
+         * actually changes behaviour - a config-only or GUI-only change
+         * does not need a bump. */
         .word   44
-        .word   1
+        .word   2
 
 _PEDData:
         .long   printerName

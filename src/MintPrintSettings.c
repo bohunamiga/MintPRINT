@@ -326,7 +326,28 @@ char driver_path_buffer[96] = "/ipp/print";
 BOOL driver_keep_job = TRUE;
 static STRPTR keep_job_labels[] = { "Delete job JPEG", "Keep debug JPEG", NULL };
 char driver_engine_buffer[32] = "jpeg";
-static STRPTR engine_labels[] = { "JPEG", "PWG Raster", "PDF", NULL };
+#define MP_ENGINE_MAX 3
+
+static const char *mp_engine_all_labels[MP_ENGINE_MAX] = {
+    "JPEG", "PWG Raster", "PDF"
+};
+static const char *mp_engine_all_values[MP_ENGINE_MAX] = {
+    "jpeg", "pwg-raster", "pdf"
+};
+static const char *mp_engine_all_mimes[MP_ENGINE_MAX] = {
+    "image/jpeg", "image/pwg-raster", "application/pdf"
+};
+
+/* This array address stays fixed for the lifetime of the GadTools Cycle. */
+static STRPTR engine_labels[MP_ENGINE_MAX + 1] = {
+    "JPEG", "PWG Raster", "PDF", NULL
+};
+
+/* Maps the currently-visible Cycle index to MintPRINT's internal value. */
+static const char *mp_engine_value_map[MP_ENGINE_MAX] = {
+    "jpeg", "pwg-raster", "pdf"
+};
+static int mp_engine_count = MP_ENGINE_MAX;
 char driver_media_buffer[MAX_ATTR_LEN] = "";
 char driver_source_buffer[MAX_ATTR_LEN] = "";
 char driver_color_buffer[MAX_ATTR_LEN] = "";
@@ -538,8 +559,13 @@ static const char *engine_mime_type(const char *engine) {
 
 /* engine_labels[] order: 0=JPEG, 1=PWG Raster, 2=PDF. */
 static ULONG mp_engine_active_index(void) {
-    if (strcmp(driver_engine_buffer, "pwg-raster") == 0) return 1;
-    if (strcmp(driver_engine_buffer, "pdf") == 0) return 2;
+    int i;
+
+    for (i = 0; i < mp_engine_count; ++i) {
+        if (mp_engine_value_map[i] &&
+            strcmp(driver_engine_buffer, mp_engine_value_map[i]) == 0)
+            return (ULONG)i;
+    }
     return 0;
 }
 
@@ -652,9 +678,12 @@ static void capture_driver_settings(struct Window *win) {
         GT_GetGadgetAttrs(g, win, NULL,
                           GTCY_Active, (ULONG)&engine_active,
                           TAG_DONE);
-        if (engine_active == 1) strcpy(driver_engine_buffer, "pwg-raster");
-        else if (engine_active == 2) strcpy(driver_engine_buffer, "pdf");
-        else strcpy(driver_engine_buffer, "jpeg");
+        if (engine_active < (ULONG)mp_engine_count &&
+            mp_engine_value_map[engine_active]) {
+            strncpy(driver_engine_buffer, mp_engine_value_map[engine_active],
+                    sizeof(driver_engine_buffer) - 1);
+            driver_engine_buffer[sizeof(driver_engine_buffer) - 1] = '\0';
+        }
         warn_if_engine_unsupported(driver_engine_buffer);
     }
 
@@ -1391,6 +1420,89 @@ void update_quality_dropdown(struct Window *win) {
     }
 }
 
+static BOOL mp_printer_advertises_format(const char *mime) {
+    int i;
+
+    if (!mime) return FALSE;
+    for (i = 0; i < num_supported_formats; ++i) {
+        if (strcasecmp(supported_formats[i], mime) == 0)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+/*
+ * Rebuild the Engine Cycle from document-format-supported.
+ *
+ * With no Query/cache yet, all MintPRINT engines remain visible.
+ * After a Query, only engines the printer actually advertised are shown.
+ * If it advertised none of MintPRINT's formats, leave all three visible;
+ * the existing unsupported-printer requester handles that exceptional case
+ * and an empty GadTools Cycle would be undesirable.
+ */
+static void mp_rebuild_engine_options_from_query(void) {
+    int i;
+    int out = 0;
+    BOOL use_query = num_supported_formats > 0;
+    BOOL current_found = FALSE;
+
+    for (i = 0; i < MP_ENGINE_MAX; ++i) {
+        if (!use_query ||
+            mp_printer_advertises_format(mp_engine_all_mimes[i])) {
+            engine_labels[out] = (STRPTR)mp_engine_all_labels[i];
+            mp_engine_value_map[out] = mp_engine_all_values[i];
+            if (strcmp(driver_engine_buffer, mp_engine_all_values[i]) == 0)
+                current_found = TRUE;
+            ++out;
+        }
+    }
+
+    if (out == 0) {
+        for (i = 0; i < MP_ENGINE_MAX; ++i) {
+            engine_labels[i] = (STRPTR)mp_engine_all_labels[i];
+            mp_engine_value_map[i] = mp_engine_all_values[i];
+        }
+        out = MP_ENGINE_MAX;
+        current_found = TRUE;
+    }
+
+    engine_labels[out] = NULL;
+    mp_engine_count = out;
+
+    if (!current_found && mp_engine_count > 0) {
+        strncpy(driver_engine_buffer, mp_engine_value_map[0],
+                sizeof(driver_engine_buffer) - 1);
+        driver_engine_buffer[sizeof(driver_engine_buffer) - 1] = '\0';
+    }
+}
+
+static void update_engine_dropdown(struct Window *win) {
+    struct Gadget *g;
+    char previous[sizeof(driver_engine_buffer)];
+
+    strncpy(previous, driver_engine_buffer, sizeof(previous) - 1);
+    previous[sizeof(previous) - 1] = '\0';
+
+    mp_rebuild_engine_options_from_query();
+
+    if (!win) return;
+
+    g = find_gadget_by_id(GAD_ENGINE);
+    if (g) {
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GTCY_Labels, (ULONG)engine_labels,
+                          GTCY_Active, mp_engine_active_index(),
+                          TAG_DONE);
+        RefreshGList(g, win, NULL, 1);
+        GT_RefreshWindow(win, NULL);
+    }
+
+    if (strcmp(previous, driver_engine_buffer) != 0) {
+        printf("Selected %s because the previous engine was not advertised by this printer.\n",
+               engine_labels[mp_engine_active_index()]);
+    }
+}
+
 void cleanup_dropdown_labels() {
     /*
      * All CYCLE_KIND label arrays and strings are static process-lifetime
@@ -1683,6 +1795,7 @@ static BOOL load_capability_cache_for_current_endpoint(void) {
 static void apply_cached_capabilities(struct Window *win) {
     if (!win) return;
 
+    update_engine_dropdown(win);
     update_media_dropdown(win);
     update_print_mode_dropdown(win);
     update_scaling_dropdown(win);
@@ -3227,6 +3340,7 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     if (window) update_scaling_dropdown(window);
     ensure_quality_defaults();
     if (window) update_quality_dropdown(window);
+    if (window) update_engine_dropdown(window);
 
     if (printer_make_model[0]) {
         printf("Printer: %s\n", printer_make_model);

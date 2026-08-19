@@ -1,3 +1,4 @@
+/* MintPRINT GUI stabilised: no live cycle-label frees; safe teardown. */
 /* MintPRINT prefs #9: compact address row and status-box fit. */
 /* MintPRINT prefs #8: capability cache and output-area layout polish. */
 /* Amiga IPP Print-Job Prototype with GUI
@@ -894,15 +895,11 @@ static void apply_driver_config_to_gadgets(struct Window *win) {
 void update_media_dropdown(struct Window *win) {
     printf("Updating media dropdown, num_mappings=%d\n", num_media_tray_mappings);
 
-    // Free old items
-    if (media_dropdown_items) {
-        for (int i = 0; media_dropdown_items[i]; i++) {
-            FreeVec(media_dropdown_items[i]);
-            media_dropdown_items[i] = NULL;
-        }
-        FreeVec(media_dropdown_items);
-        media_dropdown_items = NULL;
-    }
+    /* Keep the previous label block alive until shutdown. GadTools may still
+     * reference GTCY_Labels while a live cycle gadget is being retargeted.
+     * Re-querying a printer leaks only a tiny label block for this process,
+     * which is preferable to a use-after-free on classic AmigaOS.
+     */
 
     // Determine the number of items to allocate (at least 1 for "No Media Available")
     int num_items = (num_media_tray_mappings > 0) ? num_media_tray_mappings : 1;
@@ -981,13 +978,7 @@ void update_media_dropdown(struct Window *win) {
 }
 
 void update_scaling_dropdown(struct Window *win) {
-    if (scaling_mode_labels && scaling_mode_labels != initial_scaling_mode) {
-        for (int i = 0; scaling_mode_labels[i]; i++) {
-            FreeVec(scaling_mode_labels[i]);
-        }
-        FreeVec(scaling_mode_labels);
-        scaling_mode_labels = NULL;
-    }
+    /* Do not FreeVec() the current live GTCY_Labels block here. */
 
     scaling_mode_labels = AllocVec((num_supported_scaling + 1) * sizeof(STRPTR), MEMF_ANY);
     if (!scaling_mode_labels) {
@@ -1020,15 +1011,7 @@ void update_scaling_dropdown(struct Window *win) {
 }
 
 void update_print_mode_dropdown(struct Window *win) {
-    // Free old items
-    if (print_mode_labels && print_mode_labels != initial_print_mode) {
-        for (int i = 0; print_mode_labels[i]; i++) {
-            FreeVec(print_mode_labels[i]);
-        }
-        FreeVec(print_mode_labels);
-        print_mode_labels = NULL;
-        print_mode_labels = initial_print_mode;
-    }
+    /* Do not FreeVec() the current live GTCY_Labels block here. */
 
     print_mode_labels = AllocVec((num_supported_print_modes + 1) * sizeof(STRPTR), MEMF_ANY);
     if (!print_mode_labels) {
@@ -1062,13 +1045,7 @@ void update_print_mode_dropdown(struct Window *win) {
 }
 
 void update_quality_dropdown(struct Window *win) {
-    if (quality_mode_labels && quality_mode_labels != initial_quality_mode) {
-        for (int i = 0; quality_mode_labels[i]; i++) {
-            FreeVec(quality_mode_labels[i]);
-        }
-        FreeVec(quality_mode_labels);
-        quality_mode_labels = NULL;
-    }
+    /* Do not FreeVec() the current live GTCY_Labels block here. */
 
     quality_mode_labels = AllocVec((num_supported_quality + 1) * sizeof(STRPTR), MEMF_ANY);
     if (!quality_mode_labels) return;
@@ -3290,7 +3267,7 @@ int main(void) {
 
     if (load_capability_cache_for_current_endpoint()) {
         apply_cached_capabilities(window);
-        printf("Loaded cached printer capabilities\\n");
+        printf("Loaded cached printer capabilities\n");
     } else {
         apply_saved_option_state(window);
     }
@@ -3315,26 +3292,37 @@ int main(void) {
         }
     }
 
-    // Free the dropdown labels
-    if (media_dropdown_items) {
-        for (int i = 0; media_dropdown_items[i]; i++) {
-            FreeVec(media_dropdown_items[i]);
-            media_dropdown_items[i] = NULL; // Safety
-        }
-        FreeVec(media_dropdown_items);
-        media_dropdown_items = NULL;
+    /* Correct GadTools teardown order: first detach menus and close the
+     * window, then free gadgets, then release the label backing memory.
+     */
+    if (window && menu) {
+        ClearMenuStrip(window);
     }
-    cleanup_dropdown_labels();
-    // Free the gadgets
+
+    if (window) {
+        CloseWindow(window);
+        window = NULL;
+    }
+
     if (glist) {
         FreeGadgets(glist);
         glist = NULL;
     }
 
-    // Close the window
-    if (window) {
-        CloseWindow(window);
-        window = NULL;
+    if (media_dropdown_items) {
+        for (int i = 0; media_dropdown_items[i]; i++) {
+            FreeVec(media_dropdown_items[i]);
+            media_dropdown_items[i] = NULL;
+        }
+        FreeVec(media_dropdown_items);
+        media_dropdown_items = NULL;
+    }
+
+    cleanup_dropdown_labels();
+
+    if (menu) {
+        FreeMenus(menu);
+        menu = NULL;
     }
 
     // Unlock the screen

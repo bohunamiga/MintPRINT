@@ -6,7 +6,7 @@ MintPrint Settings (`src/MintPrintSettings.c`, formerly `IPP-Test16.c` /
 
 Startup behaviour:
 
-- Load `ENV:MintPRINT/Unit0` first.
+- Load `ENV:MintPRINT/Unit0` first (the Unit dropdown starts on Unit0).
 - Fall back to `ENVARC:MintPRINT/Unit0`.
 - Saved media, colour, quality and scaling values are shown before a query.
 - If no saved value exists, capability controls show `Not Detected` and are
@@ -16,11 +16,40 @@ Startup behaviour:
 
 Layout:
 
+- Unit sits at the top - which saved printer profile is being viewed/edited.
 - Query Printer sits beside Printer IP/Host.
 - Discover sits directly below Query and searches the LAN for printers.
 - Printer Engine offers JPEG and PWG Raster.
 - Save sits beside Exit.
 - Test Print prints the built-in test page through `printer.device`.
+
+## Multiple printers (Units)
+
+People with more than one network printer can keep a separate saved profile
+per printer:
+
+    ENV:MintPRINT/Unit0, Unit1, Unit2, ... (up to Unit7)
+
+The **Unit** dropdown at the top of the window lists all eight slots, each
+labelled from what is actually saved on disk: `Unit1 - Brother HL-L2350DW`
+once a make/model is known and saved, plain `Unit1` if the slot has a saved
+profile but no make/model yet, or `Unit1 (empty)` if nothing has been saved
+there. Picking a different unit reloads the whole form - IP/host, path,
+engine, media, cached capabilities, everything - from that unit's saved
+files, exactly like **File > Reload Driver Settings** does for the current
+one.
+
+**Only Unit0 is what `DEVS:Printers/MintPRINT` actually reads at print
+time** - the driver has no concept of "which unit" it was opened as, so
+Unit1+ are switchable *saved profiles*, not simultaneously-active printers.
+**Activate**, next to the Unit dropdown, is how a different printer becomes
+the one that actually prints: it copies the selected unit's saved
+`ENV:`/`ENVARC:` config (and cached capabilities, if any) over Unit0's, then
+switches the dropdown back to Unit0 so the window reflects what is now
+live. Unit0's own previous settings are overwritten by this - if they are
+worth keeping, save them to an empty unit slot first. Activate on Unit0
+itself is a no-op (it is already active); on a unit with nothing saved yet
+it just reports that there is nothing to copy.
 
 `ENGINE=jpeg` and `ENGINE=pwg-raster` are persisted by the preferences program.
 JPEG is still the active driver backend in this GUI-polish pass; PWG Raster is
@@ -60,6 +89,16 @@ neither SSDP nor mDNS, or that sits behind a router blocking multicast, will
 not appear. If nothing is found, enter the IP manually and use **Query** as
 before.
 
+## Make and model
+
+Query Printer now also requests `printer-make-and-model` and logs it (e.g.
+`Printer: Brother HL-L2350DW series`). A successful **Save** writes it into
+the current unit's file as `MODEL=...`, which is what lets the Unit
+dropdown show `Unit0 - Brother HL-L2350DW series` instead of a bare
+`Unit0`. Until a unit has been queried and saved at least once, its
+dropdown entry just shows the unit number (or `(empty)` if nothing has
+been saved there at all).
+
 ## Document format reporting
 
 Query Printer now also requests `document-format-supported` and logs the
@@ -92,17 +131,20 @@ not something Preferences can do automatically.
 ## Capability cache
 
 After a successful **Query Printer**, MintPRINT writes the detected printer
-capabilities to:
+capabilities for whichever unit is currently selected to:
 
-    ENV:MintPRINT/Unit0.cache
-    ENVARC:MintPRINT/Unit0.cache
+    ENV:MintPRINT/UnitN.cache
+    ENVARC:MintPRINT/UnitN.cache
 
-The cache contains the available media/tray mappings, colour modes, quality
+(`N` is the selected unit's number - `Unit0.cache`, `Unit1.cache`, ...) The
+cache contains the available media/tray mappings, colour modes, quality
 levels, scaling choices, detected document formats and other detected IPP
-values. Unit0 remains the file that stores the user's selected defaults.
+values. Each unit's own config file remains what stores its selected
+defaults.
 
-When MintPRINT opens, a cache is loaded only if its HOST, PORT and PATH match
-the current Unit0 endpoint. A successful new query replaces both cache files,
+When a unit is loaded (at startup, via the Unit dropdown, or File > Reload),
+its cache is used only if its HOST, PORT and PATH match that unit's current
+endpoint. A successful new query replaces both of that unit's cache files,
 so the UI always uses the newest detected capability set.
 
 The status/output area now starts below the Test Print / Save / Exit row and the

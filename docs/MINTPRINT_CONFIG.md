@@ -12,6 +12,12 @@ If that file is absent, the driver falls back to:
 If neither exists, the first proven Brother endpoint remains the built-in
 fallback so this patch does not change the known-good print path.
 
+The driver itself has no concept of multiple units - it only ever reads
+`Unit0`. MintPrint Settings' Unit dropdown (see `docs/MINTPRINT_PREFS.md`)
+manages `Unit1`, `Unit2`, ... as switchable saved profiles for people with
+more than one printer, and its **Activate** button is how one of those
+becomes the live `Unit0` this driver reads.
+
 ## Unit0 format
 
 The file is plain text:

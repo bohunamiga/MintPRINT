@@ -64,6 +64,8 @@ extern struct GfxBase *GfxBase;
 #define GAD_ENGINE 12
 #define GAD_SAVE_BUTTON 13
 #define GAD_DISCOVER_BUTTON 14
+#define GAD_UNIT_DROPDOWN 15
+#define GAD_SET_ACTIVE_BUTTON 16
 
 // Discovery selection dialog gadget IDs (separate window/gadget list)
 #define GAD_DISC_CYCLE  1
@@ -77,7 +79,12 @@ struct DiscoveredPrinter {
     char label[80];
 };
 
-#define OUTPUT_TOP     225 // Below Test Print / Save / Exit row
+// Saved printer profiles: ENV:MintPRINT/Unit0 .. Unit(MAX_UNITS-1). Only
+// Unit0 is what the driver actually reads at print time; the others are
+// switchable GUI-side profiles (e.g. for a second/third network printer).
+#define MAX_UNITS 8
+
+#define OUTPUT_TOP     245 // Below Test Print / Save / Exit row
 #define OUTPUT_LEFT    10
 #define OUTPUT_LINE_H  8
 #define OUTPUT_LINES   MAX_OUTPUT_LINES
@@ -272,6 +279,9 @@ char driver_color_buffer[MAX_ATTR_LEN] = "";
 char driver_quality_buffer[MAX_ATTR_LEN] = "";
 char driver_scaling_buffer[MAX_ATTR_LEN] = "";
 char driver_sides_buffer[MAX_ATTR_LEN] = "";
+int current_unit_index = 0;
+char printer_make_model[128] = "";
+STRPTR *unit_dropdown_labels = NULL;
 /* MintPRINT prefs #6: queried job defaults are saved into Unit0. */
 /* MintPRINT prefs #7: saved-state placeholders, ghosting, layout and engine selector. */
 char file_buffer[256] = "UHD:test.jpg";
@@ -360,6 +370,122 @@ static BOOL ensure_config_dir(CONST_STRPTR name) {
     if (!lock) return FALSE;
     UnLock(lock);
     return TRUE;
+}
+
+static void unit_config_path(int idx, BOOL envarc, char *out, int out_size) {
+    snprintf(out, out_size, "%s:MintPRINT/Unit%d", envarc ? "ENVARC" : "ENV", idx);
+}
+
+static void unit_cache_path(int idx, BOOL envarc, char *out, int out_size) {
+    snprintf(out, out_size, "%s:MintPRINT/Unit%d.cache", envarc ? "ENVARC" : "ENV", idx);
+}
+
+static BOOL unit_file_exists(int idx) {
+    BPTR lock;
+    char path[64];
+
+    unit_config_path(idx, FALSE, path, sizeof(path));
+    lock = Lock((CONST_STRPTR)path, ACCESS_READ);
+    if (!lock) {
+        unit_config_path(idx, TRUE, path, sizeof(path));
+        lock = Lock((CONST_STRPTR)path, ACCESS_READ);
+    }
+    if (lock) {
+        UnLock(lock);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+/* Peeks just the MODEL= line out of a saved unit file, without disturbing
+ * any of the live GUI/driver-config state. Used to label the Unit dropdown. */
+static void peek_unit_model(int idx, char *out, int out_size) {
+    BPTR file;
+    char path[64];
+    char line[192];
+
+    out[0] = '\0';
+
+    unit_config_path(idx, FALSE, path, sizeof(path));
+    file = Open((CONST_STRPTR)path, MODE_OLDFILE);
+    if (!file) {
+        unit_config_path(idx, TRUE, path, sizeof(path));
+        file = Open((CONST_STRPTR)path, MODE_OLDFILE);
+    }
+    if (!file) return;
+
+    while (FGets(file, line, sizeof(line))) {
+        trim_config_line(line);
+        if (strncmp(line, "MODEL=", 6) == 0 && line[6]) {
+            strncpy(out, line + 6, out_size - 1);
+            out[out_size - 1] = '\0';
+            break;
+        }
+    }
+    Close(file);
+}
+
+/* Rebuilds the Unit dropdown's labels from whatever is currently saved on
+ * disk for each slot ("Unit0 - Brother HL-L2350DW", "Unit1 (empty)", ...).
+ * Callable before the window exists (win == NULL) to seed the gadget's
+ * initial GTCY_Labels, or afterwards to refresh a live gadget - e.g. after
+ * Save, in case a freshly-queried make/model just got written out. Matches
+ * this file's existing "leak the old label block rather than free it while
+ * GadTools might still reference it" convention (see update_media_dropdown
+ * and friends). */
+static void refresh_unit_dropdown(struct Window *win) {
+    int i;
+
+    unit_dropdown_labels = AllocVec((MAX_UNITS + 1) * sizeof(STRPTR), MEMF_CLEAR);
+    if (!unit_dropdown_labels) {
+        printf("Failed to allocate unit dropdown labels\n");
+        return;
+    }
+
+    for (i = 0; i < MAX_UNITS; i++) {
+        char model[96];
+        char *entry;
+
+        peek_unit_model(i, model, sizeof(model));
+
+        entry = AllocVec(128, MEMF_ANY);
+        if (!entry) {
+            /* Bail out cleanly rather than leave a premature NULL in the
+             * middle of the array, which GadTools would read as the end
+             * of the label list and silently drop the rest. */
+            int j;
+            printf("Failed to allocate unit dropdown entry %d\n", i);
+            for (j = 0; j < i; j++) {
+                FreeVec(unit_dropdown_labels[j]);
+                unit_dropdown_labels[j] = NULL;
+            }
+            FreeVec(unit_dropdown_labels);
+            unit_dropdown_labels = NULL;
+            return;
+        }
+
+        if (model[0]) {
+            snprintf(entry, 128, "Unit%d - %s", i, model);
+        } else if (unit_file_exists(i)) {
+            snprintf(entry, 128, "Unit%d", i);
+        } else {
+            snprintf(entry, 128, "Unit%d (empty)", i);
+        }
+        unit_dropdown_labels[i] = entry;
+    }
+    unit_dropdown_labels[MAX_UNITS] = NULL;
+
+    if (win) {
+        struct Gadget *g = find_gadget_by_id(GAD_UNIT_DROPDOWN);
+        if (g) {
+            GT_SetGadgetAttrs(g, win, NULL,
+                              GTCY_Labels, (ULONG)unit_dropdown_labels,
+                              GTCY_Active, (ULONG)current_unit_index,
+                              TAG_DONE);
+            RefreshGList(g, win, NULL, 1);
+            GT_RefreshWindow(win, NULL);
+        }
+    }
 }
 
 /* custom_printf() itself is defined further down (it draws into the on-screen
@@ -526,7 +652,8 @@ static BOOL write_driver_config_file(CONST_STRPTR filename) {
     file = Open(filename, MODE_NEWFILE);
     if (!file) return FALSE;
 
-    FPuts(file, "# MintPRINT Unit0 - written by MintPrint Settings\n");
+    snprintf(line, sizeof(line), "# MintPRINT Unit%d - written by MintPrint Settings\n", current_unit_index);
+    FPuts(file, line);
     snprintf(line, sizeof(line), "HOST=%s\n", host);
     FPuts(file, line);
     snprintf(line, sizeof(line), "PORT=%d\n", port);
@@ -549,6 +676,8 @@ static BOOL write_driver_config_file(CONST_STRPTR filename) {
     FPuts(file, line);
     snprintf(line, sizeof(line), "SIDES=%s\n", driver_sides_buffer);
     FPuts(file, line);
+    snprintf(line, sizeof(line), "MODEL=%s\n", printer_make_model);
+    FPuts(file, line);
     Close(file);
     return TRUE;
 }
@@ -556,6 +685,8 @@ static BOOL write_driver_config_file(CONST_STRPTR filename) {
 static BOOL save_driver_config(struct Window *win) {
     BOOL env_ok;
     BOOL envarc_ok;
+    char env_path[64];
+    char envarc_path[64];
 
     capture_driver_settings(win);
 
@@ -568,8 +699,14 @@ static BOOL save_driver_config(struct Window *win) {
         return FALSE;
     }
 
-    env_ok = write_driver_config_file((CONST_STRPTR)"ENV:MintPRINT/Unit0");
-    envarc_ok = write_driver_config_file((CONST_STRPTR)"ENVARC:MintPRINT/Unit0");
+    unit_config_path(current_unit_index, FALSE, env_path, sizeof(env_path));
+    unit_config_path(current_unit_index, TRUE, envarc_path, sizeof(envarc_path));
+
+    env_ok = write_driver_config_file((CONST_STRPTR)env_path);
+    envarc_ok = write_driver_config_file((CONST_STRPTR)envarc_path);
+
+    if (env_ok && envarc_ok) refresh_unit_dropdown(win);
+
     return env_ok && envarc_ok;
 }
 
@@ -577,6 +714,8 @@ static BOOL load_driver_config(void) {
     BPTR file;
     char line[192];
     char host[64] = "192.168.0.51";
+    char env_path[64];
+    char envarc_path[64];
     int port = 80;
     BOOL found = FALSE;
 
@@ -589,10 +728,14 @@ static BOOL load_driver_config(void) {
     driver_quality_buffer[0] = '\0';
     driver_scaling_buffer[0] = '\0';
     driver_sides_buffer[0] = '\0';
+    printer_make_model[0] = '\0';
 
-    file = Open((CONST_STRPTR)"ENV:MintPRINT/Unit0", MODE_OLDFILE);
+    unit_config_path(current_unit_index, FALSE, env_path, sizeof(env_path));
+    unit_config_path(current_unit_index, TRUE, envarc_path, sizeof(envarc_path));
+
+    file = Open((CONST_STRPTR)env_path, MODE_OLDFILE);
     if (!file)
-        file = Open((CONST_STRPTR)"ENVARC:MintPRINT/Unit0", MODE_OLDFILE);
+        file = Open((CONST_STRPTR)envarc_path, MODE_OLDFILE);
 
     if (!file) {
         snprintf(ip_buffer, sizeof(ip_buffer), "%s:%d", host, port);
@@ -645,6 +788,9 @@ static BOOL load_driver_config(void) {
         } else if (strncmp(line, "SIDES=", 6) == 0) {
             strncpy(driver_sides_buffer, line + 6, sizeof(driver_sides_buffer) - 1);
             driver_sides_buffer[sizeof(driver_sides_buffer) - 1] = '\0';
+        } else if (strncmp(line, "MODEL=", 6) == 0) {
+            strncpy(printer_make_model, line + 6, sizeof(printer_make_model) - 1);
+            printer_make_model[sizeof(printer_make_model) - 1] = '\0';
         }
     }
 
@@ -1162,6 +1308,16 @@ void cleanup_dropdown_labels() {
         FreeVec(quality_mode_labels);
         quality_mode_labels = NULL;
     }
+
+    // Unit Dropdown Labels
+    if (unit_dropdown_labels) {
+        for (int i = 0; unit_dropdown_labels[i]; i++) {
+            FreeVec(unit_dropdown_labels[i]);
+            unit_dropdown_labels[i] = NULL;
+        }
+        FreeVec(unit_dropdown_labels);
+        unit_dropdown_labels = NULL;
+    }
 }
 
 /* MintPRINT prefs #8: capability cache.
@@ -1277,6 +1433,8 @@ static BOOL mp_cache_write_file(CONST_STRPTR filename,
 static BOOL save_capability_cache(CONST_STRPTR host, int port, CONST_STRPTR path) {
     BOOL env_ok;
     BOOL envarc_ok;
+    char env_cache[64];
+    char envarc_cache[64];
 
     if (!host || !host[0] || port <= 0 || port > 65535 ||
         !path || path[0] != '/') {
@@ -1288,10 +1446,11 @@ static BOOL save_capability_cache(CONST_STRPTR host, int port, CONST_STRPTR path
     if (!ensure_config_dir((CONST_STRPTR)"ENVARC:MintPRINT"))
         return FALSE;
 
-    env_ok = mp_cache_write_file((CONST_STRPTR)"ENV:MintPRINT/Unit0.cache",
-                                 host, port, path);
-    envarc_ok = mp_cache_write_file((CONST_STRPTR)"ENVARC:MintPRINT/Unit0.cache",
-                                    host, port, path);
+    unit_cache_path(current_unit_index, FALSE, env_cache, sizeof(env_cache));
+    unit_cache_path(current_unit_index, TRUE, envarc_cache, sizeof(envarc_cache));
+
+    env_ok = mp_cache_write_file((CONST_STRPTR)env_cache, host, port, path);
+    envarc_ok = mp_cache_write_file((CONST_STRPTR)envarc_cache, host, port, path);
 
     return env_ok && envarc_ok;
 }
@@ -1423,18 +1582,21 @@ static BOOL mp_cache_load_file(CONST_STRPTR filename) {
 static BOOL load_capability_cache_for_current_endpoint(void) {
     char host[64];
     int port = -1;
-    CONST_STRPTR env_cache = (CONST_STRPTR)"ENV:MintPRINT/Unit0.cache";
-    CONST_STRPTR envarc_cache = (CONST_STRPTR)"ENVARC:MintPRINT/Unit0.cache";
+    char env_cache[64];
+    char envarc_cache[64];
 
     if (!parse_ip_and_port(ip_buffer, host, sizeof(host), &port))
         return FALSE;
     if (port <= 0) port = 80;
 
-    if (mp_cache_endpoint_matches(env_cache, host, port, driver_path_buffer))
-        return mp_cache_load_file(env_cache);
+    unit_cache_path(current_unit_index, FALSE, env_cache, sizeof(env_cache));
+    unit_cache_path(current_unit_index, TRUE, envarc_cache, sizeof(envarc_cache));
 
-    if (mp_cache_endpoint_matches(envarc_cache, host, port, driver_path_buffer))
-        return mp_cache_load_file(envarc_cache);
+    if (mp_cache_endpoint_matches((CONST_STRPTR)env_cache, host, port, driver_path_buffer))
+        return mp_cache_load_file((CONST_STRPTR)env_cache);
+
+    if (mp_cache_endpoint_matches((CONST_STRPTR)envarc_cache, host, port, driver_path_buffer))
+        return mp_cache_load_file((CONST_STRPTR)envarc_cache);
 
     return FALSE;
 }
@@ -1449,6 +1611,47 @@ static void apply_cached_capabilities(struct Window *win) {
 
     /* Put the user's saved Unit0 choices back on top of the available lists. */
     apply_job_defaults_to_gadgets(win);
+}
+
+/* Reloads everything for current_unit_index: saved Unit%d config, its
+ * cached capabilities (or "Not Detected" ghosting if there is none yet),
+ * and the print-mode radio state. Used both when switching the Unit
+ * dropdown and by File > Reload Driver Settings. */
+static void reload_current_unit(struct Window *win) {
+    mp_cache_clear_capabilities();
+
+    if (load_driver_config())
+        custom_printf("MintPRINT Unit%d loaded\n", current_unit_index);
+    else
+        custom_printf("No Unit%d found; using MintPRINT defaults\n", current_unit_index);
+
+    seed_saved_option_labels();
+    load_print_mode();
+
+    if (!win) return;
+
+    apply_driver_config_to_gadgets(win);
+
+    if (load_capability_cache_for_current_endpoint()) {
+        apply_cached_capabilities(win);
+        custom_printf("Loaded cached printer capabilities\n");
+    } else {
+        apply_saved_option_state(win);
+    }
+
+    apply_job_defaults_to_gadgets(win);
+
+    {
+        struct Gadget *print_mode_gadget = find_gadget_by_id(GAD_PRINT_MODE);
+        if (print_mode_gadget) {
+            GT_SetGadgetAttrs(print_mode_gadget, win, NULL,
+                              GTCY_Active, print_mode,
+                              TAG_DONE);
+            RefreshGList(print_mode_gadget, win, NULL, 1);
+        }
+    }
+
+    GT_RefreshWindow(win, NULL);
 }
 
 
@@ -2324,6 +2527,7 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     num_supported_quality = 0;
     num_media_tray_mappings = 0;
     has_media_ready = FALSE;
+    printer_make_model[0] = '\0';
 
     // Allocate buffers for parsing
     char *name = malloc(512);
@@ -2376,7 +2580,7 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     ipp_payload[offset++] = uri_len & 0xFF;
     memcpy(&ipp_payload[offset], uri, uri_len); offset += uri_len;
 
-    const char *requested = "media-source-supported,media-ready,printer-input-tray,printer-state,print-color-mode-supported,print-scaling-supported,print-quality-supported,document-format-supported";
+    const char *requested = "media-source-supported,media-ready,printer-input-tray,printer-state,print-color-mode-supported,print-scaling-supported,print-quality-supported,document-format-supported,printer-make-and-model";
     int requested_len = strlen(requested);
     ipp_payload[offset++] = 0x44; ipp_payload[offset++] = 0x00; ipp_payload[offset++] = 0x12;
     memcpy(&ipp_payload[offset], "requested-attributes", 18); offset += 18;
@@ -2727,6 +2931,10 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
                         }
                     } else if (strcmp(name, "document-format-supported") == 0 && value_tag == 0x49) {
                         store_value(supported_formats, &num_supported_formats, value);
+                    } else if (strcmp(name, "printer-make-and-model") == 0 &&
+                               (value_tag == 0x41 || value_tag == 0x42)) {
+                        strncpy(printer_make_model, value, sizeof(printer_make_model) - 1);
+                        printer_make_model[sizeof(printer_make_model) - 1] = '\0';
                     }
                 }
 
@@ -2831,6 +3039,12 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     if (window) update_scaling_dropdown(window);
     ensure_quality_defaults();
     if (window) update_quality_dropdown(window);
+
+    if (printer_make_model[0]) {
+        printf("Printer: %s\n", printer_make_model);
+    } else {
+        printf("Printer did not report printer-make-and-model\n");
+    }
 
     if (num_supported_formats > 0) {
         printf("Printer document formats (%d):\n", num_supported_formats);
@@ -3393,9 +3607,46 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     ng.ng_VisualInfo = vi;
     ng.ng_Flags = NG_HIGHLABEL;
 
+    // Unit selector - which saved printer profile (ENV:MintPRINT/UnitN) is
+    // being viewed/edited. Only Unit0 is what the driver actually prints
+    // with; switching here reloads the rest of the form from that unit's
+    // saved file.
+    ng.ng_LeftEdge = 130;
+    ng.ng_TopEdge = 5 + topborder;
+    ng.ng_Width = 230;
+    ng.ng_Height = 12;
+    ng.ng_GadgetText = (STRPTR)"Unit:";
+    ng.ng_GadgetID = GAD_UNIT_DROPDOWN;
+    gad = CreateGadget(CYCLE_KIND, gad, &ng,
+        GTCY_Labels, (ULONG)unit_dropdown_labels,
+        GTCY_Active, (ULONG)current_unit_index,
+        TAG_DONE);
+    if (!gad) {
+        printf("Failed to create unit dropdown\n");
+        return NULL;
+    }
+
+    // Copies the selected unit's saved settings over Unit0, the only slot
+    // the driver actually reads at print time - the practical way to
+    // "switch which printer is active" without touching driver code.
+    ng.ng_LeftEdge = 370;
+    ng.ng_Width = 90;
+    ng.ng_Height = 12;
+    ng.ng_GadgetText = (STRPTR)"_Activate";
+    ng.ng_GadgetID = GAD_SET_ACTIVE_BUTTON;
+    ng.ng_Flags = 0;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng,
+        GT_Underscore, '_',
+        TAG_DONE);
+    if (!gad) {
+        printf("Failed to create activate button\n");
+        return NULL;
+    }
+    ng.ng_Flags = NG_HIGHLABEL;
+
     // IP string gadget
     ng.ng_LeftEdge = 165;
-    ng.ng_TopEdge = 5 + topborder;
+    ng.ng_TopEdge += 20;
     ng.ng_Width = 190;
     ng.ng_Height = 14;
     ng.ng_GadgetText = (STRPTR)"_Printer IP/Host:";
@@ -3640,6 +3891,69 @@ void process_window_events(struct Window *win) {
             switch (imsgClass) {
                 case IDCMP_GADGETUP:
                     switch (gad->GadgetID) {
+                        case GAD_UNIT_DROPDOWN:
+                        {
+                            ULONG selected = 0;
+                            GT_GetGadgetAttrs(gad, win, NULL,
+                                              GTCY_Active, (ULONG)&selected,
+                                              TAG_DONE);
+                            if (selected < (ULONG)MAX_UNITS && (int)selected != current_unit_index) {
+                                current_unit_index = (int)selected;
+                                custom_printf("CLEAR");
+                                reload_current_unit(win);
+                            }
+                        }
+                        break;
+
+                        case GAD_SET_ACTIVE_BUTTON:
+                        {
+                            custom_printf("CLEAR");
+
+                            if (current_unit_index == 0) {
+                                custom_printf("Unit0 is already the active printer.\n");
+                            } else if (!unit_file_exists(current_unit_index)) {
+                                custom_printf("Unit%d has no saved settings yet - nothing to activate.\n",
+                                              current_unit_index);
+                            } else {
+                                char src_env[64], src_envarc[64];
+                                char dst_env[64], dst_envarc[64];
+                                BOOL ok;
+
+                                unit_config_path(current_unit_index, FALSE, src_env, sizeof(src_env));
+                                unit_config_path(current_unit_index, TRUE, src_envarc, sizeof(src_envarc));
+                                unit_config_path(0, FALSE, dst_env, sizeof(dst_env));
+                                unit_config_path(0, TRUE, dst_envarc, sizeof(dst_envarc));
+
+                                ok = ensure_config_dir((CONST_STRPTR)"ENV:MintPRINT") &&
+                                     ensure_config_dir((CONST_STRPTR)"ENVARC:MintPRINT") &&
+                                     mp_copy_file((CONST_STRPTR)src_env, (CONST_STRPTR)dst_env) &&
+                                     mp_copy_file((CONST_STRPTR)src_envarc, (CONST_STRPTR)dst_envarc);
+
+                                if (ok) {
+                                    char src_cache_env[64], src_cache_envarc[64];
+                                    char dst_cache_env[64], dst_cache_envarc[64];
+
+                                    /* Best-effort: carry the cached capabilities over too, so
+                                     * Unit0 doesn't need a fresh Query. Fine if there is none. */
+                                    unit_cache_path(current_unit_index, FALSE, src_cache_env, sizeof(src_cache_env));
+                                    unit_cache_path(current_unit_index, TRUE, src_cache_envarc, sizeof(src_cache_envarc));
+                                    unit_cache_path(0, FALSE, dst_cache_env, sizeof(dst_cache_env));
+                                    unit_cache_path(0, TRUE, dst_cache_envarc, sizeof(dst_cache_envarc));
+                                    mp_copy_file((CONST_STRPTR)src_cache_env, (CONST_STRPTR)dst_cache_env);
+                                    mp_copy_file((CONST_STRPTR)src_cache_envarc, (CONST_STRPTR)dst_cache_envarc);
+
+                                    custom_printf("Unit%d copied to Unit0 - it is now the active printer.\n",
+                                                  current_unit_index);
+                                    current_unit_index = 0;
+                                    reload_current_unit(win);
+                                    refresh_unit_dropdown(win);
+                                } else {
+                                    custom_printf("Could not copy Unit%d to Unit0.\n", current_unit_index);
+                                }
+                            }
+                        }
+                        break;
+
                         case GAD_MEDIA_DROPDOWN:
                         {
                             ULONG selected = ~0UL;
@@ -3783,9 +4097,9 @@ void process_window_events(struct Window *win) {
 
                         case GAD_SAVE_BUTTON:
                             if (save_driver_config(win))
-                                printf("MintPRINT Unit0 saved to ENV: and ENVARC:\n");
+                                printf("MintPRINT Unit%d saved to ENV: and ENVARC:\n", current_unit_index);
                             else
-                                printf("Failed to save MintPRINT Unit0 settings\n");
+                                printf("Failed to save MintPRINT Unit%d settings\n", current_unit_index);
                             break;
 
                         case GAD_EXIT_BUTTON:
@@ -3815,35 +4129,15 @@ void process_window_events(struct Window *win) {
                                     case 0: // Save Settings
                                         save_print_mode();
                                         if (save_driver_config(win))
-                                            printf("MintPRINT Unit0 saved to ENV: and ENVARC:\n");
+                                            printf("MintPRINT Unit%d saved to ENV: and ENVARC:\n", current_unit_index);
                                         else
-                                            printf("Failed to save MintPRINT Unit0 settings\n");
+                                            printf("Failed to save MintPRINT Unit%d settings\n", current_unit_index);
                                         break;
-                    
+
                                     case 1: // Load Settings
-                                        if (load_driver_config())
-                                            printf("MintPRINT Unit0 loaded\n");
-                                        else
-                                            printf("No Unit0 found; using MintPRINT defaults\n");
-                                        apply_driver_config_to_gadgets(win);
-                                        apply_saved_option_state(win);
-                                        apply_job_defaults_to_gadgets(win);
-                                        load_print_mode();
-                    
-                                        // Update radio button state
-                                        struct Gadget *print_mode_gadget = glist;
-                                        while (print_mode_gadget && print_mode_gadget->GadgetID != GAD_PRINT_MODE)
-                                            print_mode_gadget = print_mode_gadget->NextGadget;
-                    
-                                        if (print_mode_gadget && window) {
-                                            GT_SetGadgetAttrs(print_mode_gadget, window, NULL,
-                                                              GTCY_Active, print_mode,
-                                                              TAG_DONE);
-                                            RefreshGList(print_mode_gadget, window, NULL, 1);
-                                            GT_RefreshWindow(window, NULL);
-                                        }
+                                        reload_current_unit(win);
                                         break;
-                    
+
                                     case 3: // Quit
                                         terminated = TRUE;
                                         break;
@@ -3948,7 +4242,10 @@ int main(void) {
 
     // Load print mode from ENV:
     load_print_mode();
-    
+
+    // Seed the Unit dropdown's labels from whatever is saved on disk.
+    refresh_unit_dropdown(NULL);
+
     // Create gadgets
     if (!createAllGadgets(&glist, vi, topborder)) {
         printf("Failed to create gadgets\n");
@@ -3969,8 +4266,8 @@ int main(void) {
         WA_AutoAdjust, TRUE,
         WA_Width, 490,
         WA_MinWidth, 490,
-        WA_InnerHeight, 310,
-        WA_MinHeight, 310,
+        WA_InnerHeight, 330,
+        WA_MinHeight, 330,
         WA_DragBar, TRUE,
         WA_DepthGadget, TRUE,
         WA_Activate, TRUE,

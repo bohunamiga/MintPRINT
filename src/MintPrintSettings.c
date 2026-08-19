@@ -1982,26 +1982,63 @@ static void mp_launch_printer_prefs(void) {
     }
 }
 
-/* Reads the printer-segment revision word (see printertag.s - fixed byte
- * offset 6, right after the 4-byte run-alert stub and the ABI version
- * word) straight out of a driver file, without loading/executing it.
- * Returns FALSE if the file can't be opened or is too short to hold one. */
+/* Reads this project's own driver build-counter out of a driver file, by
+ * scanning for the literal "MPDRVREV:<decimal>" marker embedded in
+ * printertag.s (see there for why: the compiled driver FILE on disk is a
+ * standard AmigaDOS hunk-format load module, not a raw blob starting at
+ * its code entry point, so there is no reliable FIXED BYTE OFFSET to read
+ * this from - a scannable marker is the same approach AmigaOS's own
+ * "Version" command uses for "$VER:" strings). Returns FALSE if the file
+ * can't be opened or the marker isn't found. */
+#define MP_DRIVER_REV_MARKER "MPDRVREV:"
+#define MP_DRIVER_REV_SCAN_MAX 65536
+
 static BOOL mp_read_driver_revision(CONST_STRPTR path, UWORD *revision_out) {
     BPTR file;
-    UBYTE header[8];
+    UBYTE *buf;
     LONG got;
+    LONG marker_len = (LONG)strlen(MP_DRIVER_REV_MARKER);
+    LONG i;
+    BOOL found = FALSE;
 
     file = Open(path, MODE_OLDFILE);
     if (!file) return FALSE;
 
-    got = Read(file, header, sizeof(header));
+    buf = AllocVec(MP_DRIVER_REV_SCAN_MAX, MEMF_ANY);
+    if (!buf) {
+        Close(file);
+        return FALSE;
+    }
+
+    got = Read(file, buf, MP_DRIVER_REV_SCAN_MAX);
     Close(file);
 
-    if (got != (LONG)sizeof(header)) return FALSE;
+    if (got < marker_len) {
+        FreeVec(buf);
+        return FALSE;
+    }
 
-    /* Big-endian 68k word at offset 6. */
-    *revision_out = (UWORD)((header[6] << 8) | header[7]);
-    return TRUE;
+    for (i = 0; i <= got - marker_len; i++) {
+        if (memcmp(buf + i, MP_DRIVER_REV_MARKER, marker_len) == 0) {
+            LONG j = i + marker_len;
+            ULONG value = 0;
+            BOOL any_digit = FALSE;
+
+            while (j < got && buf[j] >= '0' && buf[j] <= '9') {
+                value = value * 10UL + (ULONG)(buf[j] - '0');
+                any_digit = TRUE;
+                j++;
+            }
+            if (any_digit) {
+                *revision_out = (UWORD)value;
+                found = TRUE;
+            }
+            break;
+        }
+    }
+
+    FreeVec(buf);
+    return found;
 }
 
 static void check_and_offer_driver_install(struct Window *win) {

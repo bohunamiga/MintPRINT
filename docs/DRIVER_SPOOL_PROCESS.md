@@ -145,15 +145,36 @@ worth revisiting - but only once re-introduced incrementally, with an
 actual confirmed-working test at each step, rather than landed as one large
 change and debugged after the fact against a moving, unconfirmed baseline.
 
+## Round 5: re-wired, with a stricter test protocol
+
+The round 4 revert turned out to be chasing an unreliable signal: on
+retest, the *reverted* driver (and even `main`, predating this entire
+investigation) also crashed identically on the same WinUAE session - a
+session that then started working again after a full WinUAE restart (not
+just a guest reboot). That points at the emulator having wedged into a bad
+state, not a code regression - which means round 4's "MultiView broke too"
+evidence, the whole basis for reverting, may itself have been a false
+signal rather than proof `spool.c` never worked.
+
+The underlying Task/Process reasoning (rounds 1-2) is still sound,
+documented AmigaOS behaviour regardless of what caused the round 3-4
+confusion, and the DPaint crash is still unresolved with the reverted
+driver - so `driver_core.c` has been **re-wired to use `spool.c` again**,
+identical to the round-2 state (including the `CreateNewProc` explicit-tags
+fix - `spool.c` itself was never touched during the round-4 revert).
+
+This time, testing goes through one checkpoint before anything else: a
+**fresh WinUAE restart** (not just a guest reboot, given what round 4
+turned out to be), print via **MultiView only**, and confirm
+`T:MintPRINT-driver.log` actually contains `MintPRINT: Init` - proof the
+spool process started successfully, which no earlier round ever actually
+confirmed. Only once that's a solid yes does DPaint get retried.
+
 ## Current status
 
-Back to the original, pre-investigation state: `DEVS:Printers/MintPRINT`
-works for MultiView and GraphicDump. The DPaint-specific crash
-(`printer.device`, error `#8000000A` on the original code) is
-**unresolved** and parked - not fixed, not actively being chased with
-further speculative changes. If revisited, the next step should be getting
-an actual PC/backtrace (WinUAE's debugger or log) before writing more code,
-rather than another round of hypothesis-and-rebuild.
+Re-wired (see Round 5) and awaiting that MultiView + log-file checkpoint.
+Not yet confirmed working or broken - this is a genuinely open test, not a
+claimed fix.
 
 ## Build/install/test
 

@@ -1373,15 +1373,32 @@ void update_scaling_dropdown(struct Window *win) {
     mp_scaling_label_ptrs[count] = NULL;
     scaling_mode_labels = mp_scaling_label_ptrs;
 
-    g = find_gadget_by_id(GAD_SCALING_MODE);
-    if (g && win) {
-        GT_SetGadgetAttrs(g, win, NULL,
-                          GTCY_Labels, (ULONG)scaling_mode_labels,
-                          GTCY_Active, 0,
-                          GA_Disabled, num_supported_scaling > 0 ? FALSE : TRUE,
-                          TAG_DONE);
-        RefreshGList(g, win, NULL, 1);
-        GT_RefreshWindow(win, NULL);
+    /* Prefer "auto" when the printer offers it, rather than whichever
+     * value the printer happened to list first. Confirmed on real
+     * hardware: "auto-fit" got a job rejected outright as malformed on
+     * one printer and mis-paginated a single page across multiple
+     * physical sheets on another, while "auto" printed correctly both
+     * times - "auto" is the safer default across printers generally,
+     * not just a preference for this one. */
+    {
+        int preferred = 0;
+        for (i = 0; i < count; i++) {
+            if (strcmp(mp_scaling_label_storage[i], "auto") == 0) {
+                preferred = i;
+                break;
+            }
+        }
+
+        g = find_gadget_by_id(GAD_SCALING_MODE);
+        if (g && win) {
+            GT_SetGadgetAttrs(g, win, NULL,
+                              GTCY_Labels, (ULONG)scaling_mode_labels,
+                              GTCY_Active, (ULONG)preferred,
+                              GA_Disabled, num_supported_scaling > 0 ? FALSE : TRUE,
+                              TAG_DONE);
+            RefreshGList(g, win, NULL, 1);
+            GT_RefreshWindow(win, NULL);
+        }
     }
 }
 

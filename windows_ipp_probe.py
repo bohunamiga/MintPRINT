@@ -596,21 +596,43 @@ def add_list(lines, label, values, enum_map=None, max_items=40):
 
 
 def pretty_collection(value, indent="    "):
-    if not isinstance(value, dict):
-        return [indent + format_scalar(value)]
-    lines = []
-    for key in sorted(value):
-        vals = value[key]
-        if len(vals) == 1 and not isinstance(vals[0], dict):
-            lines.append("%s%s: %s" % (indent, key, format_scalar(vals[0])))
-        else:
-            lines.append("%s%s:" % (indent, key))
-            for v in vals:
-                if isinstance(v, dict):
-                    lines.extend(pretty_collection(v, indent + "  "))
-                else:
-                    lines.append(indent + "  - " + format_scalar(v))
-    return lines
+    """Render nested IPP collection values without assuming a fixed shape."""
+    if isinstance(value, dict):
+        lines = []
+        for key in sorted(value):
+            item = value[key]
+
+            if isinstance(item, list):
+                if len(item) == 1 and not isinstance(item[0], (dict, list)):
+                    lines.append("%s%s: %s" % (indent, key, format_scalar(item[0])))
+                    continue
+
+                lines.append("%s%s:" % (indent, key))
+                for child in item:
+                    if isinstance(child, (dict, list)):
+                        lines.extend(pretty_collection(child, indent + "  "))
+                    else:
+                        lines.append(indent + "  - " + format_scalar(child))
+                continue
+
+            if isinstance(item, (dict, list)):
+                lines.append("%s%s:" % (indent, key))
+                lines.extend(pretty_collection(item, indent + "  "))
+            else:
+                lines.append("%s%s: %s" % (indent, key, format_scalar(item)))
+
+        return lines
+
+    if isinstance(value, list):
+        lines = []
+        for item in value:
+            if isinstance(item, (dict, list)):
+                lines.extend(pretty_collection(item, indent))
+            else:
+                lines.append(indent + "- " + format_scalar(item))
+        return lines
+
+    return [indent + format_scalar(value)]
 
 
 def report(parsed, target, http_status, http_reason, response_bytes, dump_all=False):

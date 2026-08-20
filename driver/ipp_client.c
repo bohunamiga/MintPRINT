@@ -206,7 +206,7 @@ static int mp_decimal_1000(const char *s, ULONG len, ULONG *value)
     return 1;
 }
 
-int mp_media_dimensions(const char *media, ULONG *x, ULONG *y)
+static int mp_media_dimensions(const char *media, ULONG *x, ULONG *y)
 {
     ULONG len, i, start = 0, sep = 0, sx, sy;
     ULONG factor;

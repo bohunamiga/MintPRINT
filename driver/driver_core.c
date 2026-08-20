@@ -36,7 +36,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 6
+#define MP_DRIVER_REV 7
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -121,14 +121,6 @@ static CONST_STRPTR mp_job_filename(void)
         case MP_ENGINE_PDF: return MP_JOB_FILE_PDF;
         default:            return MP_JOB_FILE_JPEG;
     }
-}
-
-/* Converts a media-size dimension from mp_media_dimensions() (hundredths
- * of a millimetre, the IPP media-size convention) to points (1/72in), for
- * the PWG raster header's own PageSize field. */
-static ULONG mp_mm100_to_pts(ULONG mm100)
-{
-    return (mm100 * 72UL) / 2540UL;
 }
 
 static ULONG mp_strlen(const char *s)
@@ -347,22 +339,18 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
 
     switch (g_engine) {
         case MP_ENGINE_PWG: {
-            /* The PWG header's own PageSize must agree with whatever
-             * media the IPP job attributes separately tell the printer
-             * to use - not be derived from raw pixel dimensions, which
-             * can (and, on real hardware, did) claim an unrelated
-             * physical size and get the whole document rejected. Falls
-             * back to the old pixel-derived size (0,0) only when no
-             * media is configured. */
-            ULONG page_pts_x = 0, page_pts_y = 0;
-            if (g_config.media[0]) {
-                ULONG media_x = 0, media_y = 0;
-                if (mp_media_dimensions(g_config.media, &media_x, &media_y)) {
-                    page_pts_x = mp_mm100_to_pts(media_x);
-                    page_pts_y = mp_mm100_to_pts(media_y);
-                }
-            }
-            if (!mp_pwg_begin(&g_pwg, width, height, page_pts_x, page_pts_y,
+            /* PageSize is deliberately derived from the actual raster
+             * pixels (page_pts_x/y = 0 -> mp_pwg_begin's own pixel/300dpi
+             * fallback), NOT from the configured media=. A real hardware
+             * test proved that route wrong: declaring PageSize as full
+             * A4 while the raster only covered a few inches of it made
+             * the printer treat the raster as one tile and paginate
+             * copies of it across multiple physical sheets to fill the
+             * declared page (3 sheets for content ~1/3 of A4's height -
+             * not a coincidence). PageSize needs to say "this raster IS
+             * the whole page" so the printer doesn't try to fill more of
+             * one than we actually sent. */
+            if (!mp_pwg_begin(&g_pwg, width, height, 0, 0,
                               g_pwg_scratch, g_pwg_scratch_bytes,
                               mp_job_file_write, NULL)) {
                 mp_log_text("PWG encoder begin failed");

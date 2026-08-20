@@ -57,11 +57,26 @@ struct TagItem DriverTags[] = {
 #define MP_JOB_FILE_PWG  ((CONST_STRPTR)"T:MintPRINT-job.pwg")
 #define MP_JOB_FILE_PDF  ((CONST_STRPTR)"T:MintPRINT-job.pdf")
 
+/* Multiple Render(status=0 begin -> rows -> status=4 end) cycles inside one
+ * Open()/Close() bracket is legitimate - that's how a real multi-page
+ * document is printed, one physical page/IPP job per cycle. But an app
+ * (observed: ArtEffect) can misbehave and present every source scanline as
+ * its own one-row "page", turning one print into dozens of near-blank
+ * physical sheets before anyone can react. No genuine single page is ever
+ * this short at any realistic DPI, so a run of consecutive pages under
+ * MP_TINY_PAGE_ROWS is the signal; MP_TINY_PAGE_STREAK_LIMIT requires
+ * several in a row (not just one unusual small page) before refusing
+ * further pages for the rest of this Open/Close bracket. */
+#define MP_TINY_PAGE_ROWS 20
+#define MP_TINY_PAGE_STREAK_LIMIT 3
+
 enum { MP_ENGINE_JPEG = 0, MP_ENGINE_PWG = 1, MP_ENGINE_PDF = 2 };
 
 static ULONG g_page_width = 0;
 static ULONG g_page_height = 0;
 static ULONG g_rows_seen = 0;
+static ULONG g_tiny_page_streak = 0;
+static BOOL g_runaway_tripped = FALSE;
 
 static BOOL g_job_open = FALSE;
 static UBYTE *g_rgb_row = NULL;
@@ -521,6 +536,8 @@ VOID PRT_STDARGS Expunge(void)
 int PRT_STDARGS DriverOpen(struct IORequest *ior)
 {
     (void)ior;
+    g_tiny_page_streak = 0;
+    g_runaway_tripped = FALSE;
     mp_log_text("Open");
     return 0;
 }
@@ -570,6 +587,11 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             mp_log_3("Render begin width/height/ct", x, y, ct ? 1 : 0);
             mp_log_config(&g_config, g_config_source);
 
+            if (g_runaway_tripped) {
+                mp_log_text("Refusing page: runaway tiny-page storm already tripped this print");
+                return PDERR_CANCEL;
+            }
+
             if (!mp_job_begin(g_page_width, g_page_height))
                 return PDERR_BUFFERMEMORY;
 
@@ -616,6 +638,21 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                     mp_log_3("IPP result error/http/status",
                              result.error, result.http_status,
                              (LONG)result.ipp_status);
+
+                    if (ipp_rc == 0) {
+                        if (g_page_height < MP_TINY_PAGE_ROWS) {
+                            ++g_tiny_page_streak;
+                            if (g_tiny_page_streak >= MP_TINY_PAGE_STREAK_LIMIT) {
+                                g_runaway_tripped = TRUE;
+                                mp_log_3("Runaway tiny-page storm detected, refusing further pages this print - height/limit/streak",
+                                         (LONG)g_page_height, (LONG)MP_TINY_PAGE_ROWS,
+                                         (LONG)g_tiny_page_streak);
+                            }
+                        } else {
+                            g_tiny_page_streak = 0;
+                        }
+                    }
+
                     if (ipp_rc != 0) return PDERR_CANCEL;
                     if (!g_config.keep_job)
                         mp_spool_job_delete(fname);

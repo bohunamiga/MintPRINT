@@ -314,6 +314,33 @@ int safe_send(int sockfd, const void *vbuf, int len) {
     return total_sent;
 }
 
+// Locates the byte offset just past the next "\r\n\r\n" header terminator at
+// or after `start`, or -1 if the buffer doesn't contain one (yet). Some IPP
+// printers (observed: a Canon TS8300) send an interim
+// "HTTP/1.1 100 Continue\r\n\r\n" ahead of the real response; callers
+// re-invoke this with `start` advanced past that block (see mp_http_status)
+// to skip it rather than mistake it for the real header/body boundary.
+static int mp_http_find_body(const char *buf, int len, int start) {
+    int i;
+    if (len < 4 || start < 0 || start + 4 > len) return -1;
+    for (i = start; i + 3 < len; i++) {
+        if (buf[i] == '\r' && buf[i + 1] == '\n' && buf[i + 2] == '\r' && buf[i + 3] == '\n')
+            return i + 4;
+    }
+    return -1;
+}
+
+// Parses the 3-digit status code from the "HTTP/1.x NNN ..." status line
+// starting at `start`. Returns 0 if it can't be parsed.
+static int mp_http_status(const char *buf, int len, int start) {
+    int i = start;
+    while (i < len && buf[i] != ' ') i++;
+    if (i + 4 > len) return 0;
+    if (buf[i + 1] < '0' || buf[i + 1] > '9' || buf[i + 2] < '0' || buf[i + 2] > '9' ||
+        buf[i + 3] < '0' || buf[i + 3] > '9') return 0;
+    return (buf[i + 1] - '0') * 100 + (buf[i + 2] - '0') * 10 + (buf[i + 3] - '0');
+}
+
 // Global variables for GUI
 struct Window *window = NULL;
 struct Gadget *glist = NULL;
@@ -3004,14 +3031,27 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     int total_received = 0;
     int max_attempts = 20; // 20 attempts at 100ms each = 2 seconds max
     int attempt = 0;
+    int header_start = 0; // advanced past any interim "1xx" response below
+    int body_off = -1;
 
     while (total_received < maxlen - 1 && attempt < max_attempts) {
         ssize_t received = recv(sockfd, response + total_received, maxlen - 1 - total_received, 0);
         if (received > 0) {
             total_received += received;
             response[total_received] = '\0';
-            if (strstr(response, "\r\n\r\n")) {
-                break; // Got the full header and IPP payload
+            body_off = mp_http_find_body(response, total_received, header_start);
+            if (body_off >= 0) {
+                int status = mp_http_status(response, total_received, header_start);
+                if (status >= 100 && status < 200) {
+                    // Interim response (e.g. "100 Continue") - skip it and
+                    // keep waiting for the response that actually carries
+                    // the IPP payload.
+                    printf("Skipping interim HTTP %d response\n", status);
+                    header_start = body_off;
+                    body_off = -1;
+                } else {
+                    break; // Got the full header and IPP payload
+                }
             }
         } else if (received == 0) {
             break; // Connection closed
@@ -3051,7 +3091,7 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     response[total_received] = '\0';
 
     int content_len = 0;
-    char *content_ptr = strstr(response, "Content-Length:");
+    char *content_ptr = strstr(response + header_start, "Content-Length:");
     if (content_ptr) {
         sscanf(content_ptr, "Content-Length: %d", &content_len);
         printf("Content-Length: %d\n", content_len);
@@ -3059,9 +3099,10 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
         printf("No Content-Length header found\n");
     }
 
-    // Find the start of the IPP payload
-    char *ipp_start = strstr(response, "\r\n\r\n");
-    if (!ipp_start) {
+    // Find the start of the IPP payload (past any interim response already
+    // skipped above)
+    if (body_off < 0) body_off = mp_http_find_body(response, total_received, header_start);
+    if (body_off < 0) {
         printf("Failed to find IPP payload (no \\r\\n\\r\\n separator)\n");
         CloseSocket(sockfd);
         free(name);
@@ -3069,8 +3110,8 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
         operation_in_progress = FALSE;
         return -1;
     }
-    ipp_start += 4; // Skip the "\r\n\r\n"
-    int ipp_len = total_received - (ipp_start - response);
+    char *ipp_start = response + body_off;
+    int ipp_len = total_received - body_off;
 
     if (ipp_len < 8) {
         printf("IPP response too short: %d bytes\n", ipp_len);
@@ -3597,16 +3638,37 @@ int send_pwg_print_job(const char *ip, int port, const char *media, const char *
         return -1;
     }
 
-    ssize_t received = recv(sockfd, response_buffer, 4096 - 1, 0);
-    if (received > 0) {
-        response_buffer[received] = '\0';
-        char *ipp_start = strstr(response_buffer, "\r\n\r\n");
-        if (ipp_start) {
-            ipp_start += 4;
-            printf("IPP Status: 0x%02x%02x\n", ipp_start[2], ipp_start[3]);
+    {
+        int total_received = 0;
+        int header_start = 0;
+        int body_off = -1;
+        int attempt;
+
+        for (attempt = 0; attempt < 10; attempt++) {
+            ssize_t received = recv(sockfd, response_buffer + total_received,
+                                    4096 - 1 - total_received, 0);
+            if (received <= 0) break;
+            total_received += (int)received;
+            response_buffer[total_received] = '\0';
+            body_off = mp_http_find_body(response_buffer, total_received, header_start);
+            if (body_off < 0) continue;
+            {
+                int status = mp_http_status(response_buffer, total_received, header_start);
+                if (status >= 100 && status < 200) {
+                    header_start = body_off;
+                    body_off = -1;
+                    continue;
+                }
+            }
+            break;
         }
-    } else {
-        printf("No response or receive timeout.\n");
+
+        if (body_off >= 0) {
+            char *ipp_start = response_buffer + body_off;
+            printf("IPP Status: 0x%02x%02x\n", ipp_start[2], ipp_start[3]);
+        } else {
+            printf("No response or receive timeout.\n");
+        }
     }
 
     free(response_buffer);
@@ -3880,22 +3942,45 @@ int send_print_job(const char *ip, int port, const char *filename, const char *m
         return -1;
     }
 
-    ssize_t received = recv(sockfd, response_buffer, 4096 - 1, 0);
-    if (received <= 0) {
-        printf("No response or receive timeout.\n");
-        CloseSocket(sockfd);
-        free(response_buffer);
-        operation_in_progress = FALSE;
-        return -1;
-    }
+    {
+        int total_received = 0;
+        int header_start = 0;
+        int body_off = -1;
+        int attempt;
 
-    response_buffer[received] = '\0';
-    char *ipp_start = strstr(response_buffer, "\r\n\r\n");
-    if (ipp_start) {
-        ipp_start += 4;
-        printf("IPP Status: 0x%02x%02x\n", ipp_start[2], ipp_start[3]);
-    } else {
-        printf("Could not find IPP response payload.\n");
+        for (attempt = 0; attempt < 10; attempt++) {
+            ssize_t received = recv(sockfd, response_buffer + total_received,
+                                    4096 - 1 - total_received, 0);
+            if (received <= 0) break;
+            total_received += (int)received;
+            response_buffer[total_received] = '\0';
+            body_off = mp_http_find_body(response_buffer, total_received, header_start);
+            if (body_off < 0) continue;
+            {
+                int status = mp_http_status(response_buffer, total_received, header_start);
+                if (status >= 100 && status < 200) {
+                    header_start = body_off;
+                    body_off = -1;
+                    continue;
+                }
+            }
+            break;
+        }
+
+        if (total_received == 0) {
+            printf("No response or receive timeout.\n");
+            CloseSocket(sockfd);
+            free(response_buffer);
+            operation_in_progress = FALSE;
+            return -1;
+        }
+
+        if (body_off >= 0) {
+            char *ipp_start = response_buffer + body_off;
+            printf("IPP Status: 0x%02x%02x\n", ipp_start[2], ipp_start[3]);
+        } else {
+            printf("Could not find IPP response payload.\n");
+        }
     }
 
     free(response_buffer);

@@ -52,7 +52,12 @@ extern struct GfxBase *GfxBase;
 #define MAX_ATTR_LEN 64
 #define MAX_BUFFER 256000
 #define MAX_OUTPUT_LINES 10
-#define MAX_OUTPUT_LINE_LENGTH 47
+/* The debug output box is OUTPUT_LEFT..OUTPUT_RIGHT wide - at the main
+ * window's 520px width that's ~490px, or ~61 chars of Topaz80 (8px/char).
+ * 47 left several real messages (e.g. "Unit%d has no saved settings yet -
+ * nothing to activate.", 54 chars) truncated mid-word. Re-check this
+ * against OUTPUT_LEFT/OUTPUT_RIGHT if the window width changes again. */
+#define MAX_OUTPUT_LINE_LENGTH 62
 #define MAX_PRINT_MODES 8
 #define MAX_QUALITIES 5
 #define MENU_ID_FILE       1

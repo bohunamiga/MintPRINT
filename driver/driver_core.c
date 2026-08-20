@@ -31,6 +31,13 @@
 #include "ipp_client.h"
 #include "spool.h"
 
+/* Keep in sync with the MPDRVREV: marker in printertag.s and
+ * printertag_classic.s - logged at Init so a driver.log always says
+ * exactly which build produced it, rather than relying on whoever's
+ * reading it to separately check About or remember what they last
+ * copied to DEVS:Printers/. */
+#define MP_DRIVER_REV 6
+
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
 struct PrinterData *PD = NULL;
@@ -540,6 +547,10 @@ LONG PRT_STDARGS Init(struct PrinterData *pd)
     mp_config_defaults(&g_config);
     mp_spool_ensure_running();
     mp_log_text("Init");
+    mp_log_reset();
+    mp_log_append("MintPRINT: Driver revision ");
+    mp_log_append_long((LONG)MP_DRIVER_REV);
+    mp_spool_log(g_log_line);
     return 0;
 }
 

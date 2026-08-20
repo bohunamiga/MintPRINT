@@ -551,15 +551,18 @@ static void refresh_unit_dropdown(struct Window *win) {
             peek_unit_model(i, model, sizeof(model));
         }
 
+        /* The "Unit:" gadget label already says "Unit" - repeating it in
+         * every cycle entry ("Unit0 - Brother MFC-J6930DW") just wastes
+         * width that a real model name badly needs. */
         if (model[0]) {
             snprintf(mp_unit_label_storage[i], MP_UNIT_LABEL_LEN,
-                     "Unit%d - %s", i, model);
+                     "%d: %s", i, model);
         } else if (unit_file_exists(i)) {
             snprintf(mp_unit_label_storage[i], MP_UNIT_LABEL_LEN,
-                     "Unit%d", i);
+                     "%d", i);
         } else {
             snprintf(mp_unit_label_storage[i], MP_UNIT_LABEL_LEN,
-                     "Unit%d (empty)", i);
+                     "%d (empty)", i);
         }
     }
     mp_unit_label_ptrs[MAX_UNITS] = NULL;
@@ -4078,7 +4081,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     // saved file.
     ng.ng_LeftEdge = 130;
     ng.ng_TopEdge = 5 + topborder;
-    ng.ng_Width = 320;
+    ng.ng_Width = 260;
     ng.ng_Height = 12;
     ng.ng_GadgetText = (STRPTR)"Unit:";
     ng.ng_GadgetID = GAD_UNIT_DROPDOWN;
@@ -4094,7 +4097,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     // Copies the selected unit's saved settings over Unit0, the only slot
     // the driver actually reads at print time - the practical way to
     // "switch which printer is active" without touching driver code.
-    ng.ng_LeftEdge = 460;
+    ng.ng_LeftEdge = 400;
     ng.ng_Width = 90;
     ng.ng_Height = 12;
     ng.ng_GadgetText = (STRPTR)"_Activate";
@@ -4131,7 +4134,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
 
 
     // Query button - kept beside the printer address field.
-    ng.ng_LeftEdge = 460;
+    ng.ng_LeftEdge = 400;
     ng.ng_Width = 90;
     ng.ng_Height = 12;
     ng.ng_GadgetText = (STRPTR)"_Query";
@@ -4189,7 +4192,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     // shift every row below.
     {
         UWORD row2_top = ng.ng_TopEdge;
-        ng.ng_LeftEdge = 460;
+        ng.ng_LeftEdge = 400;
         ng.ng_TopEdge = row2_top + 4;
         ng.ng_Width = 90;
         ng.ng_Height = 14;
@@ -4759,8 +4762,8 @@ int main(void) {
         WA_Title, (ULONG)"MintPrint Settings",
         WA_Gadgets, (ULONG)glist,
         WA_AutoAdjust, TRUE,
-        WA_Width, 590,
-        WA_MinWidth, 590,
+        WA_Width, 520,
+        WA_MinWidth, 520,
         WA_InnerHeight, 350,
         WA_MinHeight, 350,
         WA_DragBar, TRUE,

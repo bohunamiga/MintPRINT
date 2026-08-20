@@ -2242,16 +2242,36 @@ static BOOL mp_read_driver_revision(CONST_STRPTR path, UWORD *revision_out) {
 
 static void show_about(struct Window *win) {
     struct EasyStruct es;
+    char msg[512];
+    char installed_str[32];
+    char bundled_str[32];
+    UWORD installed_rev = 0, bundled_rev = 0;
+
+    if (mp_read_driver_revision(MINTPRINT_DRIVER_DEST, &installed_rev)) {
+        snprintf(installed_str, sizeof(installed_str), "rev %u", (unsigned)installed_rev);
+    } else {
+        strcpy(installed_str, "not installed / unknown");
+    }
+    if (mp_read_driver_revision(MINTPRINT_DRIVER_SRC, &bundled_rev)) {
+        snprintf(bundled_str, sizeof(bundled_str), "rev %u", (unsigned)bundled_rev);
+    } else {
+        strcpy(bundled_str, "not found");
+    }
+
+    snprintf(msg, sizeof(msg),
+        "MintPRINT v1.0.1 - IPP/AirPrint printing for AmigaOS\n\n"
+        "Installed driver (DEVS:Printers/MintPRINT): %s\n"
+        "Bundled driver (next to this program): %s\n\n"
+        "Bug reports and source:\n"
+        "github.com/boingball/MintPRINT\n\n"
+        "If this saved you a trip to the printer shop:\n"
+        "buymeacoffee.com/boingball",
+        installed_str, bundled_str);
 
     es.es_StructSize = sizeof(struct EasyStruct);
     es.es_Flags = 0;
     es.es_Title = (UBYTE *)"About MintPrint Settings";
-    es.es_TextFormat = (UBYTE *)
-        "MintPRINT v1.0.1 - IPP/AirPrint printing for AmigaOS\n\n"
-        "Bug reports and source:\n"
-        "github.com/boingball/MintPRINT\n\n"
-        "If this saved you a trip to the printer shop:\n"
-        "buymeacoffee.com/boingball";
+    es.es_TextFormat = (UBYTE *)msg;
     es.es_GadgetFormat = (UBYTE *)"OK";
     EasyRequest(win, &es, NULL);
 }

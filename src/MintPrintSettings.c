@@ -4324,7 +4324,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
 
 
     // Save button - same action as File -> Save Driver Settings.
-    ng.ng_LeftEdge = 250;
+    ng.ng_LeftEdge = 280;
     ng.ng_Width = 90;
     ng.ng_GadgetText = (STRPTR)"_Save";
     ng.ng_GadgetID = GAD_SAVE_BUTTON;
@@ -4337,7 +4337,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     }
 
     // Exit button
-    ng.ng_LeftEdge = 350;
+    ng.ng_LeftEdge = 380;
     ng.ng_Width = 90;
     ng.ng_GadgetText = (STRPTR)"_Exit";
     ng.ng_GadgetID = GAD_EXIT_BUTTON;

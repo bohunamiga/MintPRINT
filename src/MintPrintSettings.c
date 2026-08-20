@@ -52,7 +52,12 @@ extern struct GfxBase *GfxBase;
 #define MAX_ATTR_LEN 64
 #define MAX_BUFFER 256000
 #define MAX_OUTPUT_LINES 10
-#define MAX_OUTPUT_LINE_LENGTH 47
+/* The debug output box is OUTPUT_LEFT..OUTPUT_RIGHT wide - at the main
+ * window's 520px width that's ~490px, or ~61 chars of Topaz80 (8px/char).
+ * 47 left several real messages (e.g. "Unit%d has no saved settings yet -
+ * nothing to activate.", 54 chars) truncated mid-word. Re-check this
+ * against OUTPUT_LEFT/OUTPUT_RIGHT if the window width changes again. */
+#define MAX_OUTPUT_LINE_LENGTH 62
 #define MAX_PRINT_MODES 8
 #define MAX_QUALITIES 5
 #define MENU_ID_FILE       1
@@ -314,6 +319,33 @@ int safe_send(int sockfd, const void *vbuf, int len) {
     return total_sent;
 }
 
+// Locates the byte offset just past the next "\r\n\r\n" header terminator at
+// or after `start`, or -1 if the buffer doesn't contain one (yet). Some IPP
+// printers (observed: a Canon TS8300) send an interim
+// "HTTP/1.1 100 Continue\r\n\r\n" ahead of the real response; callers
+// re-invoke this with `start` advanced past that block (see mp_http_status)
+// to skip it rather than mistake it for the real header/body boundary.
+static int mp_http_find_body(const char *buf, int len, int start) {
+    int i;
+    if (len < 4 || start < 0 || start + 4 > len) return -1;
+    for (i = start; i + 3 < len; i++) {
+        if (buf[i] == '\r' && buf[i + 1] == '\n' && buf[i + 2] == '\r' && buf[i + 3] == '\n')
+            return i + 4;
+    }
+    return -1;
+}
+
+// Parses the 3-digit status code from the "HTTP/1.x NNN ..." status line
+// starting at `start`. Returns 0 if it can't be parsed.
+static int mp_http_status(const char *buf, int len, int start) {
+    int i = start;
+    while (i < len && buf[i] != ' ') i++;
+    if (i + 4 > len) return 0;
+    if (buf[i + 1] < '0' || buf[i + 1] > '9' || buf[i + 2] < '0' || buf[i + 2] > '9' ||
+        buf[i + 3] < '0' || buf[i + 3] > '9') return 0;
+    return (buf[i + 1] - '0') * 100 + (buf[i + 2] - '0') * 10 + (buf[i + 3] - '0');
+}
+
 // Global variables for GUI
 struct Window *window = NULL;
 struct Gadget *glist = NULL;
@@ -524,15 +556,18 @@ static void refresh_unit_dropdown(struct Window *win) {
             peek_unit_model(i, model, sizeof(model));
         }
 
+        /* The "Unit:" gadget label already says "Unit" - repeating it in
+         * every cycle entry ("Unit0 - Brother MFC-J6930DW") just wastes
+         * width that a real model name badly needs. */
         if (model[0]) {
             snprintf(mp_unit_label_storage[i], MP_UNIT_LABEL_LEN,
-                     "Unit%d - %s", i, model);
+                     "%d: %s", i, model);
         } else if (unit_file_exists(i)) {
             snprintf(mp_unit_label_storage[i], MP_UNIT_LABEL_LEN,
-                     "Unit%d", i);
+                     "%d", i);
         } else {
             snprintf(mp_unit_label_storage[i], MP_UNIT_LABEL_LEN,
-                     "Unit%d (empty)", i);
+                     "%d (empty)", i);
         }
     }
     mp_unit_label_ptrs[MAX_UNITS] = NULL;
@@ -1338,15 +1373,32 @@ void update_scaling_dropdown(struct Window *win) {
     mp_scaling_label_ptrs[count] = NULL;
     scaling_mode_labels = mp_scaling_label_ptrs;
 
-    g = find_gadget_by_id(GAD_SCALING_MODE);
-    if (g && win) {
-        GT_SetGadgetAttrs(g, win, NULL,
-                          GTCY_Labels, (ULONG)scaling_mode_labels,
-                          GTCY_Active, 0,
-                          GA_Disabled, num_supported_scaling > 0 ? FALSE : TRUE,
-                          TAG_DONE);
-        RefreshGList(g, win, NULL, 1);
-        GT_RefreshWindow(win, NULL);
+    /* Prefer "auto" when the printer offers it, rather than whichever
+     * value the printer happened to list first. Confirmed on real
+     * hardware: "auto-fit" got a job rejected outright as malformed on
+     * one printer and mis-paginated a single page across multiple
+     * physical sheets on another, while "auto" printed correctly both
+     * times - "auto" is the safer default across printers generally,
+     * not just a preference for this one. */
+    {
+        int preferred = 0;
+        for (i = 0; i < count; i++) {
+            if (strcmp(mp_scaling_label_storage[i], "auto") == 0) {
+                preferred = i;
+                break;
+            }
+        }
+
+        g = find_gadget_by_id(GAD_SCALING_MODE);
+        if (g && win) {
+            GT_SetGadgetAttrs(g, win, NULL,
+                              GTCY_Labels, (ULONG)scaling_mode_labels,
+                              GTCY_Active, (ULONG)preferred,
+                              GA_Disabled, num_supported_scaling > 0 ? FALSE : TRUE,
+                              TAG_DONE);
+            RefreshGList(g, win, NULL, 1);
+            GT_RefreshWindow(win, NULL);
+        }
     }
 }
 
@@ -2215,16 +2267,36 @@ static BOOL mp_read_driver_revision(CONST_STRPTR path, UWORD *revision_out) {
 
 static void show_about(struct Window *win) {
     struct EasyStruct es;
+    char msg[512];
+    char installed_str[32];
+    char bundled_str[32];
+    UWORD installed_rev = 0, bundled_rev = 0;
+
+    if (mp_read_driver_revision(MINTPRINT_DRIVER_DEST, &installed_rev)) {
+        snprintf(installed_str, sizeof(installed_str), "rev %u", (unsigned)installed_rev);
+    } else {
+        strcpy(installed_str, "not installed / unknown");
+    }
+    if (mp_read_driver_revision(MINTPRINT_DRIVER_SRC, &bundled_rev)) {
+        snprintf(bundled_str, sizeof(bundled_str), "rev %u", (unsigned)bundled_rev);
+    } else {
+        strcpy(bundled_str, "not found");
+    }
+
+    snprintf(msg, sizeof(msg),
+        "MintPRINT v1.0.2 - IPP/AirPrint printing for AmigaOS\n\n"
+        "Installed driver (DEVS:Printers/MintPRINT): %s\n"
+        "Bundled driver (next to this program): %s\n\n"
+        "Bug reports and source:\n"
+        "github.com/boingball/MintPRINT\n\n"
+        "If this saved you a trip to the printer shop:\n"
+        "buymeacoffee.com/boingball",
+        installed_str, bundled_str);
 
     es.es_StructSize = sizeof(struct EasyStruct);
     es.es_Flags = 0;
     es.es_Title = (UBYTE *)"About MintPrint Settings";
-    es.es_TextFormat = (UBYTE *)
-        "MintPRINT v1.0 - IPP/AirPrint printing for AmigaOS\n\n"
-        "Bug reports and source:\n"
-        "github.com/boingball/MintPRINT\n\n"
-        "If this saved you a trip to the printer shop:\n"
-        "buymeacoffee.com/boingball";
+    es.es_TextFormat = (UBYTE *)msg;
     es.es_GadgetFormat = (UBYTE *)"OK";
     EasyRequest(win, &es, NULL);
 }
@@ -2246,17 +2318,32 @@ static void check_and_offer_driver_install(struct Window *win) {
 
     if (mp_file_exists(MINTPRINT_DRIVER_DEST)) {
         /* Already installed - only bother the user if the copy bundled
-         * next to this program is a newer build than what's installed. */
+         * next to this program is a newer build than what's installed.
+         * An installed driver with no readable MPDRVREV marker at all
+         * (predates the marker system - true for anyone who hasn't
+         * updated since before it was added) is NOT "up to date": it's
+         * unreadable because it's older, not because it's current. Only
+         * skip the prompt when the installed revision is actually known
+         * and already >= the bundled one. */
         have_src_rev = mp_read_driver_revision(MINTPRINT_DRIVER_SRC, &src_rev);
         have_dest_rev = mp_read_driver_revision(MINTPRINT_DRIVER_DEST, &dest_rev);
 
-        if (!have_src_rev || !have_dest_rev || src_rev <= dest_rev) {
-            return; /* up to date, or revision unreadable - leave it alone */
+        if (!have_src_rev) {
+            return; /* nothing to offer - can't even read the bundled copy */
+        }
+        if (have_dest_rev && src_rev <= dest_rev) {
+            return; /* installed copy is already current */
         }
 
-        snprintf(msg, sizeof(msg),
-                 "A newer MintPRINT driver is available\n(installed: rev %u, bundled: rev %u).\nUpdate DEVS:Printers/MintPRINT now?",
-                 (unsigned)dest_rev, (unsigned)src_rev);
+        if (have_dest_rev) {
+            snprintf(msg, sizeof(msg),
+                     "A newer MintPRINT driver is available\n(installed: rev %u, bundled: rev %u).\nUpdate DEVS:Printers/MintPRINT now?",
+                     (unsigned)dest_rev, (unsigned)src_rev);
+        } else {
+            snprintf(msg, sizeof(msg),
+                     "A newer MintPRINT driver is available\n(installed driver predates version tracking, bundled: rev %u).\nUpdate DEVS:Printers/MintPRINT now?",
+                     (unsigned)src_rev);
+        }
         es.es_TextFormat = (UBYTE *)msg;
         es.es_GadgetFormat = (UBYTE *)"Update|Later";
 
@@ -2265,6 +2352,10 @@ static void check_and_offer_driver_install(struct Window *win) {
         if (mp_copy_file(MINTPRINT_DRIVER_SRC, MINTPRINT_DRIVER_DEST)) {
             printf("Updated MintPRINT driver to rev %u in DEVS:Printers/MintPRINT\n", (unsigned)src_rev);
             printf("Reboot (or otherwise unload the old driver segment) before printing.\n");
+
+            es.es_TextFormat = (UBYTE *)"MintPRINT driver updated.\n\nReboot before printing - the old driver segment\nalready resident in memory will not pick up this\nfile until then.";
+            es.es_GadgetFormat = (UBYTE *)"OK";
+            EasyRequest(win, &es, NULL);
         } else {
             es.es_TextFormat = (UBYTE *)"Could not copy the driver to DEVS:Printers/.\nCheck disk space and write access.";
             es.es_GadgetFormat = (UBYTE *)"OK";
@@ -2999,22 +3090,58 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
         }
     }
 
-    // Receive response in chunks to avoid blocking
+    // Receive response in chunks to avoid blocking. Keeps reading past the
+    // header separator until the declared Content-Length worth of body has
+    // actually arrived (or the printer closes the connection, which is how
+    // completion is confirmed when no Content-Length was given) - a response
+    // that merely contains "\r\n\r\n" is not necessarily a *complete* one,
+    // and treating it as complete produced an intermittent (network-timing
+    // dependent) bug where a short first recv() was silently accepted and
+    // parsed as if the printer had reported no capabilities at all.
     printf("Waiting for response...\n");
     int total_received = 0;
-    int max_attempts = 20; // 20 attempts at 100ms each = 2 seconds max
+    int max_attempts = 40; // 40 attempts at 100ms each = 4 seconds max
     int attempt = 0;
+    int header_start = 0; // advanced past any interim "1xx" response below
+    int body_off = -1;
+    int content_len = -1; // -1 = not yet known
 
     while (total_received < maxlen - 1 && attempt < max_attempts) {
         ssize_t received = recv(sockfd, response + total_received, maxlen - 1 - total_received, 0);
         if (received > 0) {
             total_received += received;
             response[total_received] = '\0';
-            if (strstr(response, "\r\n\r\n")) {
-                break; // Got the full header and IPP payload
+
+            if (body_off < 0) {
+                int off = mp_http_find_body(response, total_received, header_start);
+                if (off >= 0) {
+                    int status = mp_http_status(response, total_received, header_start);
+                    if (status >= 100 && status < 200) {
+                        // Interim response (e.g. "100 Continue") - skip it
+                        // and keep waiting for the response that actually
+                        // carries the IPP payload.
+                        printf("Skipping interim HTTP %d response\n", status);
+                        header_start = off;
+                    } else {
+                        char *cp;
+                        body_off = off;
+                        cp = strstr(response + header_start, "Content-Length:");
+                        if (cp) {
+                            sscanf(cp, "Content-Length: %d", &content_len);
+                            printf("Content-Length: %d\n", content_len);
+                        } else {
+                            printf("No Content-Length header found\n");
+                        }
+                    }
+                }
+            }
+
+            if (body_off >= 0 && content_len >= 0 &&
+                (total_received - body_off) >= content_len) {
+                break; // Got the full header and the declared IPP payload
             }
         } else if (received == 0) {
-            break; // Connection closed
+            break; // Connection closed - the printer is done sending
         } else {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
                 snprintf(response, maxlen, "Receive error");
@@ -3050,18 +3177,10 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
 
     response[total_received] = '\0';
 
-    int content_len = 0;
-    char *content_ptr = strstr(response, "Content-Length:");
-    if (content_ptr) {
-        sscanf(content_ptr, "Content-Length: %d", &content_len);
-        printf("Content-Length: %d\n", content_len);
-    } else {
-        printf("No Content-Length header found\n");
-    }
-
-    // Find the start of the IPP payload
-    char *ipp_start = strstr(response, "\r\n\r\n");
-    if (!ipp_start) {
+    // Find the start of the IPP payload (past any interim response already
+    // skipped above)
+    if (body_off < 0) body_off = mp_http_find_body(response, total_received, header_start);
+    if (body_off < 0) {
         printf("Failed to find IPP payload (no \\r\\n\\r\\n separator)\n");
         CloseSocket(sockfd);
         free(name);
@@ -3069,8 +3188,21 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
         operation_in_progress = FALSE;
         return -1;
     }
-    ipp_start += 4; // Skip the "\r\n\r\n"
-    int ipp_len = total_received - (ipp_start - response);
+    char *ipp_start = response + body_off;
+    int ipp_len = total_received - body_off;
+
+    // Don't parse a response we know is short: if the printer told us how
+    // many body bytes to expect and we didn't get that many (timed out or
+    // the connection dropped mid-response), that's a failed scan, not a
+    // printer that reported empty capabilities.
+    if (content_len >= 0 && ipp_len < content_len) {
+        printf("Incomplete IPP response: got %d of %d declared bytes\n", ipp_len, content_len);
+        CloseSocket(sockfd);
+        free(name);
+        free(value);
+        operation_in_progress = FALSE;
+        return -1;
+    }
 
     if (ipp_len < 8) {
         printf("IPP response too short: %d bytes\n", ipp_len);
@@ -3379,34 +3511,48 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
 static void perform_query_flow(struct Window *win, const char *ip_only, int port_hint, char *response) {
     int chosen_port = (port_hint > 0) ? port_hint : 80;
     int ports_to_try[] = { chosen_port, 631 };
-    int i;
+    int i, attempt;
+    BOOL ok = FALSE;
 
-    for (i = 0; i < 2; i++) {
-        printf("Trying %s:%d...\n", ip_only, ports_to_try[i]);
-        if (query_printer_attributes(ip_only, ports_to_try[i], response, MAX_BUFFER) == 0) {
-            struct Gadget *ip_gadget;
+    // A scan can fail an individual attempt for purely transient network
+    // reasons (a slow/incomplete response - see query_printer_attributes).
+    // Retry a few times per port before moving on, rather than treating one
+    // flaky attempt as "the printer has no capabilities".
+    for (i = 0; i < 2 && !ok; i++) {
+        for (attempt = 0; attempt < 3 && !ok; attempt++) {
+            printf("Trying %s:%d (attempt %d/3)...\n", ip_only, ports_to_try[i], attempt + 1);
+            if (query_printer_attributes(ip_only, ports_to_try[i], response, MAX_BUFFER) == 0) {
+                struct Gadget *ip_gadget;
 
-            snprintf(ip_buffer, sizeof(ip_buffer), "%s:%d", ip_only, ports_to_try[i]);
+                snprintf(ip_buffer, sizeof(ip_buffer), "%s:%d", ip_only, ports_to_try[i]);
 
-            ip_gadget = glist;
-            while (ip_gadget && ip_gadget->GadgetID != GAD_IP_STRING) {
-                ip_gadget = ip_gadget->NextGadget;
+                ip_gadget = glist;
+                while (ip_gadget && ip_gadget->GadgetID != GAD_IP_STRING) {
+                    ip_gadget = ip_gadget->NextGadget;
+                }
+                if (ip_gadget) {
+                    GT_SetGadgetAttrs(ip_gadget, win, NULL,
+                                      GTST_String, (ULONG)ip_buffer,
+                                      TAG_DONE);
+                }
+
+                if (save_capability_cache(ip_only, ports_to_try[i], driver_path_buffer))
+                    printf("Printer capabilities cached\n");
+                else
+                    printf("Warning: could not save printer capability cache\n");
+
+                apply_job_defaults_to_gadgets(win);
+                mp_check_any_engine_supported(win);
+                ok = TRUE;
+            } else {
+                printf("Query attempt %d/3 on %s:%d failed\n", attempt + 1, ip_only, ports_to_try[i]);
             }
-            if (ip_gadget) {
-                GT_SetGadgetAttrs(ip_gadget, win, NULL,
-                                  GTST_String, (ULONG)ip_buffer,
-                                  TAG_DONE);
-            }
-
-            if (save_capability_cache(ip_only, ports_to_try[i], driver_path_buffer))
-                printf("Printer capabilities cached\n");
-            else
-                printf("Warning: could not save printer capability cache\n");
-
-            apply_job_defaults_to_gadgets(win);
-            mp_check_any_engine_supported(win);
-            break;
         }
+    }
+
+    if (!ok) {
+        custom_printf("CLEAR");
+        custom_printf("Scan failed - please try Query again");
     }
 }
 
@@ -3597,16 +3743,37 @@ int send_pwg_print_job(const char *ip, int port, const char *media, const char *
         return -1;
     }
 
-    ssize_t received = recv(sockfd, response_buffer, 4096 - 1, 0);
-    if (received > 0) {
-        response_buffer[received] = '\0';
-        char *ipp_start = strstr(response_buffer, "\r\n\r\n");
-        if (ipp_start) {
-            ipp_start += 4;
-            printf("IPP Status: 0x%02x%02x\n", ipp_start[2], ipp_start[3]);
+    {
+        int total_received = 0;
+        int header_start = 0;
+        int body_off = -1;
+        int attempt;
+
+        for (attempt = 0; attempt < 10; attempt++) {
+            ssize_t received = recv(sockfd, response_buffer + total_received,
+                                    4096 - 1 - total_received, 0);
+            if (received <= 0) break;
+            total_received += (int)received;
+            response_buffer[total_received] = '\0';
+            body_off = mp_http_find_body(response_buffer, total_received, header_start);
+            if (body_off < 0) continue;
+            {
+                int status = mp_http_status(response_buffer, total_received, header_start);
+                if (status >= 100 && status < 200) {
+                    header_start = body_off;
+                    body_off = -1;
+                    continue;
+                }
+            }
+            break;
         }
-    } else {
-        printf("No response or receive timeout.\n");
+
+        if (body_off >= 0) {
+            char *ipp_start = response_buffer + body_off;
+            printf("IPP Status: 0x%02x%02x\n", ipp_start[2], ipp_start[3]);
+        } else {
+            printf("No response or receive timeout.\n");
+        }
     }
 
     free(response_buffer);
@@ -3880,22 +4047,45 @@ int send_print_job(const char *ip, int port, const char *filename, const char *m
         return -1;
     }
 
-    ssize_t received = recv(sockfd, response_buffer, 4096 - 1, 0);
-    if (received <= 0) {
-        printf("No response or receive timeout.\n");
-        CloseSocket(sockfd);
-        free(response_buffer);
-        operation_in_progress = FALSE;
-        return -1;
-    }
+    {
+        int total_received = 0;
+        int header_start = 0;
+        int body_off = -1;
+        int attempt;
 
-    response_buffer[received] = '\0';
-    char *ipp_start = strstr(response_buffer, "\r\n\r\n");
-    if (ipp_start) {
-        ipp_start += 4;
-        printf("IPP Status: 0x%02x%02x\n", ipp_start[2], ipp_start[3]);
-    } else {
-        printf("Could not find IPP response payload.\n");
+        for (attempt = 0; attempt < 10; attempt++) {
+            ssize_t received = recv(sockfd, response_buffer + total_received,
+                                    4096 - 1 - total_received, 0);
+            if (received <= 0) break;
+            total_received += (int)received;
+            response_buffer[total_received] = '\0';
+            body_off = mp_http_find_body(response_buffer, total_received, header_start);
+            if (body_off < 0) continue;
+            {
+                int status = mp_http_status(response_buffer, total_received, header_start);
+                if (status >= 100 && status < 200) {
+                    header_start = body_off;
+                    body_off = -1;
+                    continue;
+                }
+            }
+            break;
+        }
+
+        if (total_received == 0) {
+            printf("No response or receive timeout.\n");
+            CloseSocket(sockfd);
+            free(response_buffer);
+            operation_in_progress = FALSE;
+            return -1;
+        }
+
+        if (body_off >= 0) {
+            char *ipp_start = response_buffer + body_off;
+            printf("IPP Status: 0x%02x%02x\n", ipp_start[2], ipp_start[3]);
+        } else {
+            printf("Could not find IPP response payload.\n");
+        }
     }
 
     free(response_buffer);
@@ -3928,7 +4118,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     // saved file.
     ng.ng_LeftEdge = 130;
     ng.ng_TopEdge = 5 + topborder;
-    ng.ng_Width = 230;
+    ng.ng_Width = 260;
     ng.ng_Height = 12;
     ng.ng_GadgetText = (STRPTR)"Unit:";
     ng.ng_GadgetID = GAD_UNIT_DROPDOWN;
@@ -3944,7 +4134,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     // Copies the selected unit's saved settings over Unit0, the only slot
     // the driver actually reads at print time - the practical way to
     // "switch which printer is active" without touching driver code.
-    ng.ng_LeftEdge = 370;
+    ng.ng_LeftEdge = 400;
     ng.ng_Width = 90;
     ng.ng_Height = 12;
     ng.ng_GadgetText = (STRPTR)"_Activate";
@@ -3981,7 +4171,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
 
 
     // Query button - kept beside the printer address field.
-    ng.ng_LeftEdge = 370;
+    ng.ng_LeftEdge = 400;
     ng.ng_Width = 90;
     ng.ng_Height = 12;
     ng.ng_GadgetText = (STRPTR)"_Query";
@@ -4039,7 +4229,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     // shift every row below.
     {
         UWORD row2_top = ng.ng_TopEdge;
-        ng.ng_LeftEdge = 370;
+        ng.ng_LeftEdge = 400;
         ng.ng_TopEdge = row2_top + 4;
         ng.ng_Width = 90;
         ng.ng_Height = 14;
@@ -4057,7 +4247,11 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     }
 
     // Printer document engine: JPEG, PWG Raster, or PDF.
-    ng.ng_LeftEdge = 130;
+    // LeftEdge is nudged right of the other rows' shared 130 - this is the
+    // longest label at this column ("Printer Engine:", 15 chars) and at 130
+    // it renders with no left margin at all, clipping against the window
+    // edge.
+    ng.ng_LeftEdge = 160;
     ng.ng_TopEdge += 20;
     ng.ng_Width = 180;
     ng.ng_Height = 12;
@@ -4167,7 +4361,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
 
 
     // Save button - same action as File -> Save Driver Settings.
-    ng.ng_LeftEdge = 250;
+    ng.ng_LeftEdge = 280;
     ng.ng_Width = 90;
     ng.ng_GadgetText = (STRPTR)"_Save";
     ng.ng_GadgetID = GAD_SAVE_BUTTON;
@@ -4180,7 +4374,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
     }
 
     // Exit button
-    ng.ng_LeftEdge = 350;
+    ng.ng_LeftEdge = 380;
     ng.ng_Width = 90;
     ng.ng_GadgetText = (STRPTR)"_Exit";
     ng.ng_GadgetID = GAD_EXIT_BUTTON;
@@ -4605,8 +4799,8 @@ int main(void) {
         WA_Title, (ULONG)"MintPrint Settings",
         WA_Gadgets, (ULONG)glist,
         WA_AutoAdjust, TRUE,
-        WA_Width, 490,
-        WA_MinWidth, 490,
+        WA_Width, 520,
+        WA_MinWidth, 520,
         WA_InnerHeight, 350,
         WA_MinHeight, 350,
         WA_DragBar, TRUE,

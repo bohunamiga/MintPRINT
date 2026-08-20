@@ -28,6 +28,8 @@ typedef struct MPPwgEncoder {
     unsigned long height;
     unsigned long bytes_per_line;
     unsigned long rows_written;
+    unsigned long page_pts_x;
+    unsigned long page_pts_y;
     unsigned char *scratch;
     unsigned long scratch_size;
     MPPwgWriteFn write_fn;
@@ -36,7 +38,16 @@ typedef struct MPPwgEncoder {
 } MPPwgEncoder;
 
 unsigned long mp_pwg_scratch_size(unsigned long width);
+/* page_pts_x/y is the PHYSICAL page size (in 1/72in points) declared in
+ * the header's PageSize field - independent of width/height, which are
+ * only the pixel raster's own dimensions. Pass 0 for either to fall back
+ * to the previous behaviour of deriving it from width/height at 300dpi;
+ * callers that know the real selected media (e.g. from IPP media=) should
+ * pass its actual physical size instead, so this document's own declared
+ * page size can never contradict what the surrounding IPP job attributes
+ * already told the printer - see pwg_writer.c's file comment. */
 int mp_pwg_begin(MPPwgEncoder *enc, unsigned long width, unsigned long height,
+                 unsigned long page_pts_x, unsigned long page_pts_y,
                  unsigned char *scratch, unsigned long scratch_size,
                  MPPwgWriteFn write_fn, void *write_ctx);
 int mp_pwg_write_scanline(MPPwgEncoder *enc, const unsigned char *rgb);

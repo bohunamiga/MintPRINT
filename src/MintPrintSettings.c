@@ -2292,6 +2292,10 @@ static void check_and_offer_driver_install(struct Window *win) {
         if (mp_copy_file(MINTPRINT_DRIVER_SRC, MINTPRINT_DRIVER_DEST)) {
             printf("Updated MintPRINT driver to rev %u in DEVS:Printers/MintPRINT\n", (unsigned)src_rev);
             printf("Reboot (or otherwise unload the old driver segment) before printing.\n");
+
+            es.es_TextFormat = (UBYTE *)"MintPRINT driver updated.\n\nReboot before printing - the old driver segment\nalready resident in memory will not pick up this\nfile until then.";
+            es.es_GadgetFormat = (UBYTE *)"OK";
+            EasyRequest(win, &es, NULL);
         } else {
             es.es_TextFormat = (UBYTE *)"Could not copy the driver to DEVS:Printers/.\nCheck disk space and write access.";
             es.es_GadgetFormat = (UBYTE *)"OK";

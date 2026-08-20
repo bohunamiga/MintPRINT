@@ -3,8 +3,7 @@ Author:       Darren Banfi (boingball)
 Uploader:     boingball gmail com (Darren Banfi)
 Type:         util/misc
 Version:      1.0.2
-Requires:     68000+; AmigaOS 3.1+; TCP/IP stack providing
-              bsdsocket.library for all printing
+Requires:     68000+; AmigaOS 3.1+; TCP/IP stack providing bsdsocket.library
 Architecture: m68k-amigaos >= 3.1.0
 Distribution: MIT License - see LICENSE in the source repository
 

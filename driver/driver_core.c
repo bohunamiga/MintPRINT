@@ -116,6 +116,14 @@ static CONST_STRPTR mp_job_filename(void)
     }
 }
 
+/* Converts a media-size dimension from mp_media_dimensions() (hundredths
+ * of a millimetre, the IPP media-size convention) to points (1/72in), for
+ * the PWG raster header's own PageSize field. */
+static ULONG mp_mm100_to_pts(ULONG mm100)
+{
+    return (mm100 * 72UL) / 2540UL;
+}
+
 static ULONG mp_strlen(const char *s)
 {
     ULONG n = 0;
@@ -331,9 +339,25 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
     }
 
     switch (g_engine) {
-        case MP_ENGINE_PWG:
-            if (!mp_pwg_begin(&g_pwg, width, height, g_pwg_scratch,
-                              g_pwg_scratch_bytes, mp_job_file_write, NULL)) {
+        case MP_ENGINE_PWG: {
+            /* The PWG header's own PageSize must agree with whatever
+             * media the IPP job attributes separately tell the printer
+             * to use - not be derived from raw pixel dimensions, which
+             * can (and, on real hardware, did) claim an unrelated
+             * physical size and get the whole document rejected. Falls
+             * back to the old pixel-derived size (0,0) only when no
+             * media is configured. */
+            ULONG page_pts_x = 0, page_pts_y = 0;
+            if (g_config.media[0]) {
+                ULONG media_x = 0, media_y = 0;
+                if (mp_media_dimensions(g_config.media, &media_x, &media_y)) {
+                    page_pts_x = mp_mm100_to_pts(media_x);
+                    page_pts_y = mp_mm100_to_pts(media_y);
+                }
+            }
+            if (!mp_pwg_begin(&g_pwg, width, height, page_pts_x, page_pts_y,
+                              g_pwg_scratch, g_pwg_scratch_bytes,
+                              mp_job_file_write, NULL)) {
                 mp_log_text("PWG encoder begin failed");
                 g_job_failed = TRUE;
                 mp_job_cleanup();
@@ -342,6 +366,7 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
             mp_log_3("PWG begin width/height/scratch",
                      (LONG)width, (LONG)height, (LONG)g_pwg_scratch_bytes);
             break;
+        }
         case MP_ENGINE_PDF:
             if (!mp_pdf_begin(&g_pdf, width, height, g_pdf_scratch,
                               g_pdf_scratch_bytes, mp_job_file_write, NULL)) {

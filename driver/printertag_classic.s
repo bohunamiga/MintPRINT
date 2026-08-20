@@ -77,7 +77,7 @@ printerName:
  * Bump this alongside the main driver when shared driver behaviour changes.
  */
 mp_driver_revision_marker:
-        .asciz  "MPDRVREV:5"
+        .asciz  "MPDRVREV:6"
         .even
 
 /* Human-readable marker useful when inspecting a built driver. */

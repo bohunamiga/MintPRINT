@@ -81,9 +81,15 @@ static int mp_pwg_write_header(MPPwgEncoder *e)
     /* Orientation, OutputFaceUp */
     if (!mp_pwg_zeros(e, 4UL * 2UL)) return 0;
 
-    /* PageSize[2] - points (1/72in), from pixels at 300 DPI */
-    if (!mp_pwg_u32(e, (e->width * 72UL) / 300UL) ||
-        !mp_pwg_u32(e, (e->height * 72UL) / 300UL)) return 0;
+    /* PageSize[2] - points (1/72in). Deliberately the caller-supplied
+     * physical page size (see mp_pwg_begin), NOT derived from the pixel
+     * raster - a page size computed purely from width/height at an
+     * assumed DPI can (and, on real hardware, did) end up contradicting
+     * whatever media the surrounding IPP job attributes already told the
+     * printer to use, which at least one real printer flatly rejected as
+     * a document-format error rather than reconciling the two. */
+    if (!mp_pwg_u32(e, e->page_pts_x) ||
+        !mp_pwg_u32(e, e->page_pts_y)) return 0;
 
     /* Separations, TraySwitch, Tumble */
     if (!mp_pwg_zeros(e, 4UL * 3UL)) return 0;
@@ -169,6 +175,7 @@ unsigned long mp_pwg_scratch_size(unsigned long width)
 }
 
 int mp_pwg_begin(MPPwgEncoder *e, unsigned long width, unsigned long height,
+                 unsigned long page_pts_x, unsigned long page_pts_y,
                  unsigned char *scratch, unsigned long scratch_size,
                  MPPwgWriteFn write_fn, void *write_ctx)
 {
@@ -183,6 +190,10 @@ int mp_pwg_begin(MPPwgEncoder *e, unsigned long width, unsigned long height,
     e->height = height;
     e->bytes_per_line = width * 3UL;
     e->rows_written = 0;
+    /* Fall back to the pixel-derived size (previous behaviour) only when
+     * the caller has no real physical page size to offer. */
+    e->page_pts_x = page_pts_x ? page_pts_x : (width * 72UL) / 300UL;
+    e->page_pts_y = page_pts_y ? page_pts_y : (height * 72UL) / 300UL;
     e->scratch = scratch;
     e->scratch_size = scratch_size;
     e->write_fn = write_fn;

@@ -74,3 +74,7 @@ Windows PC on the same network:
 
 Working driver + GUI, actively developed. Not a polished, general-release
 product yet - see `docs/` for open issues and design history.
+
+## License
+
+[MIT](LICENSE) - Copyright (c) 2026 Darren Banfi (boingball).

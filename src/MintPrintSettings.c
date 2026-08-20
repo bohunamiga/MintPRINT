@@ -3026,35 +3026,58 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
         }
     }
 
-    // Receive response in chunks to avoid blocking
+    // Receive response in chunks to avoid blocking. Keeps reading past the
+    // header separator until the declared Content-Length worth of body has
+    // actually arrived (or the printer closes the connection, which is how
+    // completion is confirmed when no Content-Length was given) - a response
+    // that merely contains "\r\n\r\n" is not necessarily a *complete* one,
+    // and treating it as complete produced an intermittent (network-timing
+    // dependent) bug where a short first recv() was silently accepted and
+    // parsed as if the printer had reported no capabilities at all.
     printf("Waiting for response...\n");
     int total_received = 0;
-    int max_attempts = 20; // 20 attempts at 100ms each = 2 seconds max
+    int max_attempts = 40; // 40 attempts at 100ms each = 4 seconds max
     int attempt = 0;
     int header_start = 0; // advanced past any interim "1xx" response below
     int body_off = -1;
+    int content_len = -1; // -1 = not yet known
 
     while (total_received < maxlen - 1 && attempt < max_attempts) {
         ssize_t received = recv(sockfd, response + total_received, maxlen - 1 - total_received, 0);
         if (received > 0) {
             total_received += received;
             response[total_received] = '\0';
-            body_off = mp_http_find_body(response, total_received, header_start);
-            if (body_off >= 0) {
-                int status = mp_http_status(response, total_received, header_start);
-                if (status >= 100 && status < 200) {
-                    // Interim response (e.g. "100 Continue") - skip it and
-                    // keep waiting for the response that actually carries
-                    // the IPP payload.
-                    printf("Skipping interim HTTP %d response\n", status);
-                    header_start = body_off;
-                    body_off = -1;
-                } else {
-                    break; // Got the full header and IPP payload
+
+            if (body_off < 0) {
+                int off = mp_http_find_body(response, total_received, header_start);
+                if (off >= 0) {
+                    int status = mp_http_status(response, total_received, header_start);
+                    if (status >= 100 && status < 200) {
+                        // Interim response (e.g. "100 Continue") - skip it
+                        // and keep waiting for the response that actually
+                        // carries the IPP payload.
+                        printf("Skipping interim HTTP %d response\n", status);
+                        header_start = off;
+                    } else {
+                        char *cp;
+                        body_off = off;
+                        cp = strstr(response + header_start, "Content-Length:");
+                        if (cp) {
+                            sscanf(cp, "Content-Length: %d", &content_len);
+                            printf("Content-Length: %d\n", content_len);
+                        } else {
+                            printf("No Content-Length header found\n");
+                        }
+                    }
                 }
             }
+
+            if (body_off >= 0 && content_len >= 0 &&
+                (total_received - body_off) >= content_len) {
+                break; // Got the full header and the declared IPP payload
+            }
         } else if (received == 0) {
-            break; // Connection closed
+            break; // Connection closed - the printer is done sending
         } else {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
                 snprintf(response, maxlen, "Receive error");
@@ -3090,15 +3113,6 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
 
     response[total_received] = '\0';
 
-    int content_len = 0;
-    char *content_ptr = strstr(response + header_start, "Content-Length:");
-    if (content_ptr) {
-        sscanf(content_ptr, "Content-Length: %d", &content_len);
-        printf("Content-Length: %d\n", content_len);
-    } else {
-        printf("No Content-Length header found\n");
-    }
-
     // Find the start of the IPP payload (past any interim response already
     // skipped above)
     if (body_off < 0) body_off = mp_http_find_body(response, total_received, header_start);
@@ -3112,6 +3126,19 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     }
     char *ipp_start = response + body_off;
     int ipp_len = total_received - body_off;
+
+    // Don't parse a response we know is short: if the printer told us how
+    // many body bytes to expect and we didn't get that many (timed out or
+    // the connection dropped mid-response), that's a failed scan, not a
+    // printer that reported empty capabilities.
+    if (content_len >= 0 && ipp_len < content_len) {
+        printf("Incomplete IPP response: got %d of %d declared bytes\n", ipp_len, content_len);
+        CloseSocket(sockfd);
+        free(name);
+        free(value);
+        operation_in_progress = FALSE;
+        return -1;
+    }
 
     if (ipp_len < 8) {
         printf("IPP response too short: %d bytes\n", ipp_len);
@@ -3420,34 +3447,48 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
 static void perform_query_flow(struct Window *win, const char *ip_only, int port_hint, char *response) {
     int chosen_port = (port_hint > 0) ? port_hint : 80;
     int ports_to_try[] = { chosen_port, 631 };
-    int i;
+    int i, attempt;
+    BOOL ok = FALSE;
 
-    for (i = 0; i < 2; i++) {
-        printf("Trying %s:%d...\n", ip_only, ports_to_try[i]);
-        if (query_printer_attributes(ip_only, ports_to_try[i], response, MAX_BUFFER) == 0) {
-            struct Gadget *ip_gadget;
+    // A scan can fail an individual attempt for purely transient network
+    // reasons (a slow/incomplete response - see query_printer_attributes).
+    // Retry a few times per port before moving on, rather than treating one
+    // flaky attempt as "the printer has no capabilities".
+    for (i = 0; i < 2 && !ok; i++) {
+        for (attempt = 0; attempt < 3 && !ok; attempt++) {
+            printf("Trying %s:%d (attempt %d/3)...\n", ip_only, ports_to_try[i], attempt + 1);
+            if (query_printer_attributes(ip_only, ports_to_try[i], response, MAX_BUFFER) == 0) {
+                struct Gadget *ip_gadget;
 
-            snprintf(ip_buffer, sizeof(ip_buffer), "%s:%d", ip_only, ports_to_try[i]);
+                snprintf(ip_buffer, sizeof(ip_buffer), "%s:%d", ip_only, ports_to_try[i]);
 
-            ip_gadget = glist;
-            while (ip_gadget && ip_gadget->GadgetID != GAD_IP_STRING) {
-                ip_gadget = ip_gadget->NextGadget;
+                ip_gadget = glist;
+                while (ip_gadget && ip_gadget->GadgetID != GAD_IP_STRING) {
+                    ip_gadget = ip_gadget->NextGadget;
+                }
+                if (ip_gadget) {
+                    GT_SetGadgetAttrs(ip_gadget, win, NULL,
+                                      GTST_String, (ULONG)ip_buffer,
+                                      TAG_DONE);
+                }
+
+                if (save_capability_cache(ip_only, ports_to_try[i], driver_path_buffer))
+                    printf("Printer capabilities cached\n");
+                else
+                    printf("Warning: could not save printer capability cache\n");
+
+                apply_job_defaults_to_gadgets(win);
+                mp_check_any_engine_supported(win);
+                ok = TRUE;
+            } else {
+                printf("Query attempt %d/3 on %s:%d failed\n", attempt + 1, ip_only, ports_to_try[i]);
             }
-            if (ip_gadget) {
-                GT_SetGadgetAttrs(ip_gadget, win, NULL,
-                                  GTST_String, (ULONG)ip_buffer,
-                                  TAG_DONE);
-            }
-
-            if (save_capability_cache(ip_only, ports_to_try[i], driver_path_buffer))
-                printf("Printer capabilities cached\n");
-            else
-                printf("Warning: could not save printer capability cache\n");
-
-            apply_job_defaults_to_gadgets(win);
-            mp_check_any_engine_supported(win);
-            break;
         }
+    }
+
+    if (!ok) {
+        custom_printf("CLEAR");
+        custom_printf("Scan failed - please try Query again");
     }
 }
 

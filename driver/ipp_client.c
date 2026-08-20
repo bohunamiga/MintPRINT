@@ -276,19 +276,28 @@ static LONG mp_file_size(BPTR fh)
     return end;
 }
 
-static LONG mp_parse_http_status(const UBYTE *buf, ULONG len)
+/* start is the offset of the status line ("HTTP/1.1 NNN ...") to parse -
+ * either 0 for the first response on the connection, or the byte just past
+ * a previous response's header block when skipping an interim one (see
+ * mp_find_body below). */
+static LONG mp_parse_http_status(const UBYTE *buf, ULONG len, ULONG start)
 {
-    ULONG i = 0;
+    ULONG i = start;
     while (i < len && buf[i] != ' ') ++i;
     if (i + 4 > len) return 0;
     return (LONG)((buf[i+1]-'0') * 100 + (buf[i+2]-'0') * 10 + (buf[i+3]-'0'));
 }
 
-static LONG mp_find_body(const UBYTE *buf, ULONG len)
+/* Finds the end of the next "\r\n\r\n" header terminator at or after start.
+ * Some IPP servers (observed: a Canon TS8300) send an interim
+ * "HTTP/1.1 100 Continue\r\n\r\n" ahead of the real status line and body;
+ * the caller re-invokes this with start advanced past that block so the
+ * 1xx response is skipped rather than mistaken for the final one. */
+static LONG mp_find_body(const UBYTE *buf, ULONG len, ULONG start)
 {
     ULONG i;
-    if (len < 4) return -1;
-    for (i = 0; i + 3 < len; ++i) {
+    if (len < 4 || start + 4 > len) return -1;
+    for (i = start; i + 3 < len; ++i) {
         if (buf[i] == '\r' && buf[i+1] == '\n' &&
             buf[i+2] == '\r' && buf[i+3] == '\n')
             return (LONG)(i + 4);
@@ -425,17 +434,33 @@ LONG mp_ipp_print_document(const struct MPConfig *cfg, CONST_STRPTR filename,
         if (!mp_safe_send(sock, filebuf, (ULONG)got)) { rc = -13; goto done; }
     }
 
-    while (response_used < sizeof(response)) {
-        LONG got = recv(sock, (char *)(response + response_used),
-                        (LONG)(sizeof(response) - response_used), 0);
-        if (got <= 0) break;
-        response_used += (ULONG)got;
-        body_pos = mp_find_body(response, response_used);
-        if (body_pos >= 0 && response_used >= (ULONG)body_pos + 8UL) break;
-    }
+    {
+        ULONG header_start = 0;
+        LONG status = 0;
 
-    if (result) result->http_status = mp_parse_http_status(response, response_used);
-    if (body_pos < 0) body_pos = mp_find_body(response, response_used);
+        for (;;) {
+            while (response_used < sizeof(response)) {
+                LONG got;
+                body_pos = mp_find_body(response, response_used, header_start);
+                if (body_pos >= 0 && response_used >= (ULONG)body_pos + 8UL) break;
+                got = recv(sock, (char *)(response + response_used),
+                          (LONG)(sizeof(response) - response_used), 0);
+                if (got <= 0) break;
+                response_used += (ULONG)got;
+            }
+            body_pos = mp_find_body(response, response_used, header_start);
+            if (body_pos < 0) { rc = -14; goto done; }
+
+            status = mp_parse_http_status(response, response_used, header_start);
+            if (status < 100 || status >= 200) break;
+
+            /* Interim response (e.g. "100 Continue") - skip it and look
+             * for the real status line/body that follows. */
+            header_start = (ULONG)body_pos;
+        }
+
+        if (result) result->http_status = status;
+    }
     if (body_pos < 0 || response_used < (ULONG)body_pos + 4UL) { rc = -14; goto done; }
 
     if (result) {

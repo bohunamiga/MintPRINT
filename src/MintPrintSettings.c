@@ -2301,17 +2301,32 @@ static void check_and_offer_driver_install(struct Window *win) {
 
     if (mp_file_exists(MINTPRINT_DRIVER_DEST)) {
         /* Already installed - only bother the user if the copy bundled
-         * next to this program is a newer build than what's installed. */
+         * next to this program is a newer build than what's installed.
+         * An installed driver with no readable MPDRVREV marker at all
+         * (predates the marker system - true for anyone who hasn't
+         * updated since before it was added) is NOT "up to date": it's
+         * unreadable because it's older, not because it's current. Only
+         * skip the prompt when the installed revision is actually known
+         * and already >= the bundled one. */
         have_src_rev = mp_read_driver_revision(MINTPRINT_DRIVER_SRC, &src_rev);
         have_dest_rev = mp_read_driver_revision(MINTPRINT_DRIVER_DEST, &dest_rev);
 
-        if (!have_src_rev || !have_dest_rev || src_rev <= dest_rev) {
-            return; /* up to date, or revision unreadable - leave it alone */
+        if (!have_src_rev) {
+            return; /* nothing to offer - can't even read the bundled copy */
+        }
+        if (have_dest_rev && src_rev <= dest_rev) {
+            return; /* installed copy is already current */
         }
 
-        snprintf(msg, sizeof(msg),
-                 "A newer MintPRINT driver is available\n(installed: rev %u, bundled: rev %u).\nUpdate DEVS:Printers/MintPRINT now?",
-                 (unsigned)dest_rev, (unsigned)src_rev);
+        if (have_dest_rev) {
+            snprintf(msg, sizeof(msg),
+                     "A newer MintPRINT driver is available\n(installed: rev %u, bundled: rev %u).\nUpdate DEVS:Printers/MintPRINT now?",
+                     (unsigned)dest_rev, (unsigned)src_rev);
+        } else {
+            snprintf(msg, sizeof(msg),
+                     "A newer MintPRINT driver is available\n(installed driver predates version tracking, bundled: rev %u).\nUpdate DEVS:Printers/MintPRINT now?",
+                     (unsigned)src_rev);
+        }
         es.es_TextFormat = (UBYTE *)msg;
         es.es_GadgetFormat = (UBYTE *)"Update|Later";
 

@@ -45,6 +45,8 @@ int main(void)
     unsigned char tiny_rgb[3] = { 255, 255, 255 };
     unsigned char tiny_scratch[32];
     unsigned char reverse_row[9] = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+    const unsigned char *encoded_row;
+    unsigned long encoded_length;
     long cross_feed, feed;
 
     assert(mp_media_dimensions_100mm("iso_a4_210x297mm", &x, &y));
@@ -111,7 +113,12 @@ int main(void)
     assert(be32(page_sink.header + 4UL + 368UL) == 0UL); /* Tumble */
     assert(be32(page_sink.header + 4UL + 456UL) == 1UL);
     assert(be32(page_sink.header + 4UL + 460UL) == 1UL);
-    assert(mp_pwg_write_scanline(&encoder, tiny_rgb));
+    assert(mp_pwg_encode_scanline(&encoder, tiny_rgb,
+                                  &encoded_row, &encoded_length));
+    assert(page_sink.bytes == 1800UL);
+    assert(encoder.rows_written == 0UL);
+    assert(mp_pwg_write_encoded_scanline(&encoder, encoded_row,
+                                         encoded_length));
     assert(mp_pwg_finish(&encoder));
 
     memset(&page_sink, 0, sizeof(page_sink));

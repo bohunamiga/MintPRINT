@@ -48,10 +48,12 @@ driver which coordinate system the printer expects for reverse-side PWG
 bitmaps. MintPRINT writes the matching PWG `Duplex`, `Tumble`,
 `CrossFeedTransform` and `FeedTransform` header fields. When a reverse page
 must be flipped (the Brother MFC-J6930DW reports `rotated`, for example), its
-RGB rows are temporarily spooled to `T:` and replayed in the required order.
-Only one scanline is held in memory; the temporary file is removed after the
-page is encoded. If the printer omits this conditionally required capability,
-MintPRINT uses the standard `normal` coordinate system.
+already-compressed PWG rows are temporarily spooled to `T:` and replayed in
+the required order. This avoids a page-sized RAM buffer and avoids always
+storing three raw bytes per pixel; actual temporary size remains
+content-dependent. The temporary file is removed after the page is encoded.
+If the printer omits this conditionally required capability, MintPRINT uses
+the standard `normal` coordinate system.
 
 ## Testing a printer
 

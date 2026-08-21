@@ -196,7 +196,8 @@ static int mp_pwg_write_header(MPPwgEncoder *e, int write_sync)
  * other, more failure-prone "literal run" encoding (byte 129-255, with
  * its own separate minimum-length and byte-value-overflow edge cases)
  * to still be a fully valid, decodable stream - see pwg_writer.h. */
-static int mp_pwg_encode_row(MPPwgEncoder *e, const unsigned char *rgb)
+static int mp_pwg_build_row(MPPwgEncoder *e, const unsigned char *rgb,
+                            unsigned long *encoded_length)
 {
     unsigned long px = 0;
     unsigned long out = 0;
@@ -224,7 +225,8 @@ static int mp_pwg_encode_row(MPPwgEncoder *e, const unsigned char *rgb)
         px += run;
     }
 
-    return mp_pwg_raw(e, scratch, out);
+    if (encoded_length) *encoded_length = out;
+    return 1;
 }
 
 unsigned long mp_pwg_scratch_size(unsigned long width)
@@ -288,8 +290,34 @@ int mp_pwg_begin_page(MPPwgEncoder *e,
 
 int mp_pwg_write_scanline(MPPwgEncoder *e, const unsigned char *rgb)
 {
-    if (!e || e->failed || !rgb || e->rows_written >= e->height) return 0;
-    if (!mp_pwg_encode_row(e, rgb)) {
+    const unsigned char *encoded;
+    unsigned long encoded_length;
+    if (!mp_pwg_encode_scanline(e, rgb, &encoded, &encoded_length)) return 0;
+    return mp_pwg_write_encoded_scanline(e, encoded, encoded_length);
+}
+
+int mp_pwg_encode_scanline(MPPwgEncoder *e, const unsigned char *rgb,
+                           const unsigned char **encoded,
+                           unsigned long *encoded_length)
+{
+    if (!e || e->failed || !rgb || !encoded || !encoded_length ||
+        e->rows_written >= e->height) return 0;
+    if (!mp_pwg_build_row(e, rgb, encoded_length)) {
+        e->failed = 1;
+        return 0;
+    }
+    *encoded = e->scratch;
+    return 1;
+}
+
+int mp_pwg_write_encoded_scanline(MPPwgEncoder *e,
+                                  const unsigned char *encoded,
+                                  unsigned long encoded_length)
+{
+    if (!e || e->failed || !encoded || !encoded_length ||
+        encoded_length > e->scratch_size ||
+        e->rows_written >= e->height) return 0;
+    if (!mp_pwg_raw(e, encoded, encoded_length)) {
         e->failed = 1;
         return 0;
     }

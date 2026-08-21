@@ -57,7 +57,7 @@ void mp_spool_job_delete(CONST_STRPTR filename);
  * strip-printing accumulation. */
 BOOL mp_spool_job_patch(ULONG offset, const UBYTE *data, ULONG length);
 
-/* A second, disk-backed row store used only while a duplex backside must be
+/* A second store used only while compressed duplex backside rows must be
  * reordered. It keeps the main PWG stream open while rows are read back in
  * the printer's native coordinate order. */
 BOOL mp_spool_aux_open(CONST_STRPTR filename);

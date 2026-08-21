@@ -95,6 +95,16 @@ int mp_pwg_begin_page(MPPwgEncoder *enc,
                       unsigned char *scratch, unsigned long scratch_size,
                       MPPwgWriteFn write_fn, void *write_ctx);
 int mp_pwg_write_scanline(MPPwgEncoder *enc, const unsigned char *rgb);
+
+/* Encodes a row into enc->scratch without writing it, then writes a previously
+ * encoded row respectively. Used to disk-spool compressed backside rows and
+ * replay them in reverse vertical order without a page-sized buffer. */
+int mp_pwg_encode_scanline(MPPwgEncoder *enc, const unsigned char *rgb,
+                           const unsigned char **encoded,
+                           unsigned long *encoded_length);
+int mp_pwg_write_encoded_scanline(MPPwgEncoder *enc,
+                                  const unsigned char *encoded,
+                                  unsigned long encoded_length);
 int mp_pwg_finish(MPPwgEncoder *enc);
 
 /* Raises the row-count cap mp_pwg_write_scanline() enforces by extra_rows,

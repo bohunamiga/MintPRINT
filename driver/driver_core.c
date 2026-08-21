@@ -139,6 +139,7 @@ static BOOL g_pwg_defer_rows = FALSE;
 static BOOL g_pwg_reverse_x = FALSE;
 static BOOL g_pwg_reverse_y = FALSE;
 static BOOL g_pwg_aux_open = FALSE;
+static ULONG g_pwg_aux_bytes = 0;
 
 /* cfg->engine is always exactly "jpeg", "pwg-raster", or "pdf" - config.c
  * only ever writes one of those three literal strings - so checking the
@@ -340,6 +341,7 @@ static void mp_pwg_close_aux(void)
     g_pwg_defer_rows = FALSE;
     g_pwg_reverse_x = FALSE;
     g_pwg_reverse_y = FALSE;
+    g_pwg_aux_bytes = 0;
 }
 
 static void mp_job_cleanup(void)
@@ -389,7 +391,9 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
                                   &cross_feed, &feed);
         g_pwg_reverse_x = cross_feed < 0 ? TRUE : FALSE;
         g_pwg_reverse_y = feed < 0 ? TRUE : FALSE;
-        g_pwg_defer_rows = g_pwg_reverse_x || g_pwg_reverse_y;
+        /* Horizontal reversal is possible one scanline at a time. Only a
+         * vertical reversal needs compressed rows deferred to the aux file. */
+        g_pwg_defer_rows = g_pwg_reverse_y;
     }
 
     if (!DOSBase || width == 0 || height == 0 || width > 65535UL || height > 65535UL) {
@@ -528,6 +532,34 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
     return TRUE;
 }
 
+static BOOL mp_pwg_accept_row(const UBYTE *rgb)
+{
+    const unsigned char *encoded;
+    unsigned long encoded_length;
+    UBYTE be[4];
+
+    if (!g_pwg_defer_rows)
+        return mp_pwg_write_scanline(&g_pwg, rgb) ? TRUE : FALSE;
+
+    if (!g_pwg_aux_open ||
+        !mp_pwg_encode_scanline(&g_pwg, rgb, &encoded, &encoded_length) ||
+        encoded_length > 0xffffffffUL - 4UL - g_pwg_aux_bytes) {
+        return FALSE;
+    }
+
+    be[0] = (UBYTE)(encoded_length >> 24);
+    be[1] = (UBYTE)(encoded_length >> 16);
+    be[2] = (UBYTE)(encoded_length >> 8);
+    be[3] = (UBYTE)encoded_length;
+    if (!mp_spool_aux_write((const UBYTE *)encoded,
+                            (ULONG)encoded_length) ||
+        !mp_spool_aux_write(be, 4UL)) {
+        return FALSE;
+    }
+    g_pwg_aux_bytes += (ULONG)encoded_length + 4UL;
+    return TRUE;
+}
+
 static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
 {
     ULONG src_x;
@@ -569,10 +601,9 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
 
     switch (g_engine) {
         case MP_ENGINE_PWG:
-            if ((g_pwg_defer_rows &&
-                 !mp_spool_aux_write(g_rgb_row, g_rgb_row_bytes)) ||
-                (!g_pwg_defer_rows &&
-                 !mp_pwg_write_scanline(&g_pwg, g_rgb_row))) {
+            if (g_pwg_reverse_x)
+                mp_pwg_reverse_rgb_row(g_rgb_row, g_page_width);
+            if (!mp_pwg_accept_row(g_rgb_row)) {
                 mp_log_3("PWG scanline failed row/written/expected",
                          (LONG)row_number, (LONG)g_job_rows_written,
                          (LONG)g_page_height);
@@ -663,10 +694,7 @@ static BOOL mp_job_pad_pwg(ULONG target_rows)
 
     for (i = 0; i < g_rgb_row_bytes; ++i) g_rgb_row[i] = 255;
     while (g_job_rows_written < target_rows) {
-        if ((g_pwg_defer_rows &&
-             !mp_spool_aux_write(g_rgb_row, g_rgb_row_bytes)) ||
-            (!g_pwg_defer_rows &&
-             !mp_pwg_write_scanline(&g_pwg, g_rgb_row))) {
+        if (!mp_pwg_accept_row(g_rgb_row)) {
             mp_log_text("PWG blank page padding failed");
             g_job_failed = TRUE;
             return FALSE;
@@ -679,27 +707,47 @@ static BOOL mp_job_pad_pwg(ULONG target_rows)
 static BOOL mp_pwg_replay_backside(ULONG rows)
 {
     ULONG out_row;
+    ULONG cursor;
 
     if (!g_pwg_defer_rows) return TRUE;
-    if (!g_pwg_aux_open || !g_rgb_row || !g_rgb_row_bytes) return FALSE;
+    if (!g_pwg_aux_open || !g_pwg_scratch || !g_pwg_scratch_bytes)
+        return FALSE;
+
+    cursor = g_pwg_aux_bytes;
 
     for (out_row = 0; out_row < rows; ++out_row) {
-        ULONG source_row = g_pwg_reverse_y ? rows - 1UL - out_row : out_row;
+        UBYTE be[4];
+        ULONG encoded_length;
 
-        if (!mp_spool_aux_read(source_row * g_rgb_row_bytes,
-                               g_rgb_row, g_rgb_row_bytes)) {
+        if (cursor < 4UL ||
+            !mp_spool_aux_read(cursor - 4UL, be, 4UL)) {
+            mp_log_text("PWG backside row length read failed");
+            return FALSE;
+        }
+        encoded_length = ((ULONG)be[0] << 24) |
+                         ((ULONG)be[1] << 16) |
+                         ((ULONG)be[2] << 8) |
+                         (ULONG)be[3];
+        if (!encoded_length || encoded_length > g_pwg_scratch_bytes ||
+            cursor < encoded_length + 4UL) {
+            mp_log_text("PWG backside row length invalid");
+            return FALSE;
+        }
+        cursor -= encoded_length + 4UL;
+        if (!mp_spool_aux_read(cursor, g_pwg_scratch, encoded_length)) {
             mp_log_text("PWG backside row read failed");
             return FALSE;
         }
-
-        if (g_pwg_reverse_x) {
-            mp_pwg_reverse_rgb_row(g_rgb_row, g_page_width);
-        }
-
-        if (!mp_pwg_write_scanline(&g_pwg, g_rgb_row)) {
+        if (!mp_pwg_write_encoded_scanline(&g_pwg, g_pwg_scratch,
+                                            encoded_length)) {
             mp_log_text("PWG backside encode failed");
             return FALSE;
         }
+    }
+
+    if (cursor != 0) {
+        mp_log_text("PWG backside row store trailing data");
+        return FALSE;
     }
 
     mp_pwg_close_aux();

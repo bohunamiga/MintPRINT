@@ -15,9 +15,20 @@ job.
 
 ASCII85 adds roughly 25 percent to the JPEG stream but keeps the document
 safe for older text-oriented PostScript transports. The encoder never buffers
-the page: it retains one raster row, the existing JPEG scratch area, and four
-bytes of ASCII85 state. Page dimensions are derived from raster pixels and the
-configured DPI, just like the PDF and PWG Raster paths.
+the page: it retains one raster row, the existing JPEG scratch area, four
+bytes of ASCII85 state, and a 4 KiB output buffer. That output buffer is
+important on classic AmigaOS because it avoids a synchronous spool-process
+round trip and DOS write for every five encoded ASCII85 bytes.
+
+When the configured media keyword contains dimensions, `/PageSize` is derived
+from that real medium (for example A4) and oriented to match the raster. The
+raster keeps its aspect ratio, is fitted if necessary, and is centred on the
+sheet. Unknown/custom media falls back to the raster dimensions and configured
+DPI.
+
+MintPrint Settings starts Test Print with asynchronous `SendIO()`. The button
+is disabled until the request completes, but the Settings window continues to
+refresh and process events while a slow PostScript printer handles the job.
 
 Debug mode retains the generated job as `T:MintPRINT-job.ps`.
 

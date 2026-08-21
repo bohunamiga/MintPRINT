@@ -432,7 +432,14 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
                      (LONG)width, (LONG)height, (LONG)g_pdf_scratch_bytes);
             break;
         case MP_ENGINE_POSTSCRIPT:
+        {
+            ULONG page_width_points = 0;
+            ULONG page_height_points = 0;
+
+            mp_media_page_points(g_config.media, width, height,
+                                 &page_width_points, &page_height_points);
             if (!mp_postscript_begin(&g_postscript, width, height,
+                                     page_width_points, page_height_points,
                                      g_config.resolution,
                                      g_postscript_scratch,
                                      g_postscript_scratch_bytes,
@@ -445,7 +452,11 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
             mp_log_3("PostScript begin width/height/scratch",
                      (LONG)width, (LONG)height,
                      (LONG)g_postscript_scratch_bytes);
+            mp_log_3("PostScript page points width/height/dpi",
+                     (LONG)page_width_points, (LONG)page_height_points,
+                     (LONG)g_config.resolution);
             break;
+        }
         default:
             if (!mp_jpeg_begin(&g_jpeg, width, height, g_jpeg_scratch,
                                g_jpeg_scratch_bytes, mp_job_file_write, NULL)) {
@@ -577,6 +588,12 @@ static BOOL mp_job_finish(ULONG expected_rows)
     }
     mp_log_3(label, (LONG)g_job_rows_written, (LONG)expected_rows,
              g_job_failed ? 1 : 0);
+    if (g_engine == MP_ENGINE_POSTSCRIPT) {
+        mp_log_3("PostScript output bytes/writes/buffer",
+                 (LONG)g_postscript.output_bytes,
+                 (LONG)g_postscript.write_calls,
+                 (LONG)MP_POSTSCRIPT_OUTPUT_BUFFER);
+    }
     mp_job_cleanup();
     return ok;
 }

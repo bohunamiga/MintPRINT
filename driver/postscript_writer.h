@@ -18,6 +18,8 @@ typedef long (*MPPostScriptWriteFn)(void *ctx,
                                     const unsigned char *data,
                                     unsigned long len);
 
+#define MP_POSTSCRIPT_OUTPUT_BUFFER 4096UL
+
 typedef struct MPPostScriptEncoder {
     unsigned long width;
     unsigned long height;
@@ -27,12 +29,18 @@ typedef struct MPPostScriptEncoder {
     unsigned char ascii85_tuple[4];
     unsigned int ascii85_count;
     unsigned int ascii85_column;
+    unsigned char outbuf[MP_POSTSCRIPT_OUTPUT_BUFFER];
+    unsigned long out_used;
+    unsigned long output_bytes;
+    unsigned long write_calls;
     int failed;
 } MPPostScriptEncoder;
 
 unsigned long mp_postscript_scratch_size(unsigned long width);
 int mp_postscript_begin(MPPostScriptEncoder *enc,
                         unsigned long width, unsigned long height,
+                        unsigned long page_width_points,
+                        unsigned long page_height_points,
                         unsigned long dpi,
                         unsigned char *scratch, unsigned long scratch_size,
                         MPPostScriptWriteFn write_fn, void *write_ctx);

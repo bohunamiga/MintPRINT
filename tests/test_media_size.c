@@ -48,6 +48,17 @@ int main(void)
     assert(x == 21590UL && y == 27940UL);
     assert(!mp_media_dimensions_100mm("unknown", &x, &y));
 
+    assert(mp_media_page_points("iso_a4_210x297mm", 2478UL, 3507UL,
+                                &x, &y));
+    assert(x == 595UL && y == 842UL);
+    assert(mp_media_page_points("iso_a4_210x297mm", 3507UL, 2478UL,
+                                &x, &y));
+    assert(x == 842UL && y == 595UL);
+    assert(mp_media_page_points("na_letter_8.5x11in", 2550UL, 3300UL,
+                                &x, &y));
+    assert(x == 612UL && y == 792UL);
+    assert(!mp_media_page_points("unknown", 2478UL, 3507UL, &x, &y));
+
     /* Exact dimensions observed in the Wordworth regression log. */
     assert(mp_media_target_height("iso_a4_210x297mm", 2478UL, 300UL) ==
            3505UL);

@@ -6,12 +6,19 @@
 
 struct Sink {
     FILE *file;
+    unsigned long calls;
+    unsigned long bytes;
+    unsigned long largest_write;
 };
 
 static long sink_write(void *ctx, const unsigned char *data, unsigned long len)
 {
     struct Sink *sink = (struct Sink *)ctx;
-    return fwrite(data, 1, len, sink->file) == len ? (long)len : -1;
+    if (fwrite(data, 1, len, sink->file) != len) return -1;
+    ++sink->calls;
+    sink->bytes += len;
+    if (len > sink->largest_write) sink->largest_write = len;
+    return (long)len;
 }
 
 static int file_contains(const char *path, const char *needle)
@@ -55,10 +62,13 @@ int main(int argc, char **argv)
     unsigned long x, y;
 
     if (!scratch) return 2;
+    sink.calls = 0;
+    sink.bytes = 0;
+    sink.largest_write = 0;
     sink.file = fopen(path, "wb");
     if (!sink.file) { free(scratch); return 3; }
 
-    if (!mp_postscript_begin(&encoder, width, height, 300,
+    if (!mp_postscript_begin(&encoder, width, height, 595, 842, 300,
                              scratch, scratch_size, sink_write, &sink))
         return 4;
 
@@ -75,9 +85,16 @@ int main(int argc, char **argv)
     free(scratch);
 
     if (!file_contains(path, "%!PS-Adobe-3.0\n")) return 8;
-    if (!file_contains(path, "/ASCII85Decode filter /DCTDecode filter")) return 9;
-    if (!file_contains(path, "\n~>\ngrestore\nshowpage\n")) return 10;
-    if (!file_contains(path, "\n%%EOF\n")) return 11;
+    if (!file_contains(path, "%%BoundingBox: 0 0 595 842\n")) return 9;
+    if (!file_contains(path, "<< /PageSize [595 842] >> setpagedevice\n")) return 10;
+    if (!file_contains(path, "293 418 translate\n8 6 scale\n")) return 11;
+    if (!file_contains(path, "/ASCII85Decode filter /DCTDecode filter")) return 12;
+    if (!file_contains(path, "\n~>\ngrestore\nshowpage\n")) return 13;
+    if (!file_contains(path, "\n%%EOF\n")) return 14;
+    if (sink.calls != 1UL || sink.bytes == 0UL ||
+        sink.largest_write != sink.bytes) return 15;
+    if (encoder.write_calls != sink.calls ||
+        encoder.output_bytes != sink.bytes) return 16;
 
     return 0;
 }

@@ -107,6 +107,20 @@ struct DiscoveredPrinter {
     char label[80];
 };
 
+/* Test Print must outlive the gadget callback that starts it. Keeping the
+ * RastPort, bitmap and IO request here lets printer.device run asynchronously
+ * while the normal GadTools event loop continues servicing the window. */
+struct MPTestPrintJob {
+    struct MsgPort *port;
+    struct IODRPReq *request;
+    struct BitMap *bitmap;
+    struct RastPort rastport;
+    BOOL device_open;
+    BOOL active;
+};
+
+static struct MPTestPrintJob test_print_job;
+
 // Saved printer profiles: ENV:MintPRINT/Unit0 .. Unit(MAX_UNITS-1). Only
 // Unit0 is what the driver actually reads at print time; the others are
 // switchable GUI-side profiles (e.g. for a second/third network printer).
@@ -348,12 +362,13 @@ BOOL parse_media_dimensions(const char *media_str, int *x, int *y) {
 
 void ensure_quality_defaults() {
     if (num_supported_quality == 0) {
-        printf("No print-quality-supported returned by printer, falling back to default values.\n");
-
-        strcpy(supported_quality[0], "draft");
-        strcpy(supported_quality[1], "normal");
-        strcpy(supported_quality[2], "high");
-        num_supported_quality = 3;
+        /* Do not invent draft/high support when a printer omits this
+         * capability. The Samsung C480W only accepts normal, yet the old
+         * three-value fallback selected draft and made the IPP server
+         * return successful-ok-ignored-or-substituted-attributes. */
+        printf("No print-quality-supported returned; using safe normal quality.\n");
+        strcpy(supported_quality[0], "normal");
+        num_supported_quality = 1;
     }
 }
 
@@ -1240,19 +1255,105 @@ static void apply_job_defaults_to_gadgets(struct Window *win) {
     GT_RefreshWindow(win, NULL);
 }
 
+static void mp_set_test_print_enabled(struct Window *win, BOOL enabled)
+{
+    struct Gadget *g = find_gadget_by_id(GAD_PRINT_BUTTON);
+    if (g && win) {
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GA_Disabled, enabled ? FALSE : TRUE,
+                          TAG_DONE);
+    }
+}
+
+static void mp_test_print_release(struct Window *win)
+{
+    if (test_print_job.request && test_print_job.device_open) {
+        CloseDevice((struct IORequest *)test_print_job.request);
+        test_print_job.device_open = FALSE;
+    }
+    if (test_print_job.request) {
+        DeleteIORequest((struct IORequest *)test_print_job.request);
+        test_print_job.request = NULL;
+    }
+    if (test_print_job.port) {
+        DeleteMsgPort(test_print_job.port);
+        test_print_job.port = NULL;
+    }
+    if (test_print_job.bitmap) {
+        FreeBitMap(test_print_job.bitmap);
+        test_print_job.bitmap = NULL;
+    }
+    test_print_job.active = FALSE;
+    mp_set_test_print_enabled(win, TRUE);
+}
+
+static void mp_test_print_complete(struct Window *win)
+{
+    LONG ioerr;
+
+    if (!test_print_job.active || !test_print_job.request) return;
+    ioerr = WaitIO((struct IORequest *)test_print_job.request);
+    if (ioerr != 0 || test_print_job.request->io_Error != 0) {
+        printf("Test Print failed: WaitIO=%ld io_Error=%ld\n",
+               ioerr, (LONG)test_print_job.request->io_Error);
+    } else {
+        printf("Test Print completed successfully\n");
+    }
+    mp_test_print_release(win);
+}
+
+static void mp_test_print_cancel(struct Window *win)
+{
+    if (!test_print_job.active || !test_print_job.request) return;
+    printf("Cancelling Test Print...\n");
+    if (!CheckIO((struct IORequest *)test_print_job.request))
+        AbortIO((struct IORequest *)test_print_job.request);
+    WaitIO((struct IORequest *)test_print_job.request);
+    mp_test_print_release(win);
+}
+
+static void mp_test_print_palette_pens(UBYTE depth,
+                                       UWORD *light_pen,
+                                       UWORD *dark_pen)
+{
+    ULONG count;
+    ULONG i;
+    ULONG light_score = 0;
+    ULONG dark_score = 0xffffffffUL;
+
+    if (!light_pen || !dark_pen || !screen || !screen->ViewPort.ColorMap)
+        return;
+
+    count = depth < 8 ? (1UL << depth) : 256UL;
+    for (i = 0; i < count; ++i) {
+        ULONG rgb = GetRGB4(screen->ViewPort.ColorMap, (LONG)i);
+        ULONG score = ((rgb >> 8) & 15UL) +
+                      ((rgb >> 4) & 15UL) + (rgb & 15UL);
+        if (score > light_score) {
+            light_score = score;
+            *light_pen = (UWORD)i;
+        }
+        if (score < dark_score) {
+            dark_score = score;
+            *dark_pen = (UWORD)i;
+        }
+    }
+}
+
 static BOOL mintprint_test_page(struct Window *win) {
-    struct MsgPort *mp = NULL;
-    struct IODRPReq *req = NULL;
-    struct BitMap *bm = NULL;
-    struct RastPort rp;
     ULONG mode_id = 0;
     UBYTE depth;
-    LONG ioerr = -1;
-    BOOL print_ok = FALSE;
+    UWORD light_pen = 0;
+    UWORD dark_pen = 1;
     const char *title = "MintPRINT TEST PAGE";
     const char *line2 = "printer.device -> MintPRINT -> IPP";
     const char *line3 = "Capability-backed Unit0 defaults";
     const char *line4 = "Media / tray / colour / quality / scaling";
+
+    if (test_print_job.active) {
+        printf("Test Print is already running\n");
+        return FALSE;
+    }
 
     if (!screen) {
         printf("Test Print: public screen is not available\n");
@@ -1267,106 +1368,92 @@ static BOOL mintprint_test_page(struct Window *win) {
 
     depth = screen->RastPort.BitMap->Depth;
     if (depth < 1) depth = 1;
+    mp_test_print_palette_pens(depth, &light_pen, &dark_pen);
 
-    bm = AllocBitMap(320, 180, depth, BMF_CLEAR, screen->RastPort.BitMap);
-    if (!bm) {
+    test_print_job.bitmap = AllocBitMap(320, 180, depth, BMF_CLEAR,
+                                        screen->RastPort.BitMap);
+    if (!test_print_job.bitmap) {
         printf("Test Print: could not allocate test bitmap\n");
         return FALSE;
     }
 
-    InitRastPort(&rp);
-    rp.BitMap = bm;
-    if (screen->RastPort.Font) SetFont(&rp, screen->RastPort.Font);
+    InitRastPort(&test_print_job.rastport);
+    test_print_job.rastport.BitMap = test_print_job.bitmap;
+    if (screen->RastPort.Font)
+        SetFont(&test_print_job.rastport, screen->RastPort.Font);
 
-    /* Workbench palette pens are intentional: it makes a simple colour test. */
-    SetAPen(&rp, 0);
-    RectFill(&rp, 0, 0, 319, 179);
-    SetAPen(&rp, 1);
-    RectFill(&rp, 4, 4, 315, 5);
-    RectFill(&rp, 4, 174, 315, 175);
-    RectFill(&rp, 4, 4, 5, 175);
-    RectFill(&rp, 314, 4, 315, 175);
-    Move(&rp, 16, 24);
-    Text(&rp, (STRPTR)title, strlen(title));
-    Move(&rp, 16, 40);
-    Text(&rp, (STRPTR)line2, strlen(line2));
+    /* Use the brightest available Workbench pen for paper rather than pen 0,
+     * which is commonly mid-grey and made the Samsung laser cover most of
+     * the test page in toner. Other palette pens still provide colour
+     * swatches, so this remains an end-to-end colour conversion check. */
+    SetAPen(&test_print_job.rastport, light_pen);
+    RectFill(&test_print_job.rastport, 0, 0, 319, 179);
+    SetAPen(&test_print_job.rastport, dark_pen);
+    RectFill(&test_print_job.rastport, 4, 4, 315, 5);
+    RectFill(&test_print_job.rastport, 4, 174, 315, 175);
+    RectFill(&test_print_job.rastport, 4, 4, 5, 175);
+    RectFill(&test_print_job.rastport, 314, 4, 315, 175);
+    Move(&test_print_job.rastport, 16, 24);
+    Text(&test_print_job.rastport, (STRPTR)title, strlen(title));
+    Move(&test_print_job.rastport, 16, 40);
+    Text(&test_print_job.rastport, (STRPTR)line2, strlen(line2));
 
-    SetAPen(&rp, depth > 1 ? 2 : 1);
-    RectFill(&rp, 16, 60, 105, 105);
-    SetAPen(&rp, depth > 1 ? 3 : 1);
-    RectFill(&rp, 115, 60, 204, 105);
-    SetAPen(&rp, 1);
-    RectFill(&rp, 214, 60, 303, 105);
+    SetAPen(&test_print_job.rastport, depth > 1 ? 2 : dark_pen);
+    RectFill(&test_print_job.rastport, 16, 60, 105, 105);
+    SetAPen(&test_print_job.rastport, depth > 1 ? 3 : dark_pen);
+    RectFill(&test_print_job.rastport, 115, 60, 204, 105);
+    SetAPen(&test_print_job.rastport, dark_pen);
+    RectFill(&test_print_job.rastport, 214, 60, 303, 105);
 
-    SetAPen(&rp, 1);
-    Move(&rp, 16, 130);
-    Text(&rp, (STRPTR)line3, strlen(line3));
-    Move(&rp, 16, 146);
-    Text(&rp, (STRPTR)line4, strlen(line4));
+    SetAPen(&test_print_job.rastport, dark_pen);
+    Move(&test_print_job.rastport, 16, 130);
+    Text(&test_print_job.rastport, (STRPTR)line3, strlen(line3));
+    Move(&test_print_job.rastport, 16, 146);
+    Text(&test_print_job.rastport, (STRPTR)line4, strlen(line4));
 
-    mp = CreateMsgPort();
-    if (!mp) {
+    test_print_job.port = CreateMsgPort();
+    if (!test_print_job.port) {
         printf("Test Print: CreateMsgPort failed\n");
-        FreeBitMap(bm);
+        mp_test_print_release(win);
         return FALSE;
     }
 
-    req = (struct IODRPReq *)CreateIORequest(mp, sizeof(struct IODRPReq));
-    if (!req) {
+    test_print_job.request = (struct IODRPReq *)CreateIORequest(
+        test_print_job.port, sizeof(struct IODRPReq));
+    if (!test_print_job.request) {
         printf("Test Print: CreateIORequest failed\n");
-        DeleteMsgPort(mp);
-        FreeBitMap(bm);
+        mp_test_print_release(win);
         return FALSE;
     }
 
     if (OpenDevice((CONST_STRPTR)"printer.device", 0,
-                   (struct IORequest *)req, 0) != 0) {
+                   (struct IORequest *)test_print_job.request, 0) != 0) {
         printf("Test Print: could not open printer.device\n");
-        DeleteIORequest((struct IORequest *)req);
-        DeleteMsgPort(mp);
-        FreeBitMap(bm);
+        mp_test_print_release(win);
         return FALSE;
     }
+    test_print_job.device_open = TRUE;
 
     mode_id = GetVPModeID(&screen->ViewPort);
     if (mode_id == INVALID_ID) mode_id = 0;
 
-    req->io_Command = PRD_DUMPRPORT;
-    req->io_RastPort = &rp;
-    req->io_ColorMap = screen->ViewPort.ColorMap;
-    req->io_Modes = mode_id;
-    req->io_SrcX = 0;
-    req->io_SrcY = 0;
-    req->io_SrcWidth = 320;
-    req->io_SrcHeight = 180;
-    req->io_DestCols = 0;
-    req->io_DestRows = 0;
-    req->io_Special = SPECIAL_ASPECT | SPECIAL_CENTER;
+    test_print_job.request->io_Command = PRD_DUMPRPORT;
+    test_print_job.request->io_RastPort = &test_print_job.rastport;
+    test_print_job.request->io_ColorMap = screen->ViewPort.ColorMap;
+    test_print_job.request->io_Modes = mode_id;
+    test_print_job.request->io_SrcX = 0;
+    test_print_job.request->io_SrcY = 0;
+    test_print_job.request->io_SrcWidth = 320;
+    test_print_job.request->io_SrcHeight = 180;
+    test_print_job.request->io_DestCols = 0;
+    test_print_job.request->io_DestRows = 0;
+    test_print_job.request->io_Special = SPECIAL_ASPECT | SPECIAL_CENTER;
 
-    printf("Test Print: sending page through printer.device...\n");
-    ioerr = DoIO((struct IORequest *)req);
-    if (ioerr != 0 || req->io_Error != 0) {
-        printf("Test Print failed: DoIO=%ld io_Error=%ld\n",
-               ioerr, (LONG)req->io_Error);
-    } else {
-        printf("Test Print completed successfully\n");
-        print_ok = TRUE;
-    }
-
-    printf("Test Print cleanup: before CloseDevice\n");
-    CloseDevice((struct IORequest *)req);
-    printf("Test Print cleanup: after CloseDevice\n");
-
-    DeleteIORequest((struct IORequest *)req);
-    printf("Test Print cleanup: after DeleteIORequest\n");
-
-    DeleteMsgPort(mp);
-    printf("Test Print cleanup: after DeleteMsgPort\n");
-
-    FreeBitMap(bm);
-    printf("Test Print cleanup: after FreeBitMap\n");
-
-    return print_ok;
+    test_print_job.active = TRUE;
+    mp_set_test_print_enabled(win, FALSE);
+    printf("Test Print started; MintPRINT remains responsive\n");
+    SendIO((struct IORequest *)test_print_job.request);
+    return TRUE;
 }
 
 static void apply_driver_config_to_gadgets(struct Window *win) {
@@ -4944,7 +5031,20 @@ void process_window_events(struct Window *win) {
     }
 
     while (!terminated) {
-        Wait(1L << win->UserPort->mp_SigBit);
+        ULONG window_signal = 1L << win->UserPort->mp_SigBit;
+        ULONG wait_mask = window_signal;
+        ULONG received_signals;
+
+        if (test_print_job.active && test_print_job.port)
+            wait_mask |= 1L << test_print_job.port->mp_SigBit;
+
+        received_signals = Wait(wait_mask);
+        if (test_print_job.active && test_print_job.port &&
+            (received_signals & (1L << test_print_job.port->mp_SigBit))) {
+            mp_test_print_complete(win);
+        }
+        if (!(received_signals & window_signal))
+            continue;
 
         imsg = GT_GetIMsg(win->UserPort);
         while (!terminated && imsg) {
@@ -5231,6 +5331,9 @@ void process_window_events(struct Window *win) {
             imsg = GT_GetIMsg(win->UserPort);
         }
     }
+
+    if (test_print_job.active)
+        mp_test_print_cancel(win);
 
     free(response); // Free the dynamically allocated buffer
 }

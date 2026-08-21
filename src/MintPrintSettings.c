@@ -2301,7 +2301,7 @@ static void show_about(struct Window *win) {
     }
 
     snprintf(msg, sizeof(msg),
-        "MintPRINT v1.0.2b - IPP/AirPrint printing for AmigaOS\n\n"
+        "MintPRINT v1.0.3 - IPP/AirPrint printing for AmigaOS\n\n"
         "Installed driver (DEVS:Printers/MintPRINT): %s\n"
         "Bundled driver (next to this program): %s\n\n"
         "Bug reports and source:\n"

@@ -1,8 +1,8 @@
 Short:        IPP/AirPrint driver and setup tool
 Author:       Darren Banfi (boingball)
 Uploader:     boingball gmail com (Darren Banfi)
-Type:         util/misc
-Version:      1.0.2
+Type:         driver/print
+Version:      1.0.3
 Requires:     68000+; AmigaOS 3.1+; TCP/IP stack providing bsdsocket.library
 Architecture: m68k-amigaos >= 3.1.0
 Distribution: MIT License - see LICENSE in the source repository
@@ -173,6 +173,29 @@ Claude.
 
 History
 -------
+
+1.0.3  WordWorth support and more reliable printer connections.
+
+       - Fixed strip-printed pages (WordWorth, and likely explains
+         ArtEffect's long-standing "many near-blank pages" behaviour
+         too) submitting as several separate, massively oversized
+         pages instead of one correct one - the driver now honours
+         SPECIAL_NOFORMFEED and assembles the bands into a single
+         document before sending it
+       - Fixed MintPrint Settings' status box going blank and staying
+         that way after certain other applications have run
+       - Fixed Query being able to freeze the whole program with no
+         way out but a reboot, if the printer didn't respond -
+         connection attempts are now properly bounded and time out
+         cleanly instead
+       - Fixed a bug where MintPrint Settings' own Get-Printer-
+         Attributes request could be rejected by some printers
+         (reported against a Canon TS8300), leaving Query showing no
+         capabilities at all even though the printer itself was fine
+       - Query now prefers the standard IPP port (631) over port 80
+         when discovering or querying a printer
+       - Query no longer accepts an all-empty capability response as
+         a successful result
 
 1.0.2  Bug fixes from real-hardware testing reports.
 

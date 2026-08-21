@@ -2941,17 +2941,29 @@ static int mp_connect_with_timeout(int sockfd, struct sockaddr_in *addr, int tim
     long nonblock = 1;
     long block = 0;
     int rc;
+    int connect_errno;
 
     if (IoctlSocket(sockfd, FIONBIO, (char *)&nonblock) < 0) {
         /* Non-blocking mode unavailable on this stack for some reason -
          * fall back to a plain blocking connect (still covered by the
          * SO_SNDTIMEO best-effort set by the caller) rather than failing
          * outright. */
+        printf("connect: IoctlSocket(FIONBIO on) failed, falling back to blocking\n");
         return connect(sockfd, (struct sockaddr *)addr, sizeof(*addr));
     }
 
     rc = connect(sockfd, (struct sockaddr *)addr, sizeof(*addr));
-    if (rc < 0 && errno == EINPROGRESS) {
+    connect_errno = errno;
+    printf("connect: immediate rc=%d errno=%d\n", rc, rc < 0 ? connect_errno : 0);
+
+    /* Which errno signals "in progress, not decided yet" on a non-blocking
+     * connect isn't standardised across bsdsocket.library stacks - this
+     * codebase's only prior attempt at non-blocking sockets never got far
+     * enough to record which one this stack actually uses (see the
+     * function comment above), so both of the two errno values any real
+     * stack could plausibly use here are accepted rather than gambling on
+     * just one. */
+    if (rc < 0 && (connect_errno == EINPROGRESS || connect_errno == EWOULDBLOCK)) {
         int elapsed_ms = 0;
         const int chunk_ms = 250;
         int outcome = -2; /* -2 = still waiting, -1 = failed, 0 = connected */
@@ -2978,8 +2990,10 @@ static int mp_connect_with_timeout(int sockfd, struct sockaddr_in *addr, int tim
             ready = WaitSelect(sockfd + 1, NULL, &wfds, &efds, &tv, NULL);
             if (ready > 0 && (FD_ISSET(sockfd, &wfds) || FD_ISSET(sockfd, &efds))) {
                 int so_err = 0;
-                int optlen = sizeof(so_err);
-                if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, (char *)&so_err, &optlen) == 0) {
+                socklen_t optlen = sizeof(so_err);
+                int gso_rc = getsockopt(sockfd, SOL_SOCKET, SO_ERROR, (char *)&so_err, &optlen);
+                printf("connect: WaitSelect ready, getsockopt rc=%d so_err=%d\n", gso_rc, so_err);
+                if (gso_rc == 0) {
                     if (so_err == 0) {
                         outcome = 0;
                     } else {
@@ -2987,13 +3001,22 @@ static int mp_connect_with_timeout(int sockfd, struct sockaddr_in *addr, int tim
                         outcome = -1;
                     }
                 } else {
-                    outcome = -1;
+                    /* getsockopt(SO_ERROR) itself failing is a real
+                     * possibility on an older/limited bsdsocket.library -
+                     * if so, write-readiness alone is the best signal
+                     * available that the connection attempt resolved,
+                     * so trust it as success rather than treating an
+                     * unsupported diagnostic call as a connection
+                     * failure. */
+                    printf("connect: getsockopt(SO_ERROR) unsupported, trusting write-ready as success\n");
+                    outcome = 0;
                 }
             }
             elapsed_ms += chunk_ms;
         }
 
         if (outcome == -2) {
+            printf("connect: timed out after %dms waiting for write-ready\n", elapsed_ms);
             errno = ETIMEDOUT;
             outcome = -1;
         }
@@ -3001,6 +3024,7 @@ static int mp_connect_with_timeout(int sockfd, struct sockaddr_in *addr, int tim
     }
 
     IoctlSocket(sockfd, FIONBIO, (char *)&block);
+    printf("connect: mp_connect_with_timeout returning %d\n", rc);
     return rc;
 }
 

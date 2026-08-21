@@ -169,6 +169,28 @@ MintPrint Settings checks for `bsdsocket.library` V4 and a usable socket before
 opening. Roadshow, AmiTCP and Miami are supported targets, but only Roadshow has
 a named community hardware result so far.
 
+### AmigaOS 3.2.3 Printer Preferences
+
+In the standard AmigaOS Printer Preferences editor, select **MintPRINT** as the
+Printer Type. For the normal OS 3.5+/3.2 driver, that is the only setting in
+this editor that MintPRINT itself requires.
+
+The normal driver declares `PRTA_NoIO`, so Printer Port, device name and Device
+Unit are not used. MintPRINT sends over IPP using the host, port and path saved
+by MintPrint Settings instead. Print Pitch, Print Spacing, Print Quality, Paper
+Type, Paper Format, Paper Length and the character margins are legacy text
+printer preferences; MintPRINT's current graphics-focused driver does not
+implement the text command table that would apply them. They may be left at
+their AmigaOS defaults.
+
+An application can still read standard system preferences while laying out its
+own page, so record any non-default application Print Setup separately. This is
+why the Wordworth and ArtEffect settings below still matter even though the OS
+Printer Preferences values do not configure MintPRINT's IPP output.
+
+This does not apply unchanged to the separate AmigaOS 3.1 classic build, which
+cannot use the V44 `PRTA_NoIO` tag and still needs dedicated hardware testing.
+
 ## Application compatibility
 
 Application compatibility is tracked separately from printer compatibility.
@@ -181,7 +203,7 @@ graphics dumps to assemble one physical page.
 | **Wordworth 7** | ✅ Working | AmigaOS 3.2.3, Roadshow, Brother MFC-J6930DW, PWG Raster, driver revision 15 | A portrait document prints in the correct orientation as one physical page; the former trailing blank sheet is gone | Select `MintPRINT`, `Normal`, `Sheet Feeder`, Density `7`; borders Left `0.00 in`, Right `0.00 in`, Top `0.50 in`, Bottom `1.00 in` |
 | **ArtEffect 2** | ✅ Working | Same revision-15 PWG Raster environment | Confirmed still printing after the Wordworth page-geometry fix | Density `4`; Brightness, Contrast and Gamma `0`; working image size `188x176 mm`; both dimensions must remain smaller than the selected paper |
 | **DPaint V** | ❌ Not working | Same revision-15 test machine | Printing crashes DPaint with Software Failure `#8000000A` | No working setup confirmed; capture `T:MintPRINT-driver.log` from the failed attempt |
-| **MultiView** | ✅ Working | AmigaOS 3.2.3, same revision-15 test environment | Prints successfully using the active MintPRINT preferences | Select **Print**; MultiView provides no application-specific print settings |
+| **MultiView** | ✅ Working | AmigaOS 3.2.3, same revision-15 test environment; OS Printer Preferences left at defaults apart from selecting MintPRINT | Prints successfully using the active MintPRINT preferences | Select **Print**; MultiView provides no application-specific print settings |
 | **AmigaWriter** | ✅ Working | AmigaOS 3.2.3, Roadshow, Brother HL-L2350DW, MintPRINT 1.0.3 | A simple document printed correctly with `Scaling=auto` | No additional application-specific override reported |
 | **MintPrint Settings Test Print** | 🟡 Partial | Brother HL-L2350DW report | The centre of the test image remains enlarged and cropped with `Scaling=auto` | No working override confirmed yet |
 

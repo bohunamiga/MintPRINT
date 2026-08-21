@@ -3028,8 +3028,8 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
         return -1;
     }
     snprintf(http_header, 256,
-             "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/ipp\r\nContent-Length: %d\r\nConnection: close\r\n\r\n",
-             driver_path_buffer, ip, offset);
+             "POST %s HTTP/1.1\r\nHost: %s:%d\r\nContent-Type: application/ipp\r\nContent-Length: %d\r\nConnection: close\r\n\r\n",
+             driver_path_buffer, ip, port, offset);
 
     // Open socket
     int sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);

@@ -79,8 +79,9 @@ Two systems were reported against the same printer in
   - MintPrint Settings' Test Print still prints only the middle portion of an
     enlarged image filling the sheet.
 
-  The revision-15 result is a page-boundary regression in the new multi-band
-  accumulator, not a confirmed AmigaWriter fix. The complete driver log is
+  The revision-15 result indicates a likely page-boundary regression in the
+  new multi-band accumulator; the log is needed to confirm exactly where it
+  occurs. It is not a confirmed AmigaWriter fix. The complete driver log is
   still required to compare every `Render begin/end`, `SPECIAL_NOFORMFEED`,
   accumulated height and page-finalisation event across the three pages.
   `fit` and `auto-fit` had previously corrected text size but split the document
@@ -256,7 +257,7 @@ graphics dumps to assemble one physical page.
 | **MultiView** | ✅ Working | AmigaOS 3.2.3, same revision-15 test environment; OS Printer Preferences left at defaults apart from selecting MintPRINT | Prints successfully using the active MintPRINT preferences | Select **Print**; MultiView provides no application-specific print settings |
 | **GfxDump** | ✅ Working | AmigaOS 3.2.3, same revision-15 test environment | The OS tool sends its graphics dump directly through `printer.device` to MintPRINT and prints successfully | Select MintPRINT in OS Printer Preferences; no application-specific setup |
 | **Directory Opus 4.16** | ❌ Not supported yet | AmigaOS 3.2.3, same revision-15 test environment | The Print button opens and closes MintPRINT but produces no raster page and no IPP job | Requires a future Amiga text-line renderer fed by `ped_ConvFunc()` characters from the `CMD_WRITE` path |
-| **AmigaWriter** | 🟡 Partial | AmigaOS 3.2.3, Roadshow, Brother HL-L2350DW | A one-page document works with `Scaling=auto`. A three-page job on 1.0.3 printed all pages but added an error sheet after each and enlarged/cropped page 3; the 1.0.3a/main revision-15 build removed the extra sheets but printed only page 2 with the break two rows early | Use `Scaling=auto`; multi-page revision-15 driver log awaited |
+| **AmigaWriter** | 🟡 Partial | AmigaOS 3.2.3, Roadshow, Brother HL-L2350DW | A one-page document works with `Scaling=auto`. A three-page job on 1.0.3 printed all pages but added an error sheet after each and enlarged/cropped page 3; the 1.0.3a/main revision-15 build removed the extra sheets but printed only page 2 with the break two rows early | Tested with the defaults after adding the printer (`Scaling=auto`); multi-page revision-15 driver log awaited |
 | **MintPrint Settings Test Print** | 🟡 Partial | Brother HL-L2350DW report | The centre of the test image remains enlarged and cropped with `Scaling=auto` | No working override confirmed yet |
 
 ### Wordworth 7 Print Setup

@@ -61,7 +61,7 @@ static int mp_pwg_write_header(MPPwgEncoder *e)
     if (!mp_pwg_zeros(e, 4UL * 5UL)) return 0;
 
     /* HWResolution[2] */
-    if (!mp_pwg_u32(e, 300UL) || !mp_pwg_u32(e, 300UL)) return 0;
+    if (!mp_pwg_u32(e, e->dpi) || !mp_pwg_u32(e, e->dpi)) return 0;
 
     /* ImagingBoundingBox[4] */
     if (!mp_pwg_zeros(e, 4UL * 4UL)) return 0;
@@ -176,6 +176,7 @@ unsigned long mp_pwg_scratch_size(unsigned long width)
 
 int mp_pwg_begin(MPPwgEncoder *e, unsigned long width, unsigned long height,
                  unsigned long page_pts_x, unsigned long page_pts_y,
+                 unsigned long dpi,
                  unsigned char *scratch, unsigned long scratch_size,
                  MPPwgWriteFn write_fn, void *write_ctx)
 {
@@ -190,10 +191,11 @@ int mp_pwg_begin(MPPwgEncoder *e, unsigned long width, unsigned long height,
     e->height = height;
     e->bytes_per_line = width * 3UL;
     e->rows_written = 0;
+    e->dpi = dpi ? dpi : 300UL;
     /* Fall back to the pixel-derived size (previous behaviour) only when
      * the caller has no real physical page size to offer. */
-    e->page_pts_x = page_pts_x ? page_pts_x : (width * 72UL) / 300UL;
-    e->page_pts_y = page_pts_y ? page_pts_y : (height * 72UL) / 300UL;
+    e->page_pts_x = page_pts_x ? page_pts_x : (width * 72UL) / e->dpi;
+    e->page_pts_y = page_pts_y ? page_pts_y : (height * 72UL) / e->dpi;
     e->scratch = scratch;
     e->scratch_size = scratch_size;
     e->write_fn = write_fn;

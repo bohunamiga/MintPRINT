@@ -87,6 +87,7 @@ void mp_config_defaults(struct MPConfig *cfg)
     cfg->port = 80;
     mp_cfg_copy(cfg->path, sizeof(cfg->path), "/ipp/print");
     cfg->keep_job = TRUE;
+    cfg->resolution = 300;
     mp_cfg_copy(cfg->engine, sizeof(cfg->engine), "jpeg");
     cfg->media[0] = 0;
     cfg->source[0] = 0;
@@ -146,6 +147,13 @@ LONG mp_config_load(struct MPConfig *cfg)
         if (mp_cfg_starts(g_config_line, "KEEPJOB=")) {
             value = g_config_line + 8;
             cfg->keep_job = (value[0] == '0') ? FALSE : TRUE;
+            continue;
+        }
+
+        if (mp_cfg_starts(g_config_line, "RESOLUTION=")) {
+            value = g_config_line + 11;
+            n = mp_cfg_parse_ulong(value, &ok);
+            cfg->resolution = (ok && n == 600UL) ? 600 : 300;
             continue;
         }
 

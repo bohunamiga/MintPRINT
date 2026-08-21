@@ -92,6 +92,7 @@ extern struct GfxBase *GfxBase;
 #define GAD_UNIT_DROPDOWN 15
 #define GAD_SET_ACTIVE_BUTTON 16
 #define GAD_MODEL_DISPLAY 17
+#define GAD_RESOLUTION 18
 
 // Discovery selection dialog gadget IDs (separate window/gadget list)
 #define GAD_DISC_CYCLE  1
@@ -364,6 +365,11 @@ char ip_buffer[256] = "192.168.0.51:80";
 char driver_path_buffer[96] = "/ipp/print";
 BOOL driver_keep_job = TRUE;
 static STRPTR keep_job_labels[] = { "Delete job JPEG", "Keep debug JPEG", NULL };
+/* Capture resolution driver.device reports to the app and renders at.
+ * 600dpi quadruples raster size/RAM use for a real quality gain; 300dpi
+ * (index 0) stays the default so existing users see no behaviour change. */
+static STRPTR resolution_labels[] = { "300 dpi", "600 dpi", NULL };
+int driver_resolution = 300;
 char driver_engine_buffer[32] = "jpeg";
 #define MP_ENGINE_MAX 3
 
@@ -722,6 +728,15 @@ static void capture_driver_settings(struct Window *win) {
         warn_if_engine_unsupported(driver_engine_buffer);
     }
 
+    g = find_gadget_by_id(GAD_RESOLUTION);
+    if (g) {
+        ULONG res_active = 0;
+        GT_GetGadgetAttrs(g, win, NULL,
+                          GTCY_Active, (ULONG)&res_active,
+                          TAG_DONE);
+        driver_resolution = res_active ? 600 : 300;
+    }
+
     /* Persist the capability-backed choices currently visible in the GUI. */
     if (media_dropdown && num_media_tray_mappings > 0) {
         ULONG selected = 0;
@@ -822,6 +837,8 @@ static BOOL write_driver_config_file(CONST_STRPTR filename) {
     FPuts(file, line);
     snprintf(line, sizeof(line), "KEEPJOB=%d\n", driver_keep_job ? 1 : 0);
     FPuts(file, line);
+    snprintf(line, sizeof(line), "RESOLUTION=%d\n", driver_resolution);
+    FPuts(file, line);
     snprintf(line, sizeof(line), "MEDIA=%s\n", driver_media_buffer);
     FPuts(file, line);
     snprintf(line, sizeof(line), "SOURCE=%s\n", driver_source_buffer);
@@ -894,6 +911,7 @@ static BOOL load_driver_config(void) {
     strcpy(driver_path_buffer, "/ipp/print");
     strcpy(driver_engine_buffer, "jpeg");
     driver_keep_job = TRUE;
+    driver_resolution = 300;
     driver_media_buffer[0] = '\0';
     driver_source_buffer[0] = '\0';
     driver_color_buffer[0] = '\0';
@@ -944,6 +962,8 @@ static BOOL load_driver_config(void) {
                 strcpy(driver_engine_buffer, "jpeg");
         } else if (strncmp(line, "KEEPJOB=", 8) == 0) {
             driver_keep_job = (line[8] == '0') ? FALSE : TRUE;
+        } else if (strncmp(line, "RESOLUTION=", 11) == 0) {
+            driver_resolution = (atoi(line + 11) == 600) ? 600 : 300;
         } else if (strncmp(line, "MEDIA=", 6) == 0) {
             strncpy(driver_media_buffer, line + 6, sizeof(driver_media_buffer) - 1);
             driver_media_buffer[sizeof(driver_media_buffer) - 1] = '\0';
@@ -1297,6 +1317,12 @@ static void apply_driver_config_to_gadgets(struct Window *win) {
     if (g)
         GT_SetGadgetAttrs(g, win, NULL,
                           GTCY_Active, mp_engine_active_index(),
+                          TAG_DONE);
+
+    g = find_gadget_by_id(GAD_RESOLUTION);
+    if (g)
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GTCY_Active, driver_resolution == 600 ? 1 : 0,
                           TAG_DONE);
 
     g = find_gadget_by_id(GAD_MODEL_DISPLAY);
@@ -4496,6 +4522,24 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
         TAG_DONE);
     if (!gad) {
         printf("Failed to create debug JPEG gadget\n");
+        return NULL;
+    }
+
+    // Capture resolution - shares the Debug JPEG row (same ng_TopEdge, no
+    // row of its own) since it's just a second plain two-value cycle, not
+    // worth the vertical space of a dedicated row. LeftEdge is well clear
+    // of that gadget's box, which ends at 130+180=310.
+    ng.ng_LeftEdge = 400;
+    ng.ng_Width = 100;
+    ng.ng_Height = 12;
+    ng.ng_GadgetText = (STRPTR)"Resolution:";
+    ng.ng_GadgetID = GAD_RESOLUTION;
+    gad = CreateGadget(CYCLE_KIND, gad, &ng,
+        GTCY_Labels, (ULONG)resolution_labels,
+        GTCY_Active, driver_resolution == 600 ? 1 : 0,
+        TAG_DONE);
+    if (!gad) {
+        printf("Failed to create resolution gadget\n");
         return NULL;
     }
 

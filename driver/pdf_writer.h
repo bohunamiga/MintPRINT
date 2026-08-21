@@ -39,7 +39,11 @@ typedef struct MPPdfEncoder {
 } MPPdfEncoder;
 
 unsigned long mp_pdf_scratch_size(unsigned long width);
+/* dpi is the capture resolution the raster was rendered at, used to derive
+ * MediaBox from width/height (see pdf_writer.c). Pass 0 to fall back to
+ * the previous fixed 300dpi behaviour. */
 int mp_pdf_begin(MPPdfEncoder *enc, unsigned long width, unsigned long height,
+                 unsigned long dpi,
                  unsigned char *scratch, unsigned long scratch_size,
                  MPPdfWriteFn write_fn, void *write_ctx);
 int mp_pdf_write_scanline(MPPdfEncoder *enc, const unsigned char *rgb);

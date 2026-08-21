@@ -36,7 +36,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 10
+#define MP_DRIVER_REV 11
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -361,7 +361,7 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
     switch (g_engine) {
         case MP_ENGINE_PWG: {
             /* PageSize is deliberately derived from the actual raster
-             * pixels (page_pts_x/y = 0 -> mp_pwg_begin's own pixel/300dpi
+             * pixels (page_pts_x/y = 0 -> mp_pwg_begin's own pixel/dpi
              * fallback), NOT from the configured media=. A real hardware
              * test proved that route wrong: declaring PageSize as full
              * A4 while the raster only covered a few inches of it made
@@ -372,6 +372,7 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
              * the whole page" so the printer doesn't try to fill more of
              * one than we actually sent. */
             if (!mp_pwg_begin(&g_pwg, width, height, 0, 0,
+                              g_config.resolution,
                               g_pwg_scratch, g_pwg_scratch_bytes,
                               mp_job_file_write, NULL)) {
                 mp_log_text("PWG encoder begin failed");
@@ -384,7 +385,8 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
             break;
         }
         case MP_ENGINE_PDF:
-            if (!mp_pdf_begin(&g_pdf, width, height, g_pdf_scratch,
+            if (!mp_pdf_begin(&g_pdf, width, height, g_config.resolution,
+                              g_pdf_scratch,
                               g_pdf_scratch_bytes, mp_job_file_write, NULL)) {
                 mp_log_text("PDF encoder begin failed");
                 g_job_failed = TRUE;
@@ -695,6 +697,13 @@ int PRT_STDARGS DriverOpen(struct IORequest *ior)
     g_page_pending = FALSE;
     g_sizing_pass = FALSE;
     g_current_special = 0;
+    /* Loaded once per Open() bracket (i.e. once per print job) rather than
+     * per-page inside Render() case 0: case 5, which sets the PED
+     * resolution/MaxDots fields below, fires BEFORE case 0 on every job's
+     * first page, so it needs the real configured resolution available
+     * here already, not just Init()'s one-time compiled-in default. */
+    g_config_source = mp_spool_config_load(&g_config);
+    mp_log_config(&g_config, g_config_source);
     mp_log_text("Open");
     return 0;
 }
@@ -732,26 +741,35 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
         case 5: /* Pre-master initialisation. x = io_Special density flags. */
             g_current_special = (ULONG)x;
             if (PED) {
-                PED->ped_MaxXDots = 4096;
-                PED->ped_MaxYDots = 6144;
-                PED->ped_XDotsInch = 300;
-                PED->ped_YDotsInch = 300;
+                /* g_config was loaded in DriverOpen() for this job, so the
+                 * user's configured capture resolution is already known
+                 * here. 4096x6144 @ 300dpi are the historical bounds; at
+                 * 600dpi they are doubled so common paper sizes (e.g. A4
+                 * at 600dpi is ~4960x7014 dots) aren't clipped. */
+                BOOL hires = (g_config.resolution == 600);
+                PED->ped_MaxXDots = hires ? 8192 : 4096;
+                PED->ped_MaxYDots = hires ? 12288 : 6144;
+                PED->ped_XDotsInch = hires ? 600 : 300;
+                PED->ped_YDotsInch = hires ? 600 : 300;
                 PED->ped_NumRows = 1;
             }
-            mp_log_3("Render pre-master special/maxX/maxY", x, 4096, 6144);
+            mp_log_3("Render pre-master special/maxX/maxY", x,
+                     PED ? (LONG)PED->ped_MaxXDots : 0,
+                     PED ? (LONG)PED->ped_MaxYDots : 0);
             return PDERR_NOERR;
 
         case 0: { /* Master initialisation: x/y are final output dimensions. */
             BOOL continuation;
             g_rows_seen = 0;
-            g_config_source = mp_spool_config_load(&g_config);
+            /* g_config was already loaded once for this job in DriverOpen()
+             * - case 5 (which fires before this on the job's first page)
+             * needs it that early for the PED resolution fields below. */
             /* ct's meaning here is undocumented in this codebase - logging
              * its raw value (not just whether it's nonzero) in case it
              * turns out to carry a page/band number we've been discarding.
              * See the "multiple Render(0) cycles inside one Open/Close"
              * investigation in the project history around this line. */
             mp_log_3("Render begin width/height/ct", x, y, ct);
-            mp_log_config(&g_config, g_config_source);
 
             /* SPECIAL_NOPRINT: a sizing-only pass (RKM) - the app is
              * asking how big its dump would be, not asking for output.

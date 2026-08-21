@@ -248,7 +248,7 @@ graphics dumps to assemble one physical page.
 | **DPaint V** | ❌ Not working | Same revision-15 test machine | Printing crashes DPaint with Software Failure `#8000000A` | No working setup confirmed; capture `T:MintPRINT-driver.log` from the failed attempt |
 | **MultiView** | ✅ Working | AmigaOS 3.2.3, same revision-15 test environment; OS Printer Preferences left at defaults apart from selecting MintPRINT | Prints successfully using the active MintPRINT preferences | Select **Print**; MultiView provides no application-specific print settings |
 | **GfxDump** | ✅ Working | AmigaOS 3.2.3, same revision-15 test environment | The OS tool sends its graphics dump directly through `printer.device` to MintPRINT and prints successfully | Select MintPRINT in OS Printer Preferences; no application-specific setup |
-| **Directory Opus 4.16** | ❌ Not working | AmigaOS 3.2.3, same revision-15 test environment | The Print button opens and closes MintPRINT but produces no raster page and no IPP job | No workaround confirmed; MintPRINT does not yet support the alphanumeric `PRT:`/`CMD_WRITE` path used by this function |
+| **Directory Opus 4.16** | ❌ Not supported yet | AmigaOS 3.2.3, same revision-15 test environment | The Print button opens and closes MintPRINT but produces no raster page and no IPP job | Requires a future Amiga text-line renderer fed by `ped_ConvFunc()` characters from the `CMD_WRITE` path |
 | **AmigaWriter** | ✅ Working | AmigaOS 3.2.3, Roadshow, Brother HL-L2350DW, MintPRINT 1.0.3 | A simple document printed correctly with `Scaling=auto` | No additional application-specific override reported |
 | **MintPrint Settings Test Print** | 🟡 Partial | Brother HL-L2350DW report | The centre of the test image remains enlarged and cropped with `Scaling=auto` | No working override confirmed yet |
 
@@ -351,10 +351,11 @@ the button is not submitting a graphics dump to MintPRINT; its behaviour is
 consistent with the legacy alphanumeric `PRT:`/`CMD_WRITE` route.
 
 MintPRINT is currently graphics-focused: all entries in its text command table
-are marked unsupported and `DoSpecial()` emits no printer bytes. Supporting
-this DOpus function therefore requires a real text-printing path (most likely
-rendering incoming text to a page before passing it to the existing document
-engines), rather than a printer, IPP, PWG or application-settings fix.
+are marked unsupported and `DoSpecial()` emits no printer bytes. DOpus 4.16 is
+therefore **not supported yet**. Supporting this function requires a future
+Amiga text-line renderer fed by characters intercepted through
+`ped_ConvFunc()` from the `CMD_WRITE` path, then passed to the existing document
+engines. It is not a printer, IPP, PWG or application-settings fault.
 
 ## Baseline setup and troubleshooting
 

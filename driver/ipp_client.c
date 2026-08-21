@@ -340,10 +340,22 @@ LONG mp_ipp_print_document(const struct MPConfig *cfg, CONST_STRPTR filename,
     if (fsize <= 0) { rc = -3; goto done; }
     if (result) result->document_bytes = (ULONG)fsize;
 
+    /* 631 is the default/implied port for the ipp:// scheme and is safe to
+     * omit; any other port must be stated explicitly, or this URI silently
+     * claims a printer on 631 while the connection below actually goes
+     * elsewhere (the Host: header and the real connect() already get the
+     * port right - only this attribute value was missing it). */
     uri[0] = 0;
     if (!mp_append(uri, sizeof(uri), &up, "ipp://") ||
-        !mp_append(uri, sizeof(uri), &up, cfg->host) ||
-        !mp_append(uri, sizeof(uri), &up, cfg->path)) {
+        !mp_append(uri, sizeof(uri), &up, cfg->host)) {
+        rc = -4; goto done;
+    }
+    if (cfg->port != 631 &&
+        (!mp_append(uri, sizeof(uri), &up, ":") ||
+         !mp_append_ulong(uri, sizeof(uri), &up, cfg->port))) {
+        rc = -4; goto done;
+    }
+    if (!mp_append(uri, sizeof(uri), &up, cfg->path)) {
         rc = -4; goto done;
     }
 

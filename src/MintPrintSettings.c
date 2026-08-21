@@ -118,6 +118,12 @@ struct DiscoveredPrinter {
 
 // Define the USED macro for GCC
 #define USED __attribute__((used))
+#define MINTPRINT_SETTINGS_VERSION "1.0.4"
+
+/* Visible both to AmigaOS's Version command and in the About requester. */
+static const char USED mintprint_version[] =
+    "$VER: MintPrintSettings " MINTPRINT_SETTINGS_VERSION " (21.08.2026)";
+
 // Simple extension check
 BOOL has_extension(const char *filename, const char *ext) {
     const char *dot = strrchr(filename, '.');
@@ -2452,7 +2458,8 @@ static void show_about(struct Window *win) {
     }
 
     snprintf(msg, sizeof(msg),
-        "MintPRINT v1.0.3 - IPP/AirPrint printing for AmigaOS\n\n"
+        "MintPRINT v" MINTPRINT_SETTINGS_VERSION
+        " - IPP/AirPrint printing for AmigaOS\n\n"
         "Installed driver (DEVS:Printers/MintPRINT): %s\n"
         "Bundled driver (next to this program): %s\n\n"
         "Bug reports and source:\n"

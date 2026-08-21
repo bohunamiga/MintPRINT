@@ -608,7 +608,12 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             g_page_height = (ULONG)y;
             g_rows_seen = 0;
             g_config_source = mp_spool_config_load(&g_config);
-            mp_log_3("Render begin width/height/ct", x, y, ct ? 1 : 0);
+            /* ct's meaning here is undocumented in this codebase - logging
+             * its raw value (not just whether it's nonzero) in case it
+             * turns out to carry a page/band number we've been discarding.
+             * See the "multiple Render(0) cycles inside one Open/Close"
+             * investigation in the project history around this line. */
+            mp_log_3("Render begin width/height/ct", x, y, ct);
             mp_log_config(&g_config, g_config_source);
 
             if (g_runaway_tripped) {

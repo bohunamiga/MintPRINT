@@ -3067,6 +3067,18 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
         operation_in_progress = FALSE;
         return -1;
     }
+    /* connect() below is otherwise a plain blocking call with no bound at
+     * all - SO_RCVTIMEO only covers recv(). If the host doesn't actively
+     * refuse the connection (silently dropped SYNs, a printer that's
+     * asleep/unreachable on this specific port, etc.) connect() can block
+     * far longer than any UI timeout, which reads as "the whole program
+     * has frozen" since nothing pumps GUI events while it's blocked. Best
+     * effort: SO_SNDTIMEO is only formally specified for send(), but this
+     * bsdsocket.library stack already honours SO_RCVTIMEO reliably, and
+     * several BSD-derived stacks apply SO_SNDTIMEO to connect() too since
+     * both share the same underlying blocking-I/O path - worth setting
+     * regardless of whether this particular stack does. */
+    setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout, sizeof(timeout));
 
     struct sockaddr_in serv_addr = {0};
     serv_addr.sin_family = AF_INET;

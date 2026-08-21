@@ -3506,11 +3506,26 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
 }
 
 /* Shared by the Query button and the post-discovery "Use Selected" path:
- * tries the given/default port then 631, and on success applies the fetched
- * capabilities to the gadgets exactly like a manual Query click. */
+ * tries 631 first (falling back to a user-typed port or 80), and on
+ * success applies the fetched capabilities to the gadgets exactly like a
+ * manual Query click. */
 static void perform_query_flow(struct Window *win, const char *ip_only, int port_hint, char *response) {
-    int chosen_port = (port_hint > 0) ? port_hint : 80;
-    int ports_to_try[] = { chosen_port, 631 };
+    /* 631 is the IANA-registered IPP port and the one real printers' full
+     * capability set lives on; port 80 is only ever a bonus/compat
+     * endpoint some printers also answer on, sometimes with a lesser or
+     * different response. When we don't have an explicit port (discovery
+     * always calls with port_hint 0, and manual entry without a ":port"
+     * does too), try 631 first so we don't latch onto an 80 response that
+     * "succeeds" but is missing capabilities like scaling. An explicit
+     * user-typed port is still tried first, ahead of the 631 fallback. */
+    int ports_to_try[2];
+    if (port_hint > 0) {
+        ports_to_try[0] = port_hint;
+        ports_to_try[1] = 631;
+    } else {
+        ports_to_try[0] = 631;
+        ports_to_try[1] = 80;
+    }
     int i, attempt;
     BOOL ok = FALSE;
 

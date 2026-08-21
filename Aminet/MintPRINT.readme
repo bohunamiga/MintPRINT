@@ -147,6 +147,14 @@ repository) run against the printer from a Windows PC on the same
 network. This helps separate printer-side IPP behaviour from Amiga-side
 driver problems without requiring any Amiga-specific diagnostic tools.
 
+The tested-printer list and full report template are maintained at:
+
+  https://github.com/boingball/MintPRINT/blob/main/docs/PRINTER_COMPATIBILITY.md
+
+Please include the AmigaOS version, TCP/IP stack, document engine, DPI,
+media/tray, scaling, quality and colour mode so a successful configuration
+can be reproduced by another user.
+
 When reporting an AmigaOS 3.1 problem, please also mention that the
 MintPRINT-OS31 driver build is being used.
 

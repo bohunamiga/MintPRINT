@@ -4926,6 +4926,12 @@ int main(void) {
         printf("Loaded cached printer capabilities\n");
     } else {
         apply_saved_option_state(window);
+        /* apply_saved_option_state() itself never logs anything - without
+         * this, a startup where the capability cache doesn't match the
+         * current host/port/path (deleted, never queried yet, or the
+         * endpoint changed) leaves the status box completely silent, which
+         * reads as "broken" rather than "nothing cached yet". */
+        printf("No cached capabilities for this endpoint - press Query\n");
     }
 
     /* check_and_offer_driver_install() above can pop an EasyRequest on top

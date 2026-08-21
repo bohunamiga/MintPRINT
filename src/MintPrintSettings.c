@@ -5112,6 +5112,42 @@ void process_window_events(struct Window *win) {
     free(response); // Free the dynamically allocated buffer
 }
 
+static BOOL mp_open_tcp_stack(void) {
+    LONG probe_socket;
+
+    /* Match the minimum version used by the printer driver. Opening the
+     * library alone is not quite enough: a stale/incomplete installation can
+     * expose bsdsocket.library while still being unable to create sockets. */
+    SocketBase = OpenLibrary("bsdsocket.library", 4);
+    if (!SocketBase) return FALSE;
+
+    probe_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (probe_socket < 0) {
+        CloseLibrary(SocketBase);
+        SocketBase = NULL;
+        return FALSE;
+    }
+
+    CloseSocket(probe_socket);
+    return TRUE;
+}
+
+static void mp_show_tcp_stack_required(void) {
+    struct EasyStruct es;
+
+    es.es_StructSize = sizeof(struct EasyStruct);
+    es.es_Flags = 0;
+    es.es_Title = (UBYTE *)"MintPrint Settings";
+    es.es_TextFormat = (UBYTE *)
+        "MintPRINT needs a running TCP/IP stack.\n\n"
+        "bsdsocket.library V4 could not be opened, or it could not\n"
+        "create a socket. Start or install Roadshow, AmiTCP, Miami,\n"
+        "or another compatible TCP/IP stack, then run MintPRINT again.\n\n"
+        "No printer settings or driver files have been changed.";
+    es.es_GadgetFormat = (UBYTE *)"Exit";
+    EasyRequest(NULL, &es, NULL);
+}
+
 // Main function
 int main(void) {
     UWORD topborder;
@@ -5138,9 +5174,9 @@ int main(void) {
         return 1;
     }
 
-    SocketBase = OpenLibrary("bsdsocket.library", 0);
-    if (!SocketBase) {
-        printf("Failed to open bsdsocket.library\n");
+    if (!mp_open_tcp_stack()) {
+        printf("A working bsdsocket.library V4 TCP/IP stack is required\n");
+        mp_show_tcp_stack_required();
         CloseLibrary(GadToolsBase);
         CloseLibrary((struct Library *)GfxBase);
         CloseLibrary((struct Library *)IntuitionBase);

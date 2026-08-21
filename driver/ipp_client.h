@@ -11,6 +11,11 @@ struct MPIPPResult {
     ULONG document_bytes;
 };
 
+/* Opens bsdsocket.library V4 and creates a harmless unconnected socket.
+ * Used by driver Init() to reject printing before any raster work begins
+ * when no functional TCP/IP stack is available. */
+BOOL mp_ipp_socket_available(void);
+
 LONG mp_ipp_print_document(const struct MPConfig *cfg, CONST_STRPTR filename,
                            CONST_STRPTR document_format,
                            struct MPIPPResult *result);

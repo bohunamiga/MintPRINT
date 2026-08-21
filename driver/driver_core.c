@@ -36,7 +36,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 11
+#define MP_DRIVER_REV 12
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -661,6 +661,16 @@ LONG PRT_STDARGS Init(struct PrinterData *pd)
 
     DOSBase = (struct DosLibrary *)OpenLibrary((CONST_STRPTR)"dos.library", 37);
     if (!DOSBase) {
+        return -1;
+    }
+
+    /* Fail before printer.device starts sending raster rows. Previously a
+     * missing/inactive TCP stack was only discovered after a complete page
+     * had been rendered to disk, which could leave callers in a much less
+     * predictable failure path. */
+    if (!mp_ipp_socket_available()) {
+        CloseLibrary((struct Library *)DOSBase);
+        DOSBase = NULL;
         return -1;
     }
 

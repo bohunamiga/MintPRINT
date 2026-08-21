@@ -12,6 +12,8 @@
 
 
 #include <proto/exec.h>
+#include <exec/execbase.h>
+#include <exec/libraries.h>
 #include <ctype.h> // for tolower()
 #include <proto/dos.h>
 #include <dos/dostags.h> // for SYS_Asynch (SystemTags)
@@ -133,6 +135,10 @@ static struct MPTestPrintJob test_print_job;
 // Define the USED macro for GCC
 #define USED __attribute__((used))
 #define MINTPRINT_SETTINGS_VERSION "1.0.3b"
+#define MINTPRINT_DRIVER_DEST ((CONST_STRPTR)"DEVS:Printers/MintPRINT")
+#define MINTPRINT_DRIVER_SRC  ((CONST_STRPTR)"PROGDIR:MintPRINT")
+
+static BOOL mp_read_driver_revision(CONST_STRPTR path, UWORD *revision_out);
 
 /* Visible both to AmigaOS's Version command and in the About requester. */
 static const char USED mintprint_version[] =
@@ -1340,15 +1346,55 @@ static void mp_test_print_palette_pens(UBYTE depth,
     }
 }
 
+#define MP_TEST_PAGE_WIDTH  240
+#define MP_TEST_PAGE_HEIGHT 320
+
+static void mp_test_print_text(struct RastPort *rp, WORD x, WORD y,
+                               WORD right, const char *text)
+{
+    ULONG length;
+
+    if (!rp || !text || right <= x) return;
+    length = (ULONG)strlen(text);
+    while (length > 0 && TextLength(rp, (STRPTR)text, length) > right - x)
+        --length;
+    Move(rp, x, y);
+    Text(rp, (STRPTR)text, length);
+}
+
+static const char *mp_test_print_engine_name(void)
+{
+    int i;
+
+    for (i = 0; i < MP_ENGINE_MAX; ++i) {
+        if (strcmp(driver_engine_buffer, mp_engine_all_values[i]) == 0)
+            return mp_engine_all_labels[i];
+    }
+    return driver_engine_buffer[0] ? driver_engine_buffer : "unknown";
+}
+
+static const char *mp_test_print_cpu_name(UWORD flags)
+{
+    /* The 68060 attention bit was added after the original V37 NDK, so use
+     * its documented bit value directly and retain build compatibility with
+     * those older headers. SetPatch/68060.library supplies it at runtime. */
+    if (flags & (1U << 7)) return "68060";
+    if (flags & (1U << 3)) return "68040";
+    if (flags & (1U << 2)) return "68030";
+    if (flags & (1U << 1)) return "68020";
+    if (flags & (1U << 0)) return "68010";
+    return "68000";
+}
+
 static BOOL mintprint_test_page(struct Window *win) {
     ULONG mode_id = 0;
     UBYTE depth;
     UWORD light_pen = 0;
     UWORD dark_pen = 1;
+    UWORD driver_revision = 0;
+    struct ExecBase *exec_base;
+    char line[96];
     const char *title = "MintPRINT TEST PAGE";
-    const char *line2 = "printer.device -> MintPRINT -> IPP";
-    const char *line3 = "Capability-backed Unit0 defaults";
-    const char *line4 = "Media / tray / colour / quality / scaling";
 
     if (test_print_job.active) {
         printf("Test Print is already running\n");
@@ -1370,7 +1416,12 @@ static BOOL mintprint_test_page(struct Window *win) {
     if (depth < 1) depth = 1;
     mp_test_print_palette_pens(depth, &light_pen, &dark_pen);
 
-    test_print_job.bitmap = AllocBitMap(320, 180, depth, BMF_CLEAR,
+    /* A portrait source is intentional: printer.device and every MintPRINT
+     * document engine infer orientation from the raster aspect ratio. The
+     * former 320x180 test bitmap therefore requested landscape every time. */
+    test_print_job.bitmap = AllocBitMap(MP_TEST_PAGE_WIDTH,
+                                        MP_TEST_PAGE_HEIGHT,
+                                        depth, BMF_CLEAR,
                                         screen->RastPort.BitMap);
     if (!test_print_job.bitmap) {
         printf("Test Print: could not allocate test bitmap\n");
@@ -1387,29 +1438,83 @@ static BOOL mintprint_test_page(struct Window *win) {
      * the test page in toner. Other palette pens still provide colour
      * swatches, so this remains an end-to-end colour conversion check. */
     SetAPen(&test_print_job.rastport, light_pen);
-    RectFill(&test_print_job.rastport, 0, 0, 319, 179);
+    RectFill(&test_print_job.rastport, 0, 0,
+             MP_TEST_PAGE_WIDTH - 1, MP_TEST_PAGE_HEIGHT - 1);
     SetAPen(&test_print_job.rastport, dark_pen);
-    RectFill(&test_print_job.rastport, 4, 4, 315, 5);
-    RectFill(&test_print_job.rastport, 4, 174, 315, 175);
-    RectFill(&test_print_job.rastport, 4, 4, 5, 175);
-    RectFill(&test_print_job.rastport, 314, 4, 315, 175);
-    Move(&test_print_job.rastport, 16, 24);
-    Text(&test_print_job.rastport, (STRPTR)title, strlen(title));
-    Move(&test_print_job.rastport, 16, 40);
-    Text(&test_print_job.rastport, (STRPTR)line2, strlen(line2));
+    RectFill(&test_print_job.rastport, 4, 4, 235, 5);
+    RectFill(&test_print_job.rastport, 4, 314, 235, 315);
+    RectFill(&test_print_job.rastport, 4, 4, 5, 315);
+    RectFill(&test_print_job.rastport, 234, 4, 235, 315);
+
+    mp_test_print_text(&test_print_job.rastport, 12, 22, 228, title);
+
+    snprintf(line, sizeof(line), "Settings: %s", MINTPRINT_SETTINGS_VERSION);
+    mp_test_print_text(&test_print_job.rastport, 12, 42, 228, line);
+
+    if (mp_read_driver_revision(MINTPRINT_DRIVER_DEST, &driver_revision))
+        snprintf(line, sizeof(line), "Driver: MintPRINT rev %u",
+                 (unsigned)driver_revision);
+    else
+        strcpy(line, "Driver: MintPRINT rev unknown");
+    mp_test_print_text(&test_print_job.rastport, 12, 56, 228, line);
+
+    snprintf(line, sizeof(line), "Printer: %s",
+             printer_make_model[0] ? printer_make_model : "model not queried");
+    mp_test_print_text(&test_print_job.rastport, 12, 70, 228, line);
+
+    snprintf(line, sizeof(line), "Engine: %s over IPP",
+             mp_test_print_engine_name());
+    mp_test_print_text(&test_print_job.rastport, 12, 84, 228, line);
+
+    snprintf(line, sizeof(line), "DPI: %d  Colour: %s", driver_resolution,
+             driver_color_buffer[0] ? driver_color_buffer : "auto");
+    mp_test_print_text(&test_print_job.rastport, 12, 98, 228, line);
+
+    snprintf(line, sizeof(line), "Media: %s",
+             driver_media_buffer[0] ? driver_media_buffer : "auto");
+    mp_test_print_text(&test_print_job.rastport, 12, 112, 228, line);
+
+    snprintf(line, sizeof(line), "Tray: %s",
+             driver_source_buffer[0] ? driver_source_buffer : "auto");
+    mp_test_print_text(&test_print_job.rastport, 12, 126, 228, line);
+
+    snprintf(line, sizeof(line), "Quality: %s  Scale: %s",
+             driver_quality_buffer[0] ? driver_quality_buffer : "auto",
+             driver_scaling_buffer[0] ? driver_scaling_buffer : "auto");
+    mp_test_print_text(&test_print_job.rastport, 12, 140, 228, line);
+
+    exec_base = *(struct ExecBase **)4L;
+    if (exec_base) {
+        snprintf(line, sizeof(line), "Exec: V%u.%u  CPU: %s",
+                 (unsigned)exec_base->LibNode.lib_Version,
+                 (unsigned)exec_base->LibNode.lib_Revision,
+                 mp_test_print_cpu_name(exec_base->AttnFlags));
+        mp_test_print_text(&test_print_job.rastport, 12, 158, 228, line);
+    }
+
+    if (SocketBase) {
+        snprintf(line, sizeof(line), "TCP: bsdsocket V%u.%u",
+                 (unsigned)SocketBase->lib_Version,
+                 (unsigned)SocketBase->lib_Revision);
+        mp_test_print_text(&test_print_job.rastport, 12, 172, 228, line);
+    }
 
     SetAPen(&test_print_job.rastport, depth > 1 ? 2 : dark_pen);
-    RectFill(&test_print_job.rastport, 16, 60, 105, 105);
+    RectFill(&test_print_job.rastport, 12, 190, 78, 224);
     SetAPen(&test_print_job.rastport, depth > 1 ? 3 : dark_pen);
-    RectFill(&test_print_job.rastport, 115, 60, 204, 105);
+    RectFill(&test_print_job.rastport, 86, 190, 152, 224);
     SetAPen(&test_print_job.rastport, dark_pen);
-    RectFill(&test_print_job.rastport, 214, 60, 303, 105);
+    RectFill(&test_print_job.rastport, 160, 190, 226, 224);
 
     SetAPen(&test_print_job.rastport, dark_pen);
-    Move(&test_print_job.rastport, 16, 130);
-    Text(&test_print_job.rastport, (STRPTR)line3, strlen(line3));
-    Move(&test_print_job.rastport, 16, 146);
-    Text(&test_print_job.rastport, (STRPTR)line4, strlen(line4));
+    mp_test_print_text(&test_print_job.rastport, 12, 246, 228,
+                       "printer.device -> MintPRINT");
+    mp_test_print_text(&test_print_job.rastport, 12, 260, 228,
+                       "IPP Print-Job to port 631");
+    mp_test_print_text(&test_print_job.rastport, 12, 286, 228,
+                       "Like it? Buy me a coffee:");
+    mp_test_print_text(&test_print_job.rastport, 12, 300, 228,
+                       "buymeacoffee.com/boingball");
 
     test_print_job.port = CreateMsgPort();
     if (!test_print_job.port) {
@@ -1443,8 +1548,8 @@ static BOOL mintprint_test_page(struct Window *win) {
     test_print_job.request->io_Modes = mode_id;
     test_print_job.request->io_SrcX = 0;
     test_print_job.request->io_SrcY = 0;
-    test_print_job.request->io_SrcWidth = 320;
-    test_print_job.request->io_SrcHeight = 180;
+    test_print_job.request->io_SrcWidth = MP_TEST_PAGE_WIDTH;
+    test_print_job.request->io_SrcHeight = MP_TEST_PAGE_HEIGHT;
     test_print_job.request->io_DestCols = 0;
     test_print_job.request->io_DestRows = 0;
     test_print_job.request->io_Special = SPECIAL_ASPECT | SPECIAL_CENTER;
@@ -2446,9 +2551,6 @@ int convert_to_pwg(unsigned char *rgb, int w, int h, unsigned char **pwg_out, in
  * driver (PROGDIR:MintPRINT). If the driver is not yet installed in
  * DEVS:Printers/, offer to copy it in and point the user at Printer Prefs.
  * ------------------------------------------------------------------- */
-#define MINTPRINT_DRIVER_DEST ((CONST_STRPTR)"DEVS:Printers/MintPRINT")
-#define MINTPRINT_DRIVER_SRC  ((CONST_STRPTR)"PROGDIR:MintPRINT")
-
 static BOOL mp_file_exists(CONST_STRPTR name) {
     BPTR lock = Lock(name, ACCESS_READ);
     if (lock) {

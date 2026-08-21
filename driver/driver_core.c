@@ -64,6 +64,7 @@ struct TagItem DriverTags[] = {
 #define MP_JOB_FILE_JPEG ((CONST_STRPTR)"T:MintPRINT-job.jpg")
 #define MP_JOB_FILE_PWG  ((CONST_STRPTR)"T:MintPRINT-job.pwg")
 #define MP_JOB_FILE_PDF  ((CONST_STRPTR)"T:MintPRINT-job.pdf")
+#define MP_JOB_FILE_BACK ((CONST_STRPTR)"T:MintPRINT-back.rgb")
 
 /* Multiple Render(status=0 begin -> rows -> status=4 end) cycles inside one
  * Open()/Close() bracket is legitimate - that's how a real multi-page
@@ -130,8 +131,14 @@ static MPPwgEncoder g_pwg;
 static MPPdfEncoder g_pdf;
 static struct MPConfig g_config;
 static LONG g_config_source = MP_CONFIG_SOURCE_DEFAULTS;
-static ULONG g_remote_job_id = 0;
 static BOOL g_duplex_job_failed = FALSE;
+static ULONG g_duplex_page_count = 0;
+static ULONG g_job_file_bytes = 0;
+static ULONG g_pwg_page_header_offset = 0;
+static BOOL g_pwg_defer_rows = FALSE;
+static BOOL g_pwg_reverse_x = FALSE;
+static BOOL g_pwg_reverse_y = FALSE;
+static BOOL g_pwg_aux_open = FALSE;
 
 /* cfg->engine is always exactly "jpeg", "pwg-raster", or "pdf" - config.c
  * only ever writes one of those three literal strings - so checking the
@@ -164,7 +171,7 @@ static CONST_STRPTR mp_document_format(void)
 
 static BOOL mp_duplex_requested(void)
 {
-    return g_config.sides[0] == 't';
+    return g_engine == MP_ENGINE_PWG && g_config.sides[0] == 't';
 }
 
 static ULONG mp_strlen(const char *s)
@@ -173,6 +180,14 @@ static ULONG mp_strlen(const char *s)
     if (!s) return 0;
     while (s[n]) ++n;
     return n;
+}
+
+static BOOL mp_streq(const char *a, const char *b)
+{
+    ULONG i = 0;
+    if (!a || !b) return FALSE;
+    while (a[i] && b[i] && a[i] == b[i]) ++i;
+    return a[i] == 0 && b[i] == 0;
 }
 
 /* Every log call below builds one line into this buffer, then hands it to
@@ -274,6 +289,10 @@ static void mp_log_config(const struct MPConfig *cfg, LONG source)
     if (cfg->quality[0]) { mp_log_append(" quality="); mp_log_append(cfg->quality); }
     if (cfg->scaling[0]) { mp_log_append(" scaling="); mp_log_append(cfg->scaling); }
     if (cfg->sides[0]) { mp_log_append(" sides="); mp_log_append(cfg->sides); }
+    if (cfg->pwg_sheet_back[0]) {
+        mp_log_append(" pwg-sheet-back=");
+        mp_log_append(cfg->pwg_sheet_back);
+    }
     mp_log_append(" engine=");
     mp_log_append(cfg->engine[0] ? cfg->engine : "jpeg");
     mp_spool_log(g_log_line);
@@ -282,15 +301,13 @@ static void mp_log_config(const struct MPConfig *cfg, LONG source)
 static long mp_job_file_write(void *ctx, const unsigned char *data, unsigned long length)
 {
     (void)ctx;
-    return mp_spool_job_write((const UBYTE *)data, (ULONG)length) ? (long)length : -1;
+    if (!mp_spool_job_write((const UBYTE *)data, (ULONG)length)) return -1;
+    g_job_file_bytes += (ULONG)length;
+    return (long)length;
 }
 
-static void mp_job_cleanup(void)
+static void mp_job_release_buffers(void)
 {
-    if (g_job_open) {
-        mp_spool_job_close();
-        g_job_open = FALSE;
-    }
     if (g_rgb_row) {
         FreeMem(g_rgb_row, g_rgb_row_bytes);
         g_rgb_row = NULL;
@@ -313,14 +330,67 @@ static void mp_job_cleanup(void)
     g_pdf_scratch_bytes = 0;
 }
 
+static void mp_pwg_close_aux(void)
+{
+    if (g_pwg_aux_open) {
+        mp_spool_aux_close();
+        g_pwg_aux_open = FALSE;
+    }
+    mp_spool_job_delete(MP_JOB_FILE_BACK);
+    g_pwg_defer_rows = FALSE;
+    g_pwg_reverse_x = FALSE;
+    g_pwg_reverse_y = FALSE;
+}
+
+static void mp_job_cleanup(void)
+{
+    mp_pwg_close_aux();
+    if (g_job_open) {
+        mp_spool_job_close();
+        g_job_open = FALSE;
+    }
+    mp_job_release_buffers();
+}
+
 static BOOL mp_job_begin(ULONG width, ULONG height)
 {
     ULONG need;
+    BOOL append_duplex_page;
+    BOOL duplex;
+    BOOL tumble;
+    BOOL backside;
+    LONG cross_feed = 1;
+    LONG feed = 1;
 
-    mp_job_cleanup();
+    g_engine = mp_detect_engine(&g_config);
+    append_duplex_page = mp_duplex_requested() && g_job_open &&
+                         g_duplex_page_count > 0 &&
+                         !g_duplex_job_failed;
+    if (append_duplex_page)
+        mp_job_release_buffers();
+    else {
+        mp_job_cleanup();
+        g_job_file_bytes = 0;
+    }
     g_job_rows_written = 0;
     g_job_failed = FALSE;
-    g_engine = mp_detect_engine(&g_config);
+    g_pwg_defer_rows = FALSE;
+    g_pwg_reverse_x = FALSE;
+    g_pwg_reverse_y = FALSE;
+
+    duplex = mp_duplex_requested();
+    tumble = duplex && mp_streq(g_config.sides,
+                                "two-sided-short-edge");
+    backside = duplex && ((g_duplex_page_count + 1UL) & 1UL) == 0;
+
+    if (backside) {
+        mp_pwg_backside_transform(g_config.sides,
+                                  g_config.pwg_sheet_back,
+                                  &cross_feed, &feed);
+        g_pwg_reverse_x = cross_feed < 0 ? TRUE : FALSE;
+        g_pwg_reverse_y = feed < 0 ? TRUE : FALSE;
+        g_pwg_defer_rows = g_pwg_reverse_x || g_pwg_reverse_y;
+    }
 
     if (!DOSBase || width == 0 || height == 0 || width > 65535UL || height > 65535UL) {
         mp_log_text("Job begin rejected invalid dimensions");
@@ -376,11 +446,14 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
             break;
     }
 
-    g_job_open = mp_spool_job_open(mp_job_filename());
     if (!g_job_open) {
-        mp_log_text("Job open failed for output file");
-        mp_job_cleanup();
-        return FALSE;
+        g_job_open = mp_spool_job_open(mp_job_filename());
+        if (!g_job_open) {
+            mp_log_text("Job open failed for output file");
+            mp_job_cleanup();
+            return FALSE;
+        }
+        g_job_file_bytes = 0;
     }
 
     switch (g_engine) {
@@ -396,14 +469,32 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
              * not a coincidence). PageSize needs to say "this raster IS
              * the whole page" so the printer doesn't try to fill more of
              * one than we actually sent. */
-            if (!mp_pwg_begin(&g_pwg, width, height, 0, 0,
-                              g_config.resolution,
-                              g_pwg_scratch, g_pwg_scratch_bytes,
-                              mp_job_file_write, NULL)) {
+            BOOL write_sync = g_job_file_bytes == 0 ? TRUE : FALSE;
+            g_pwg_page_header_offset = g_job_file_bytes +
+                                       (write_sync ? 4UL : 0UL);
+            if (!mp_pwg_begin_page(&g_pwg, width, height, 0, 0,
+                                   g_config.resolution, write_sync,
+                                   duplex, tumble, cross_feed, feed,
+                                   g_pwg_scratch, g_pwg_scratch_bytes,
+                                   mp_job_file_write, NULL)) {
                 mp_log_text("PWG encoder begin failed");
                 g_job_failed = TRUE;
                 mp_job_cleanup();
                 return FALSE;
+            }
+            if (g_pwg_defer_rows) {
+                g_pwg_aux_open = mp_spool_aux_open(MP_JOB_FILE_BACK);
+                if (!g_pwg_aux_open) {
+                    mp_log_text("PWG backside row store open failed");
+                    g_job_failed = TRUE;
+                    g_duplex_job_failed = TRUE;
+                    mp_job_cleanup();
+                    return FALSE;
+                }
+                mp_log_3("PWG backside transform x/y/page",
+                         g_pwg_reverse_x ? -1 : 1,
+                         g_pwg_reverse_y ? -1 : 1,
+                         (LONG)(g_duplex_page_count + 1UL));
             }
             mp_log_3("PWG begin width/height/scratch",
                      (LONG)width, (LONG)height, (LONG)g_pwg_scratch_bytes);
@@ -478,11 +569,15 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
 
     switch (g_engine) {
         case MP_ENGINE_PWG:
-            if (!mp_pwg_write_scanline(&g_pwg, g_rgb_row)) {
+            if ((g_pwg_defer_rows &&
+                 !mp_spool_aux_write(g_rgb_row, g_rgb_row_bytes)) ||
+                (!g_pwg_defer_rows &&
+                 !mp_pwg_write_scanline(&g_pwg, g_rgb_row))) {
                 mp_log_3("PWG scanline failed row/written/expected",
                          (LONG)row_number, (LONG)g_job_rows_written,
                          (LONG)g_page_height);
                 g_job_failed = TRUE;
+                if (mp_duplex_requested()) g_duplex_job_failed = TRUE;
                 return FALSE;
             }
             break;
@@ -537,7 +632,10 @@ static BOOL mp_job_finish(ULONG expected_rows)
     }
     mp_log_3(label, (LONG)g_job_rows_written, (LONG)expected_rows,
              g_job_failed ? 1 : 0);
-    mp_job_cleanup();
+    if (ok && mp_duplex_requested())
+        mp_job_release_buffers();
+    else
+        mp_job_cleanup();
     return ok;
 }
 
@@ -565,13 +663,46 @@ static BOOL mp_job_pad_pwg(ULONG target_rows)
 
     for (i = 0; i < g_rgb_row_bytes; ++i) g_rgb_row[i] = 255;
     while (g_job_rows_written < target_rows) {
-        if (!mp_pwg_write_scanline(&g_pwg, g_rgb_row)) {
+        if ((g_pwg_defer_rows &&
+             !mp_spool_aux_write(g_rgb_row, g_rgb_row_bytes)) ||
+            (!g_pwg_defer_rows &&
+             !mp_pwg_write_scanline(&g_pwg, g_rgb_row))) {
             mp_log_text("PWG blank page padding failed");
             g_job_failed = TRUE;
             return FALSE;
         }
         ++g_job_rows_written;
     }
+    return TRUE;
+}
+
+static BOOL mp_pwg_replay_backside(ULONG rows)
+{
+    ULONG out_row;
+
+    if (!g_pwg_defer_rows) return TRUE;
+    if (!g_pwg_aux_open || !g_rgb_row || !g_rgb_row_bytes) return FALSE;
+
+    for (out_row = 0; out_row < rows; ++out_row) {
+        ULONG source_row = g_pwg_reverse_y ? rows - 1UL - out_row : out_row;
+
+        if (!mp_spool_aux_read(source_row * g_rgb_row_bytes,
+                               g_rgb_row, g_rgb_row_bytes)) {
+            mp_log_text("PWG backside row read failed");
+            return FALSE;
+        }
+
+        if (g_pwg_reverse_x) {
+            mp_pwg_reverse_rgb_row(g_rgb_row, g_page_width);
+        }
+
+        if (!mp_pwg_write_scanline(&g_pwg, g_rgb_row)) {
+            mp_log_text("PWG backside encode failed");
+            return FALSE;
+        }
+    }
+
+    mp_pwg_close_aux();
     return TRUE;
 }
 
@@ -592,12 +723,9 @@ static BOOL mp_row_has_ink(struct PrtInfo *pi)
 }
 
 /* Submits the just-finished job file and applies the same runaway-storm
- * bookkeeping and debug-artifact cleanup either page-submission path needs.
- * One-sided output deliberately keeps the old one-Print-Job-per-page route.
- * Duplex output instead creates one remote IPP Job and adds each Amiga page
- * as a Send-Document document; multiple-document-handling=single-document
- * makes those document boundaries behave as page boundaries on one sheet
- * stream, rather than forcing a new front side for every page.
+ * bookkeeping either page-submission path needs. One-sided output deliberately
+ * keeps the old one-Print-Job-per-page route. Duplex PWG pages stay queued in
+ * one open multi-page RaS2 file; DriverClose submits that file once.
  * rows_for_streak is the height the tiny-page-storm guard should judge
  * this submission by - the real total for a strip-accumulated page, not
  * any one band's own height. Returns the IPP operation's result. */
@@ -609,34 +737,15 @@ static LONG mp_page_submit_and_track(ULONG rows_for_streak)
     CONST_STRPTR fmt = mp_document_format();
 
     if (mp_duplex_requested()) {
-        if (g_duplex_job_failed) {
-            ipp_rc = -1;
-            result.error = ipp_rc;
-            result.http_status = 0;
-            result.ipp_status = 0xffff;
-            result.document_bytes = 0;
-            result.job_id = g_remote_job_id;
-        } else {
-            if (g_remote_job_id == 0) {
-                ipp_rc = mp_spool_ipp_create_job(&g_config, &result);
-                if (ipp_rc == 0) {
-                    g_remote_job_id = result.job_id;
-                    mp_log_3("IPP duplex Create-Job id/http/status",
-                             (LONG)g_remote_job_id, result.http_status,
-                             (LONG)result.ipp_status);
-                }
-            } else {
-                ipp_rc = 0;
-            }
-
-            if (ipp_rc == 0) {
-                ipp_rc = mp_spool_ipp_send_document(&g_config,
-                                                     g_remote_job_id,
-                                                     fname, fmt, FALSE,
-                                                     &result);
-            }
-            if (ipp_rc != 0) g_duplex_job_failed = TRUE;
-        }
+        ++g_duplex_page_count;
+        ipp_rc = 0;
+        result.error = 0;
+        result.http_status = 0;
+        result.ipp_status = 0;
+        result.document_bytes = g_job_file_bytes;
+        mp_log_3("PWG duplex page queued pages/rows/bytes",
+                 (LONG)g_duplex_page_count, (LONG)rows_for_streak,
+                 (LONG)g_job_file_bytes);
     } else {
         ipp_rc = mp_spool_ipp_submit(&g_config, fname, fmt, &result);
     }
@@ -656,7 +765,8 @@ static LONG mp_page_submit_and_track(ULONG rows_for_streak)
             g_tiny_page_streak = 0;
         }
     }
-    if (!g_config.debug) mp_spool_job_delete(fname);
+    if (!g_config.debug && !mp_duplex_requested())
+        mp_spool_job_delete(fname);
     return ipp_rc;
 }
 
@@ -711,8 +821,10 @@ static BOOL mp_page_finalize(void)
         be[1] = (UBYTE)(g_accum_height >> 16);
         be[2] = (UBYTE)(g_accum_height >> 8);
         be[3] = (UBYTE)g_accum_height;
-        if (!mp_spool_job_patch(MP_PWG_HEIGHT_FIELD_OFFSET, be, 4) ||
-            !mp_spool_job_patch(MP_PWG_ROWCOUNT_FIELD_OFFSET, be, 4)) {
+        if (!mp_spool_job_patch(g_pwg_page_header_offset +
+                                MP_PWG_HEIGHT_HEADER_OFFSET, be, 4) ||
+            !mp_spool_job_patch(g_pwg_page_header_offset +
+                                MP_PWG_ROWCOUNT_HEADER_OFFSET, be, 4)) {
             mp_log_text("Failed to patch accumulated PWG page height");
             g_job_failed = TRUE;
         }
@@ -726,14 +838,23 @@ static BOOL mp_page_finalize(void)
         be[1] = (UBYTE)(page_points_y >> 16);
         be[2] = (UBYTE)(page_points_y >> 8);
         be[3] = (UBYTE)page_points_y;
-        if (!mp_spool_job_patch(MP_PWG_PAGESIZE_Y_FIELD_OFFSET, be, 4)) {
+        if (!mp_spool_job_patch(g_pwg_page_header_offset +
+                                MP_PWG_PAGESIZE_Y_HEADER_OFFSET, be, 4)) {
             mp_log_text("Failed to patch accumulated PWG PageSizeY");
             g_job_failed = TRUE;
+        }
+
+        if (!g_job_failed && !mp_pwg_replay_backside(g_accum_height)) {
+            g_job_failed = TRUE;
+            g_duplex_job_failed = TRUE;
         }
     }
 
     job_ok = mp_job_finish(g_accum_height);
-    if (!job_ok) return FALSE;
+    if (!job_ok) {
+        if (mp_duplex_requested()) g_duplex_job_failed = TRUE;
+        return FALSE;
+    }
     return mp_page_submit_and_track(g_accum_height) == 0;
 }
 
@@ -835,14 +956,21 @@ int PRT_STDARGS DriverOpen(struct IORequest *ior)
     g_discard_aux_band_has_ink = FALSE;
     g_aux_height = 0;
     g_page_target_height = 0;
-    g_remote_job_id = 0;
     g_duplex_job_failed = FALSE;
+    g_duplex_page_count = 0;
+    g_job_file_bytes = 0;
+    g_pwg_page_header_offset = 0;
     /* Loaded once per Open() bracket (i.e. once per print job) rather than
      * per-page inside Render() case 0: case 5, which sets the PED
      * resolution/MaxDots fields below, fires BEFORE case 0 on every job's
      * first page, so it needs the real configured resolution available
      * here already, not just Init()'s one-time compiled-in default. */
     g_config_source = mp_spool_config_load(&g_config);
+    g_engine = mp_detect_engine(&g_config);
+    if (g_config.sides[0] == 't' && g_engine != MP_ENGINE_PWG) {
+        mp_log_text("Duplex requires PWG Raster; using one-sided");
+        g_config.sides[0] = 0;
+    }
     mp_log_config(&g_config, g_config_source);
     mp_log_text("Open");
     return 0;
@@ -859,18 +987,27 @@ VOID PRT_STDARGS DriverClose(struct IORequest *ior)
      * silently discarding its last (possibly only) bands. */
     if (g_page_pending) mp_page_finalize();
 
-    /* The caller does not tell Render(4) which physical page is the last
-     * one. Close the multi-document IPP Job here with the standards-defined
-     * empty final Send-Document. This releases even a partially failed Job
-     * instead of leaving it indefinitely in a pending state. */
-    if (g_remote_job_id != 0) {
-        ipp_rc = mp_spool_ipp_send_document(&g_config, g_remote_job_id,
-                                             NULL, NULL, TRUE, &result);
-        mp_log_3("IPP duplex close error/http/status",
-                 result.error, result.http_status,
-                 (LONG)result.ipp_status);
-        if (ipp_rc != 0) g_duplex_job_failed = TRUE;
-        g_remote_job_id = 0;
+    /* Duplex pages have been appended to one PWG Raster stream. Close the
+     * local file before reopening it for the one normal IPP Print-Job that
+     * carries sides=. A failed page invalidates the complete stream rather
+     * than printing a misleading partial document. */
+    if (g_duplex_page_count > 0) {
+        if (g_job_open) {
+            mp_spool_job_close();
+            g_job_open = FALSE;
+        }
+        if (!g_duplex_job_failed) {
+            ipp_rc = mp_spool_ipp_submit(&g_config, MP_JOB_FILE_PWG,
+                                          (CONST_STRPTR)"image/pwg-raster",
+                                          &result);
+            mp_log_3("IPP duplex Print-Job error/http/status",
+                     result.error, result.http_status,
+                     (LONG)result.ipp_status);
+            if (ipp_rc != 0) g_duplex_job_failed = TRUE;
+        } else {
+            mp_log_text("PWG duplex job discarded after page failure");
+        }
+        if (!g_config.debug) mp_spool_job_delete(MP_JOB_FILE_PWG);
     }
     mp_job_cleanup();
     mp_log_text("Close");
@@ -1002,8 +1139,10 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                              (LONG)encoder_height);
                 }
             }
-            if (!mp_job_begin(g_page_width, encoder_height))
+            if (!mp_job_begin(g_page_width, encoder_height)) {
+                if (mp_duplex_requested()) g_duplex_job_failed = TRUE;
                 return PDERR_BUFFERMEMORY;
+            }
 
             /* Every page tentatively starts pending; case 4 is the only
              * place that decides whether to finish now or wait for more

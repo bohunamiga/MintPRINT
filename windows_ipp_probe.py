@@ -759,17 +759,10 @@ def report(parsed, target, http_status, http_reason, response_bytes, dump_all=Fa
         warnings.append("Printer does not advertise the IPP Print-Job operation.")
     duplex_sides = [value for value in all_values(parsed, "sides-supported")
                     if value in ("two-sided-long-edge", "two-sided-short-edge")]
-    duplex_transport = (
-        OP_CREATE_JOB in operations and
-        OP_SEND_DOCUMENT in operations and
-        first_value(parsed, "multiple-document-jobs-supported") is True and
-        "single-document" in all_values(
-            parsed, "multiple-document-handling-supported")
-    )
-    if duplex_sides and not duplex_transport:
+    if duplex_sides and "image/pwg-raster" not in formats:
         warnings.append(
-            "Printer advertises duplex sides but not MintPRINT's complete "
-            "multi-document duplex transport."
+            "Printer advertises duplex sides but not the multi-page PWG "
+            "Raster format required by MintPRINT duplex."
         )
     if first_value(parsed, "printer-is-accepting-jobs") is False:
         warnings.append("Printer reports that it is not accepting jobs.")

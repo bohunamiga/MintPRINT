@@ -4,10 +4,9 @@
 /*
  * Minimal streaming PWG Raster (image/pwg-raster) encoder.
  *
- * Writes a single-page "RaS2" stream: sync word, one 1796-byte page
- * header (srgb_8: 8-bit sRGB, chunked/interleaved), then one compressed
- * row at a time as scanlines arrive - never holds more than one row in
- * memory, matching the existing JPEG encoder's streaming shape.
+ * Writes a "RaS2" stream: one sync word followed by one or more 1796-byte
+ * page headers (srgb_8: 8-bit sRGB, chunked/interleaved) and their compressed
+ * rows. Each page is still streamed one row at a time.
  *
  * The row compression is PWG/CUPS raster's PackBits-style scheme, but
  * deliberately uses only its "repeat run" half (control byte 0-127,
@@ -31,6 +30,10 @@ typedef struct MPPwgEncoder {
     unsigned long page_pts_x;
     unsigned long page_pts_y;
     unsigned long dpi;
+    unsigned long duplex;
+    unsigned long tumble;
+    unsigned long cross_feed_transform;
+    unsigned long feed_transform;
     unsigned char *scratch;
     unsigned long scratch_size;
     MPPwgWriteFn write_fn;
@@ -38,7 +41,15 @@ typedef struct MPPwgEncoder {
     int failed;
 } MPPwgEncoder;
 
-/* Byte offsets (from the very start of the page - i.e. including the
+/* Byte offsets from the start of a 1796-byte page header. The older public
+ * constants below retain their first-page/file-relative values (including
+ * the four-byte RaS2 sync) for existing callers.
+ */
+#define MP_PWG_PAGESIZE_Y_HEADER_OFFSET 356UL
+#define MP_PWG_HEIGHT_HEADER_OFFSET     376UL
+#define MP_PWG_ROWCOUNT_HEADER_OFFSET   408UL
+
+/* Byte offsets (from the very start of the first page's file - including the
  * 4-byte "RaS2" sync) of PageSizeY, cupsHeight and cupsRowCount. They are
  * written by mp_pwg_begin() using the height known at that time. A caller
  * that grows the page afterwards via mp_pwg_grow() must patch the three
@@ -49,6 +60,12 @@ typedef struct MPPwgEncoder {
 #define MP_PWG_ROWCOUNT_FIELD_OFFSET 412UL
 
 unsigned long mp_pwg_scratch_size(unsigned long width);
+
+/* Resolves PWG 5102.4 Table 9 for a reverse-side bitmap. Unknown values use
+ * the standard normal (1,1) coordinate system. */
+void mp_pwg_backside_transform(const char *sides, const char *sheet_back,
+                               long *cross_feed, long *feed);
+void mp_pwg_reverse_rgb_row(unsigned char *rgb, unsigned long width);
 /* page_pts_x/y is the PHYSICAL page size (in 1/72in points) declared in
  * the header's PageSize field - independent of width/height, which are
  * only the pixel raster's own dimensions. Pass 0 for either to fall back
@@ -66,6 +83,17 @@ int mp_pwg_begin(MPPwgEncoder *enc, unsigned long width, unsigned long height,
                  unsigned long dpi,
                  unsigned char *scratch, unsigned long scratch_size,
                  MPPwgWriteFn write_fn, void *write_ctx);
+
+/* Starts another page in the same PWG Raster stream. write_sync must be true
+ * for the first page and false for every later page. */
+int mp_pwg_begin_page(MPPwgEncoder *enc,
+                      unsigned long width, unsigned long height,
+                      unsigned long page_pts_x, unsigned long page_pts_y,
+                      unsigned long dpi, int write_sync,
+                      int duplex, int tumble,
+                      long cross_feed_transform, long feed_transform,
+                      unsigned char *scratch, unsigned long scratch_size,
+                      MPPwgWriteFn write_fn, void *write_ctx);
 int mp_pwg_write_scanline(MPPwgEncoder *enc, const unsigned char *rgb);
 int mp_pwg_finish(MPPwgEncoder *enc);
 

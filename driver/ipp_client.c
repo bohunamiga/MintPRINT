@@ -142,30 +142,6 @@ static int mp_ipp_enum_attr(UBYTE *p, ULONG cap, ULONG *off,
            mp_put32(p, cap, off, value);
 }
 
-static int mp_ipp_integer_attr(UBYTE *p, ULONG cap, ULONG *off,
-                               const char *name, ULONG value)
-{
-    ULONG nl = mp_len(name);
-    if (nl > 65535UL) return 0;
-    return mp_put8(p, cap, off, 0x21) &&
-           mp_put16(p, cap, off, (UWORD)nl) &&
-           mp_put_bytes(p, cap, off, (const UBYTE *)name, nl) &&
-           mp_put16(p, cap, off, 4) &&
-           mp_put32(p, cap, off, value);
-}
-
-static int mp_ipp_boolean_attr(UBYTE *p, ULONG cap, ULONG *off,
-                               const char *name, BOOL value)
-{
-    ULONG nl = mp_len(name);
-    if (nl > 65535UL) return 0;
-    return mp_put8(p, cap, off, 0x22) &&
-           mp_put16(p, cap, off, (UWORD)nl) &&
-           mp_put_bytes(p, cap, off, (const UBYTE *)name, nl) &&
-           mp_put16(p, cap, off, 1) &&
-           mp_put8(p, cap, off, value ? 1 : 0);
-}
-
 static int mp_member_name(UBYTE *p, ULONG cap, ULONG *off, const char *name)
 {
     ULONG nl = mp_len(name);
@@ -289,168 +265,112 @@ static LONG mp_find_body(const UBYTE *buf, ULONG len, ULONG start)
     return -1;
 }
 
-static void mp_ipp_result_init(struct MPIPPResult *result)
+LONG mp_ipp_print_document(const struct MPConfig *cfg, CONST_STRPTR filename,
+                           CONST_STRPTR document_format,
+                           struct MPIPPResult *result)
 {
-    if (!result) return;
-    result->error = -1;
-    result->http_status = 0;
-    result->ipp_status = 0xffff;
-    result->document_bytes = 0;
-    result->job_id = 0;
-}
-
-static int mp_build_printer_uri(const struct MPConfig *cfg,
-                                char *uri, ULONG cap)
-{
-    ULONG pos = 0;
-
-    uri[0] = 0;
-    if (!mp_append(uri, cap, &pos, "ipp://") ||
-        !mp_append(uri, cap, &pos, cfg->host)) return 0;
-    if (cfg->port != 631 &&
-        (!mp_append(uri, cap, &pos, ":") ||
-         !mp_append_ulong(uri, cap, &pos, cfg->port))) return 0;
-    return mp_append(uri, cap, &pos, cfg->path);
-}
-
-static int mp_ipp_begin_request(UBYTE *ipp, ULONG cap, ULONG *io,
-                                UWORD operation, const char *uri,
-                                ULONG job_id, BOOL include_job_name)
-{
-    return mp_put8(ipp, cap, io, 1) &&
-           mp_put8(ipp, cap, io, 1) &&
-           mp_put16(ipp, cap, io, operation) &&
-           mp_put32(ipp, cap, io, 1) &&
-           mp_put8(ipp, cap, io, 0x01) &&
-           mp_ipp_attr(ipp, cap, io, 0x47,
-                       "attributes-charset", "utf-8") &&
-           mp_ipp_attr(ipp, cap, io, 0x48,
-                       "attributes-natural-language", "en") &&
-           mp_ipp_attr(ipp, cap, io, 0x45, "printer-uri", uri) &&
-           (!job_id ||
-            mp_ipp_integer_attr(ipp, cap, io, "job-id", job_id)) &&
-           mp_ipp_attr(ipp, cap, io, 0x42,
-                       "requesting-user-name", "Amiga") &&
-           (!include_job_name ||
-            mp_ipp_attr(ipp, cap, io, 0x42,
-                        "job-name", "MintPRINT AmigaOS"));
-}
-
-static int mp_ipp_job_template(UBYTE *ipp, ULONG cap, ULONG *io,
-                               const struct MPConfig *cfg,
-                               BOOL multi_document)
-{
-    ULONG quality_enum = mp_quality_enum(cfg->quality);
-    ULONG media_x = 0, media_y = 0;
-    int use_media_col = cfg->media[0] && cfg->source[0] &&
-                        mp_media_dimensions_100mm(cfg->media,
-                                                  &media_x, &media_y);
-
-    if (!(cfg->media[0] || cfg->source[0] || cfg->color[0] ||
-          cfg->quality[0] || cfg->scaling[0] || cfg->sides[0] ||
-          multi_document)) return 1;
-
-    if (!mp_put8(ipp, cap, io, 0x02)) return 0;
-    if (use_media_col) {
-        if (!mp_media_col_attr(ipp, cap, io, media_x, media_y,
-                               cfg->source)) return 0;
-    } else if (cfg->media[0] &&
-               !mp_ipp_attr(ipp, cap, io, 0x44, "media", cfg->media)) {
-        return 0;
-    }
-    if (cfg->color[0] &&
-        !mp_ipp_attr(ipp, cap, io, 0x44,
-                     "print-color-mode", cfg->color)) return 0;
-    if (quality_enum &&
-        !mp_ipp_enum_attr(ipp, cap, io,
-                          "print-quality", quality_enum)) return 0;
-    if (cfg->scaling[0] &&
-        !mp_ipp_attr(ipp, cap, io, 0x44,
-                     "print-scaling", cfg->scaling)) return 0;
-    if (cfg->sides[0] &&
-        !mp_ipp_attr(ipp, cap, io, 0x44,
-                     "sides", cfg->sides)) return 0;
-    if (multi_document &&
-        !mp_ipp_attr(ipp, cap, io, 0x44,
-                     "multiple-document-handling",
-                     "single-document")) return 0;
-    return 1;
-}
-
-static int mp_ipp_find_job_id(const UBYTE *body, ULONG length,
-                              ULONG *job_id)
-{
-    ULONG pos = 8;
-
-    if (!body || length < 8 || !job_id) return 0;
-    while (pos < length) {
-        UBYTE tag = body[pos++];
-        UWORD name_len;
-        UWORD value_len;
-        const UBYTE *name;
-        const UBYTE *value;
-
-        if (tag == 0x03) break;
-        if (tag <= 0x0f) continue;
-        if (pos + 2 > length) return 0;
-        name_len = (UWORD)(((UWORD)body[pos] << 8) | body[pos + 1]);
-        pos += 2;
-        if (pos + name_len + 2 > length) return 0;
-        name = body + pos;
-        pos += name_len;
-        value_len = (UWORD)(((UWORD)body[pos] << 8) | body[pos + 1]);
-        pos += 2;
-        if (pos + value_len > length) return 0;
-        value = body + pos;
-        pos += value_len;
-
-        if (tag == 0x21 && name_len == 6 && value_len == 4 &&
-            name[0] == 'j' && name[1] == 'o' && name[2] == 'b' &&
-            name[3] == '-' && name[4] == 'i' && name[5] == 'd') {
-            *job_id = ((ULONG)value[0] << 24) |
-                      ((ULONG)value[1] << 16) |
-                      ((ULONG)value[2] << 8) |
-                      (ULONG)value[3];
-            return *job_id != 0;
-        }
-    }
-    return 0;
-}
-
-static LONG mp_final_http_body(const UBYTE *response, ULONG used,
-                               LONG *http_status)
-{
-    ULONG header_start = 0;
-
-    for (;;) {
-        LONG body = mp_find_body(response, used, header_start);
-        LONG status;
-        if (body < 0) return -1;
-        status = mp_parse_http_status(response, used, header_start);
-        if (status < 100 || status >= 200) {
-            if (http_status) *http_status = status;
-            return body;
-        }
-        header_start = (ULONG)body;
-    }
-}
-
-static LONG mp_ipp_exchange(const struct MPConfig *cfg,
-                            const UBYTE *ipp, ULONG ipp_size,
-                            BPTR fh, ULONG file_size,
-                            BOOL need_job_id,
-                            struct MPIPPResult *result)
-{
+    BPTR fh = 0;
+    LONG fsize;
     int sock = -1;
     struct sockaddr_in addr = {0};
+    static UBYTE ipp[1024];
+    ULONG io = 0;
+    static char uri[192];
+    ULONG up = 0;
     static char http[512];
     ULONG hp = 0;
     static UBYTE filebuf[8192];
     static UBYTE response[2048];
     ULONG response_used = 0;
     LONG body_pos = -1;
-    LONG status = 0;
     LONG rc = -1;
+
+    if (result) {
+        result->error = -1;
+        result->http_status = 0;
+        result->ipp_status = 0xffff;
+        result->document_bytes = 0;
+    }
+    if (!DOSBase || !cfg || !cfg->host[0] || cfg->port == 0 ||
+        cfg->path[0] != '/' || !filename || !document_format) return -1;
+
+    fh = Open(filename, MODE_OLDFILE);
+    if (!fh) { rc = -2; goto done; }
+    fsize = mp_file_size(fh);
+    if (fsize <= 0) { rc = -3; goto done; }
+    if (result) result->document_bytes = (ULONG)fsize;
+
+    /* 631 is the default/implied port for the ipp:// scheme and is safe to
+     * omit; any other port must be stated explicitly, or this URI silently
+     * claims a printer on 631 while the connection below actually goes
+     * elsewhere (the Host: header and the real connect() already get the
+     * port right - only this attribute value was missing it). */
+    uri[0] = 0;
+    if (!mp_append(uri, sizeof(uri), &up, "ipp://") ||
+        !mp_append(uri, sizeof(uri), &up, cfg->host)) {
+        rc = -4; goto done;
+    }
+    if (cfg->port != 631 &&
+        (!mp_append(uri, sizeof(uri), &up, ":") ||
+         !mp_append_ulong(uri, sizeof(uri), &up, cfg->port))) {
+        rc = -4; goto done;
+    }
+    if (!mp_append(uri, sizeof(uri), &up, cfg->path)) {
+        rc = -4; goto done;
+    }
+
+    /* IPP/1.1, Print-Job (0x0002), request-id 1. */
+    if (!mp_put8(ipp, sizeof(ipp), &io, 1) ||
+        !mp_put8(ipp, sizeof(ipp), &io, 1) ||
+        !mp_put16(ipp, sizeof(ipp), &io, 0x0002) ||
+        !mp_put32(ipp, sizeof(ipp), &io, 1) ||
+        !mp_put8(ipp, sizeof(ipp), &io, 0x01) ||
+        !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x47, "attributes-charset", "utf-8") ||
+        !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x48, "attributes-natural-language", "en") ||
+        !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x45, "printer-uri", uri) ||
+        !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x42, "requesting-user-name", "Amiga") ||
+        !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x42, "job-name", "MintPRINT AmigaOS") ||
+        !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x49, "document-format", (const char *)document_format)) {
+        rc = -5; goto done;
+    }
+
+    /* Optional Unit0 job-template attributes. Empty values preserve the
+     * already-proven minimal Print-Job path.  A tray/source choice is
+     * encoded correctly inside media-col rather than as a top-level
+     * media-source attribute. */
+    if (cfg->media[0] || cfg->source[0] || cfg->color[0] || cfg->quality[0] ||
+        cfg->scaling[0] || cfg->sides[0]) {
+        ULONG quality_enum = mp_quality_enum(cfg->quality);
+        ULONG media_x = 0, media_y = 0;
+        int use_media_col = cfg->media[0] && cfg->source[0] &&
+                            mp_media_dimensions_100mm(cfg->media,
+                                                      &media_x, &media_y);
+
+        if (!mp_put8(ipp, sizeof(ipp), &io, 0x02)) { rc = -5; goto done; }
+        if (use_media_col) {
+            if (!mp_media_col_attr(ipp, sizeof(ipp), &io, media_x, media_y,
+                                   cfg->source))
+                { rc = -5; goto done; }
+        } else if (cfg->media[0] &&
+                   !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x44, "media", cfg->media))
+            { rc = -5; goto done; }
+        if (cfg->color[0] &&
+            !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x44, "print-color-mode", cfg->color))
+            { rc = -5; goto done; }
+        if (quality_enum &&
+            !mp_ipp_enum_attr(ipp, sizeof(ipp), &io, "print-quality", quality_enum))
+            { rc = -5; goto done; }
+        if (cfg->scaling[0] &&
+            !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x44, "print-scaling", cfg->scaling))
+            { rc = -5; goto done; }
+        if (cfg->sides[0] &&
+            !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x44, "sides", cfg->sides))
+            { rc = -5; goto done; }
+    }
+
+    if (!mp_put8(ipp, sizeof(ipp), &io, 0x03)) {
+        rc = -5; goto done;
+    }
 
     http[0] = 0;
     if (!mp_append(http, sizeof(http), &hp, "POST ") ||
@@ -459,16 +379,15 @@ static LONG mp_ipp_exchange(const struct MPConfig *cfg,
         !mp_append(http, sizeof(http), &hp, cfg->host) ||
         !mp_append(http, sizeof(http), &hp, ":") ||
         !mp_append_ulong(http, sizeof(http), &hp, cfg->port) ||
-        !mp_append(http, sizeof(http), &hp,
-                   "\r\nContent-Type: application/ipp\r\nContent-Length: ") ||
-        !mp_append_ulong(http, sizeof(http), &hp, ipp_size + file_size) ||
-        !mp_append(http, sizeof(http), &hp,
-                   "\r\nConnection: close\r\n\r\n")) {
+        !mp_append(http, sizeof(http), &hp, "\r\nContent-Type: application/ipp\r\nContent-Length: ") ||
+        !mp_append_ulong(http, sizeof(http), &hp, io + (ULONG)fsize) ||
+        !mp_append(http, sizeof(http), &hp, "\r\nConnection: close\r\n\r\n")) {
         rc = -6; goto done;
     }
 
     SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
     if (!SocketBase) { rc = -7; goto done; }
+
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) { rc = -8; goto done; }
 
@@ -476,57 +395,55 @@ static LONG mp_ipp_exchange(const struct MPConfig *cfg,
     addr.sin_port = htons(cfg->port);
     addr.sin_addr.s_addr = inet_addr((STRPTR)cfg->host);
     if (addr.sin_addr.s_addr == INADDR_NONE) { rc = -9; goto done; }
-    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
-        { rc = -10; goto done; }
+    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) { rc = -10; goto done; }
 
     if (!mp_safe_send(sock, (const UBYTE *)http, hp) ||
-        !mp_safe_send(sock, ipp, ipp_size)) { rc = -11; goto done; }
+        !mp_safe_send(sock, ipp, io)) { rc = -11; goto done; }
 
-    if (fh) {
+    for (;;) {
+        LONG got = Read(fh, filebuf, sizeof(filebuf));
+        if (got < 0) { rc = -12; goto done; }
+        if (got == 0) break;
+        if (!mp_safe_send(sock, filebuf, (ULONG)got)) { rc = -13; goto done; }
+    }
+
+    {
+        ULONG header_start = 0;
+        LONG status = 0;
+
         for (;;) {
-            LONG got = Read(fh, filebuf, sizeof(filebuf));
-            if (got < 0) { rc = -12; goto done; }
-            if (got == 0) break;
-            if (!mp_safe_send(sock, filebuf, (ULONG)got))
-                { rc = -13; goto done; }
-        }
-    }
+            while (response_used < sizeof(response)) {
+                LONG got;
+                body_pos = mp_find_body(response, response_used, header_start);
+                if (body_pos >= 0 && response_used >= (ULONG)body_pos + 8UL) break;
+                got = recv(sock, (char *)(response + response_used),
+                          (LONG)(sizeof(response) - response_used), 0);
+                if (got <= 0) break;
+                response_used += (ULONG)got;
+            }
+            body_pos = mp_find_body(response, response_used, header_start);
+            if (body_pos < 0) { rc = -14; goto done; }
 
-    while (response_used < sizeof(response)) {
-        LONG got = recv(sock, (char *)(response + response_used),
-                        (LONG)(sizeof(response) - response_used), 0);
-        ULONG parsed_job_id = 0;
-        if (got <= 0) break;
-        response_used += (ULONG)got;
-        body_pos = mp_final_http_body(response, response_used, &status);
-        if (body_pos >= 0 &&
-            response_used >= (ULONG)body_pos + 8UL &&
-            (!need_job_id ||
-             mp_ipp_find_job_id(response + body_pos,
-                                response_used - (ULONG)body_pos,
-                                &parsed_job_id))) {
-            if (result && parsed_job_id) result->job_id = parsed_job_id;
-            break;
-        }
-    }
+            status = mp_parse_http_status(response, response_used, header_start);
+            if (status < 100 || status >= 200) break;
 
-    body_pos = mp_final_http_body(response, response_used, &status);
-    if (body_pos < 0 || response_used < (ULONG)body_pos + 4UL)
-        { rc = -14; goto done; }
+            /* Interim response (e.g. "100 Continue") - skip it and look
+             * for the real status line/body that follows. */
+            header_start = (ULONG)body_pos;
+        }
+
+        if (result) result->http_status = status;
+    }
+    if (body_pos < 0 || response_used < (ULONG)body_pos + 4UL) { rc = -14; goto done; }
+
     if (result) {
-        result->http_status = status;
-        result->ipp_status =
-            (UWORD)(((UWORD)response[body_pos + 2] << 8) |
-                    (UWORD)response[body_pos + 3]);
-        if (need_job_id && result->job_id == 0)
-            mp_ipp_find_job_id(response + body_pos,
-                               response_used - (ULONG)body_pos,
-                               &result->job_id);
+        result->ipp_status = (UWORD)(((UWORD)response[body_pos+2] << 8) |
+                                     (UWORD)response[body_pos+3]);
     }
-    if (status != 200) { rc = -15; goto done; }
+
+    if (result && result->http_status != 200) { rc = -15; goto done; }
     if (result && result->ipp_status >= 0x0100) { rc = -16; goto done; }
-    if (need_job_id && (!result || result->job_id == 0))
-        { rc = -17; goto done; }
+
     rc = 0;
 
 done:
@@ -535,115 +452,6 @@ done:
         CloseLibrary(SocketBase);
         SocketBase = NULL;
     }
-    if (result) result->error = rc;
-    return rc;
-}
-
-LONG mp_ipp_print_document(const struct MPConfig *cfg, CONST_STRPTR filename,
-                           CONST_STRPTR document_format,
-                           struct MPIPPResult *result)
-{
-    BPTR fh = 0;
-    LONG fsize;
-    static UBYTE ipp[1024];
-    ULONG io = 0;
-    static char uri[192];
-    LONG rc = -1;
-
-    mp_ipp_result_init(result);
-    if (!DOSBase || !cfg || !cfg->host[0] || cfg->port == 0 ||
-        cfg->path[0] != '/' || !filename || !document_format) return -1;
-    fh = Open(filename, MODE_OLDFILE);
-    if (!fh) { rc = -2; goto done; }
-    fsize = mp_file_size(fh);
-    if (fsize <= 0) { rc = -3; goto done; }
-    if (result) result->document_bytes = (ULONG)fsize;
-    if (!mp_build_printer_uri(cfg, uri, sizeof(uri)))
-        { rc = -4; goto done; }
-
-    if (!mp_ipp_begin_request(ipp, sizeof(ipp), &io,
-                              0x0002, uri, 0, TRUE) ||
-        !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x49,
-                     "document-format", (const char *)document_format) ||
-        !mp_ipp_job_template(ipp, sizeof(ipp), &io, cfg, FALSE) ||
-        !mp_put8(ipp, sizeof(ipp), &io, 0x03)) {
-        rc = -5; goto done;
-    }
-
-    rc = mp_ipp_exchange(cfg, ipp, io, fh, (ULONG)fsize, FALSE, result);
-
-done:
-    if (fh) Close(fh);
-    if (result) result->error = rc;
-    return rc;
-}
-
-LONG mp_ipp_create_job(const struct MPConfig *cfg,
-                       struct MPIPPResult *result)
-{
-    static UBYTE ipp[1024];
-    ULONG io = 0;
-    static char uri[192];
-    LONG rc;
-
-    mp_ipp_result_init(result);
-    if (!DOSBase || !cfg || !cfg->host[0] || cfg->port == 0 ||
-        cfg->path[0] != '/' || cfg->sides[0] != 't') return -1;
-    if (!mp_build_printer_uri(cfg, uri, sizeof(uri))) return -4;
-
-    if (!mp_ipp_begin_request(ipp, sizeof(ipp), &io,
-                              0x0005, uri, 0, TRUE) ||
-        !mp_ipp_job_template(ipp, sizeof(ipp), &io, cfg, TRUE) ||
-        !mp_put8(ipp, sizeof(ipp), &io, 0x03)) return -5;
-
-    rc = mp_ipp_exchange(cfg, ipp, io, 0, 0, TRUE, result);
-    if (result) result->error = rc;
-    return rc;
-}
-
-LONG mp_ipp_send_document(const struct MPConfig *cfg, ULONG job_id,
-                          CONST_STRPTR filename,
-                          CONST_STRPTR document_format,
-                          BOOL last_document,
-                          struct MPIPPResult *result)
-{
-    BPTR fh = 0;
-    LONG fsize = 0;
-    static UBYTE ipp[1024];
-    ULONG io = 0;
-    static char uri[192];
-    LONG rc = -1;
-
-    mp_ipp_result_init(result);
-    if (!DOSBase || !cfg || !cfg->host[0] || cfg->port == 0 ||
-        cfg->path[0] != '/' || job_id == 0) return -1;
-    if (filename) {
-        if (!document_format) return -1;
-        fh = Open(filename, MODE_OLDFILE);
-        if (!fh) { rc = -2; goto done; }
-        fsize = mp_file_size(fh);
-        if (fsize <= 0) { rc = -3; goto done; }
-        if (result) result->document_bytes = (ULONG)fsize;
-    } else if (!last_document) {
-        return -1;
-    }
-    if (!mp_build_printer_uri(cfg, uri, sizeof(uri)))
-        { rc = -4; goto done; }
-
-    if (!mp_ipp_begin_request(ipp, sizeof(ipp), &io,
-                              0x0006, uri, job_id, FALSE) ||
-        (fh && !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x49,
-                            "document-format",
-                            (const char *)document_format)) ||
-        !mp_ipp_boolean_attr(ipp, sizeof(ipp), &io,
-                             "last-document", last_document) ||
-        !mp_put8(ipp, sizeof(ipp), &io, 0x03)) {
-        rc = -5; goto done;
-    }
-
-    rc = mp_ipp_exchange(cfg, ipp, io, fh, (ULONG)fsize, FALSE, result);
-
-done:
     if (fh) Close(fh);
     if (result) result->error = rc;
     return rc;

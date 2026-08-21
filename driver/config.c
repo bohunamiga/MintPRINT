@@ -99,6 +99,7 @@ void mp_config_defaults(struct MPConfig *cfg)
      * when the user next saves, but an upgrade alone must not add a new
      * job-template attribute to printers that were already working. */
     cfg->sides[0] = 0;
+    mp_cfg_copy(cfg->pwg_sheet_back, sizeof(cfg->pwg_sheet_back), "normal");
 }
 
 LONG mp_config_load(struct MPConfig *cfg)
@@ -215,6 +216,18 @@ LONG mp_config_load(struct MPConfig *cfg)
                 (mp_cfg_starts(value, "two-sided-short-edge") &&
                  mp_cfg_len(value) == 20)) {
                 mp_cfg_copy(cfg->sides, sizeof(cfg->sides), value);
+            }
+            continue;
+        }
+        if (mp_cfg_starts(g_config_line, "PWG_SHEET_BACK=")) {
+            value = g_config_line + 15;
+            if ((mp_cfg_starts(value, "normal") && mp_cfg_len(value) == 6) ||
+                (mp_cfg_starts(value, "rotated") && mp_cfg_len(value) == 7) ||
+                (mp_cfg_starts(value, "flipped") && mp_cfg_len(value) == 7) ||
+                (mp_cfg_starts(value, "manual-tumble") &&
+                 mp_cfg_len(value) == 13)) {
+                mp_cfg_copy(cfg->pwg_sheet_back,
+                            sizeof(cfg->pwg_sheet_back), value);
             }
             continue;
         }

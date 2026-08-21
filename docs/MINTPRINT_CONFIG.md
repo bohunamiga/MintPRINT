@@ -27,6 +27,7 @@ The file is plain text:
     PATH=/ipp/print
     DEBUG=0
     SIDES=
+    PWG_SHEET_BACK=normal
 
 `DEBUG=0` is the default: no `T:MintPRINT-gui.log` or
 `T:MintPRINT-driver.log` is written, and the temporary rendered job is removed
@@ -43,6 +44,11 @@ not advertise duplex, Settings saves an empty `SIDES=` value so the driver
 omits the optional IPP attribute; absence still means one-sided. Old profiles
 without a `SIDES=` line preserve the historical request shape. See
 `docs/DUPLEX_PRINTING.md`.
+
+`PWG_SHEET_BACK=` records the printer's
+`pwg-raster-document-sheet-back` capability (`normal`, `rotated`, `flipped`,
+or `manual-tumble`). Query Printer writes it automatically. It controls the
+PWG reverse-side coordinate transform only; old profiles default to `normal`.
 
 Settings are reloaded for each new graphics print, so changing Unit0 does not
 require unloading the driver. Replacing `DEVS:Printers/MintPRINT` itself still

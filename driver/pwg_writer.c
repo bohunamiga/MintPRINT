@@ -43,22 +43,72 @@ static int mp_pwg_u32(MPPwgEncoder *e, unsigned long v)
     return mp_pwg_raw(e, b, 4);
 }
 
+static int mp_pwg_streq(const char *a, const char *b)
+{
+    unsigned long i = 0;
+    if (!a || !b) return 0;
+    while (a[i] && b[i] && a[i] == b[i]) ++i;
+    return a[i] == 0 && b[i] == 0;
+}
+
+void mp_pwg_backside_transform(const char *sides, const char *sheet_back,
+                               long *cross_feed, long *feed)
+{
+    int tumble = mp_pwg_streq(sides, "two-sided-short-edge");
+    long x = 1;
+    long y = 1;
+
+    if (mp_pwg_streq(sheet_back, "rotated")) {
+        if (!tumble) x = y = -1;
+    } else if (mp_pwg_streq(sheet_back, "flipped")) {
+        if (tumble) x = -1;
+        else y = -1;
+    } else if (mp_pwg_streq(sheet_back, "manual-tumble")) {
+        if (tumble) x = y = -1;
+    }
+
+    if (cross_feed) *cross_feed = x;
+    if (feed) *feed = y;
+}
+
+void mp_pwg_reverse_rgb_row(unsigned char *rgb, unsigned long width)
+{
+    unsigned long left = 0;
+    unsigned long right;
+    if (!rgb || !width) return;
+    right = width - 1UL;
+    while (left < right) {
+        unsigned char r = rgb[left * 3UL + 0UL];
+        unsigned char g = rgb[left * 3UL + 1UL];
+        unsigned char b = rgb[left * 3UL + 2UL];
+        rgb[left * 3UL + 0UL] = rgb[right * 3UL + 0UL];
+        rgb[left * 3UL + 1UL] = rgb[right * 3UL + 1UL];
+        rgb[left * 3UL + 2UL] = rgb[right * 3UL + 2UL];
+        rgb[right * 3UL + 0UL] = r;
+        rgb[right * 3UL + 1UL] = g;
+        rgb[right * 3UL + 2UL] = b;
+        ++left;
+        --right;
+    }
+}
+
 /* Writes the sync word plus the 1796-byte page header for one srgb_8
  * (8-bit sRGB, chunked/interleaved RGB) page. Field order/sizes match
  * cups_page_header2_t exactly - see the file comment. Anything not
  * relevant to a single simple page (media handling, ICC/rendering-intent
  * strings, etc.) is left zeroed, which is its documented default. */
-static int mp_pwg_write_header(MPPwgEncoder *e)
+static int mp_pwg_write_header(MPPwgEncoder *e, int write_sync)
 {
     static const unsigned char sync[4] = { 'R', 'a', 'S', '2' };
 
-    if (!mp_pwg_raw(e, sync, 4)) return 0;
+    if (write_sync && !mp_pwg_raw(e, sync, 4)) return 0;
 
     /* MediaClass, MediaColor, MediaType, OutputType: char[64] x 4 */
     if (!mp_pwg_zeros(e, 64UL * 4UL)) return 0;
 
-    /* AdvanceDistance, AdvanceMedia, Collate, CutMedia, Duplex */
-    if (!mp_pwg_zeros(e, 4UL * 5UL)) return 0;
+    /* AdvanceDistance, AdvanceMedia, Collate, CutMedia */
+    if (!mp_pwg_zeros(e, 4UL * 4UL)) return 0;
+    if (!mp_pwg_u32(e, e->duplex)) return 0;
 
     /* HWResolution[2] */
     if (!mp_pwg_u32(e, e->dpi) || !mp_pwg_u32(e, e->dpi)) return 0;
@@ -92,7 +142,8 @@ static int mp_pwg_write_header(MPPwgEncoder *e)
         !mp_pwg_u32(e, e->page_pts_y)) return 0;
 
     /* Separations, TraySwitch, Tumble */
-    if (!mp_pwg_zeros(e, 4UL * 3UL)) return 0;
+    if (!mp_pwg_zeros(e, 4UL * 2UL) ||
+        !mp_pwg_u32(e, e->tumble)) return 0;
 
     /* cupsWidth, cupsHeight */
     if (!mp_pwg_u32(e, e->width) || !mp_pwg_u32(e, e->height)) return 0;
@@ -117,8 +168,18 @@ static int mp_pwg_write_header(MPPwgEncoder *e)
     if (!mp_pwg_u32(e, 3UL)) return 0;
 
     /* cupsBorderlessScalingFactor, cupsPageSize[2], cupsImagingBBox[4]
-     * (all float), cupsInteger[16], cupsReal[16] */
-    if (!mp_pwg_zeros(e, 4UL * (1UL + 2UL + 4UL + 16UL + 16UL))) return 0;
+     * (all float) */
+    if (!mp_pwg_zeros(e, 4UL * (1UL + 2UL + 4UL))) return 0;
+
+    /* cupsInteger[0..2]: TotalPageCount (unknown), CrossFeedTransform,
+     * FeedTransform. PWG 5102.4 requires front sides to be 1/1 and reverse
+     * sides to reflect pwg-raster-document-sheet-back. */
+    if (!mp_pwg_u32(e, 0UL) ||
+        !mp_pwg_u32(e, e->cross_feed_transform) ||
+        !mp_pwg_u32(e, e->feed_transform)) return 0;
+
+    /* cupsInteger[3..15], cupsReal[16] */
+    if (!mp_pwg_zeros(e, 4UL * (13UL + 16UL))) return 0;
 
     /* cupsString[16][64], cupsMarkerType[64], cupsRenderingIntent[64],
      * cupsPageSizeName[64] */
@@ -180,6 +241,21 @@ int mp_pwg_begin(MPPwgEncoder *e, unsigned long width, unsigned long height,
                  unsigned char *scratch, unsigned long scratch_size,
                  MPPwgWriteFn write_fn, void *write_ctx)
 {
+    return mp_pwg_begin_page(e, width, height, page_pts_x, page_pts_y,
+                             dpi, 1, 0, 0, 1, 1,
+                             scratch, scratch_size,
+                             write_fn, write_ctx);
+}
+
+int mp_pwg_begin_page(MPPwgEncoder *e,
+                      unsigned long width, unsigned long height,
+                      unsigned long page_pts_x, unsigned long page_pts_y,
+                      unsigned long dpi, int write_sync,
+                      int duplex, int tumble,
+                      long cross_feed_transform, long feed_transform,
+                      unsigned char *scratch, unsigned long scratch_size,
+                      MPPwgWriteFn write_fn, void *write_ctx)
+{
     unsigned long need;
     if (!e || !width || !height || width > 65535UL || height > 65535UL ||
         !scratch || !write_fn)
@@ -192,6 +268,11 @@ int mp_pwg_begin(MPPwgEncoder *e, unsigned long width, unsigned long height,
     e->bytes_per_line = width * 3UL;
     e->rows_written = 0;
     e->dpi = dpi ? dpi : 300UL;
+    e->duplex = duplex ? 1UL : 0UL;
+    e->tumble = tumble ? 1UL : 0UL;
+    e->cross_feed_transform =
+        cross_feed_transform < 0 ? 0xffffffffUL : 1UL;
+    e->feed_transform = feed_transform < 0 ? 0xffffffffUL : 1UL;
     /* Fall back to the pixel-derived size (previous behaviour) only when
      * the caller has no real physical page size to offer. */
     e->page_pts_x = page_pts_x ? page_pts_x : (width * 72UL) / e->dpi;
@@ -202,7 +283,7 @@ int mp_pwg_begin(MPPwgEncoder *e, unsigned long width, unsigned long height,
     e->write_ctx = write_ctx;
     e->failed = 0;
 
-    return mp_pwg_write_header(e);
+    return mp_pwg_write_header(e, write_sync);
 }
 
 int mp_pwg_write_scanline(MPPwgEncoder *e, const unsigned char *rgb)

@@ -66,12 +66,14 @@ printer driver binary itself still requires a reboot before testing it.
 
 ## Duplex
 
-Query Printer reads `sides-supported` plus the IPP multi-document operation
-attributes needed by MintPRINT's page-at-a-time driver. The **Sides** selector
-is enabled only when both the chosen duplex binding and the complete transport
-are advertised. Unsupported or incomplete capability sets remain safely
-one-sided. See `docs/DUPLEX_PRINTING.md` for the protocol design and test
-matrix.
+Query Printer reads `sides-supported` and `document-format-supported`. The
+**Sides** selector is enabled only when the selected engine is PWG Raster, the
+printer accepts PWG Raster, and the requested duplex binding is advertised.
+MintPRINT then submits one multi-page PWG document with one Print-Job, which
+also supports printers that report `multiple-document-jobs-supported=false`.
+It also caches `pwg-raster-document-sheet-back` so reverse-side pixels and PWG
+header transforms match the printer's native coordinate system. Other engines
+remain safely one-sided. See `docs/DUPLEX_PRINTING.md`.
 
 ## LAN printer discovery
 
@@ -157,8 +159,8 @@ capabilities for whichever unit is currently selected to:
 
 (`N` is the selected unit's number - `Unit0.cache`, `Unit1.cache`, ...) The
 cache contains the available media/tray mappings, colour modes, quality
-levels, scaling and sides choices, detected document formats, multi-document
-support and other detected IPP values. Each unit's own config file remains what stores its selected
+levels, scaling and sides choices, detected document formats and other IPP
+values. Each unit's own config file remains what stores its selected
 defaults.
 
 When a unit is loaded (at startup, via the Unit dropdown, or File > Reload),

@@ -36,7 +36,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 8
+#define MP_DRIVER_REV 9
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -77,12 +77,31 @@ struct TagItem DriverTags[] = {
 #define MP_TINY_PAGE_ROWS 20
 #define MP_TINY_PAGE_STREAK_LIMIT 3
 
+/* Strip printing (RKM "Printer Device": Strip Printing): some apps/the OS
+ * split content taller than one Render(0) call into several same-width
+ * bands within one Open/Close, each looking like its own tiny "page" -
+ * observed for real with WordWorth (six 200-row-tall, 2478-wide bands for
+ * one document). A real single page is never this disproportionately
+ * short relative to its width at any realistic DPI or paper size, so
+ * height under a quarter of the width is the signal used to start
+ * accumulating bands into one PWG document instead of submitting each as
+ * its own tiny page that a printer with scaling=auto then blows up to
+ * fill a full sheet. Deliberately starts above MP_TINY_PAGE_ROWS so this
+ * never overlaps the ArtEffect near-blank-page runaway guard's territory
+ * above - that guard is for pages so short they are plausibly garbage;
+ * this is for bands substantial enough to be real image content, just
+ * not a complete page on their own. */
+#define MP_STRIP_ASPECT_DIVISOR 4
+
 enum { MP_ENGINE_JPEG = 0, MP_ENGINE_PWG = 1, MP_ENGINE_PDF = 2 };
 
 static ULONG g_page_width = 0;
 static ULONG g_page_height = 0;
 static ULONG g_rows_seen = 0;
 static ULONG g_tiny_page_streak = 0;
+static BOOL g_page_pending = FALSE;
+static ULONG g_accum_width = 0;
+static ULONG g_accum_height = 0;
 static BOOL g_runaway_tripped = FALSE;
 
 static BOOL g_job_open = FALSE;
@@ -416,9 +435,15 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
         }
     }
 
-    if (row_number != g_job_rows_written) {
+    /* g_rows_seen (not g_job_rows_written) is the right comparison here:
+     * it resets at the start of every Render(0), including a continuation
+     * band of an accumulating page, matching row_number's own per-band
+     * numbering (see the strip-printing accumulation in Render()'s case
+     * 0) - g_job_rows_written deliberately keeps counting across bands of
+     * the same page instead. */
+    if (row_number != g_rows_seen - 1) {
         mp_log_3("Non-sequential row got/expected/height",
-                 (LONG)row_number, (LONG)g_job_rows_written,
+                 (LONG)row_number, (LONG)(g_rows_seen - 1),
                  (LONG)g_page_height);
     }
 
@@ -456,12 +481,16 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
     return TRUE;
 }
 
-static BOOL mp_job_finish(void)
+/* expected_rows is the total row count this job's encoder should have
+ * received by now - g_page_height (this band's own height) for a normal
+ * single-band page, or g_accum_height (the true accumulated total) when
+ * finalizing a strip-printed page made of several bands. */
+static BOOL mp_job_finish(ULONG expected_rows)
 {
     BOOL ok = FALSE;
     const char *label;
 
-    if (!g_job_failed && g_job_open && g_job_rows_written == g_page_height) {
+    if (!g_job_failed && g_job_open && g_job_rows_written == expected_rows) {
         switch (g_engine) {
             case MP_ENGINE_PWG: ok = mp_pwg_finish(&g_pwg) ? TRUE : FALSE; break;
             case MP_ENGINE_PDF: ok = mp_pdf_finish(&g_pdf) ? TRUE : FALSE; break;
@@ -477,10 +506,109 @@ static BOOL mp_job_finish(void)
         case MP_ENGINE_PDF: label = "PDF end rows/expected/failed"; break;
         default:            label = "JPEG end rows/expected/failed"; break;
     }
-    mp_log_3(label, (LONG)g_job_rows_written, (LONG)g_page_height,
+    mp_log_3(label, (LONG)g_job_rows_written, (LONG)expected_rows,
              g_job_failed ? 1 : 0);
     mp_job_cleanup();
     return ok;
+}
+
+/* Continues the currently-open PWG job with another band of extra_rows
+ * more rows, without closing the file, resetting buffers, or writing a
+ * new header - the caller (Render()'s case 0) only takes this path when
+ * the new band's width matches the page already being accumulated, so
+ * g_rgb_row/g_pwg_scratch (sized from that width) are still correct. */
+static BOOL mp_job_extend_pwg(ULONG extra_rows)
+{
+    if (!g_job_open || g_job_failed) return FALSE;
+    if (!mp_pwg_grow(&g_pwg, extra_rows)) {
+        mp_log_text("PWG grow failed (accumulated page too tall)");
+        g_job_failed = TRUE;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/* height under a quarter of width is never a real complete page at any
+ * realistic DPI/paper size - see the MP_STRIP_ASPECT_DIVISOR comment. */
+static BOOL mp_looks_like_strip(ULONG width, ULONG height)
+{
+    return width > 0 && height >= MP_TINY_PAGE_ROWS &&
+           (height * (ULONG)MP_STRIP_ASPECT_DIVISOR) < width;
+}
+
+/* Submits the just-finished job file and applies the same runaway-storm
+ * bookkeeping and keep_job cleanup either page-submission path needs.
+ * rows_for_streak is the height the tiny-page-storm guard should judge
+ * this submission by - the real total for a strip-accumulated page, not
+ * any one band's own height. Returns mp_spool_ipp_submit()'s result. */
+static LONG mp_page_submit_and_track(ULONG rows_for_streak)
+{
+    struct MPIPPResult result;
+    LONG ipp_rc;
+    CONST_STRPTR fname = mp_job_filename();
+    CONST_STRPTR fmt;
+
+    switch (g_engine) {
+        case MP_ENGINE_PWG: fmt = (CONST_STRPTR)"image/pwg-raster"; break;
+        case MP_ENGINE_PDF: fmt = (CONST_STRPTR)"application/pdf"; break;
+        default:            fmt = (CONST_STRPTR)"image/jpeg"; break;
+    }
+
+    ipp_rc = mp_spool_ipp_submit(&g_config, fname, fmt, &result);
+    mp_log_3("IPP result error/http/status",
+             result.error, result.http_status, (LONG)result.ipp_status);
+
+    if (ipp_rc == 0) {
+        if (rows_for_streak < MP_TINY_PAGE_ROWS) {
+            ++g_tiny_page_streak;
+            if (g_tiny_page_streak >= MP_TINY_PAGE_STREAK_LIMIT) {
+                g_runaway_tripped = TRUE;
+                mp_log_3("Runaway tiny-page storm detected, refusing further pages this print - height/limit/streak",
+                         (LONG)rows_for_streak, (LONG)MP_TINY_PAGE_ROWS,
+                         (LONG)g_tiny_page_streak);
+            }
+        } else {
+            g_tiny_page_streak = 0;
+        }
+        if (!g_config.keep_job) mp_spool_job_delete(fname);
+    }
+    return ipp_rc;
+}
+
+/* Ends a strip-printed page that was being accumulated across several
+ * Render(0)/.../Render(4) bands (see case 0 below): patches the PWG
+ * header's declared height from the first band's (what mp_pwg_begin saw)
+ * to the true accumulated total, then finishes and submits exactly one
+ * combined document for the whole page.
+ *
+ * Every band already returned PDERR_NOERR to printer.device before this
+ * runs - deferring the submit is what makes one coherent page out of
+ * several bands instead of several tiny blown-up ones, but it also means
+ * a failure discovered here can no longer become PDERR_CANCEL for any
+ * particular Render(4) call. The outcome is still fully visible in the
+ * driver log. */
+static void mp_page_finalize(void)
+{
+    BOOL job_ok;
+
+    if (!g_page_pending) return;
+    g_page_pending = FALSE;
+
+    if (!g_job_failed) {
+        UBYTE be[4];
+        be[0] = (UBYTE)(g_accum_height >> 24);
+        be[1] = (UBYTE)(g_accum_height >> 16);
+        be[2] = (UBYTE)(g_accum_height >> 8);
+        be[3] = (UBYTE)g_accum_height;
+        if (!mp_spool_job_patch(MP_PWG_HEIGHT_FIELD_OFFSET, be, 4) ||
+            !mp_spool_job_patch(MP_PWG_ROWCOUNT_FIELD_OFFSET, be, 4)) {
+            mp_log_text("Failed to patch accumulated PWG page height");
+            g_job_failed = TRUE;
+        }
+    }
+
+    job_ok = mp_job_finish(g_accum_height);
+    if (job_ok) mp_page_submit_and_track(g_accum_height);
 }
 
 static void mp_log_row(struct PrtInfo *pi, ULONG row)
@@ -562,6 +690,7 @@ int PRT_STDARGS DriverOpen(struct IORequest *ior)
     (void)ior;
     g_tiny_page_streak = 0;
     g_runaway_tripped = FALSE;
+    g_page_pending = FALSE;
     mp_log_text("Open");
     return 0;
 }
@@ -569,6 +698,10 @@ int PRT_STDARGS DriverOpen(struct IORequest *ior)
 VOID PRT_STDARGS DriverClose(struct IORequest *ior)
 {
     (void)ior;
+    /* A strip-printed page can still be mid-accumulation when the whole
+     * print request ends normally - finalize and submit it rather than
+     * silently discarding its last (possibly only) bands. */
+    if (g_page_pending) mp_page_finalize();
     mp_job_cleanup();
     mp_log_text("Close");
 }
@@ -603,9 +736,8 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             mp_log_3("Render pre-master special/maxX/maxY", x, 4096, 6144);
             return PDERR_NOERR;
 
-        case 0: /* Master initialisation: x/y are final output dimensions. */
-            g_page_width = (ULONG)x;
-            g_page_height = (ULONG)y;
+        case 0: { /* Master initialisation: x/y are final output dimensions. */
+            BOOL continuation;
             g_rows_seen = 0;
             g_config_source = mp_spool_config_load(&g_config);
             /* ct's meaning here is undocumented in this codebase - logging
@@ -621,10 +753,48 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                 return PDERR_CANCEL;
             }
 
+            /* Same width as the page currently being accumulated -> this
+             * is another band of it, not a new page. See the
+             * MP_STRIP_ASPECT_DIVISOR comment for why a page can start
+             * accumulating in the first place. */
+            continuation = g_page_pending && g_engine == MP_ENGINE_PWG &&
+                           (ULONG)x == g_accum_width;
+
+            if (g_page_pending && !continuation) {
+                /* Different width (or anything else changed) - whatever
+                 * was accumulating is a complete page on its own; finish
+                 * it before starting the new one. */
+                mp_page_finalize();
+            }
+
+            if (continuation) {
+                g_page_width = (ULONG)x;
+                g_page_height = (ULONG)y;
+                if (!mp_job_extend_pwg((ULONG)y)) return PDERR_BUFFERMEMORY;
+                g_accum_height += (ULONG)y;
+                mp_log_3("PWG band appended width/thisHeight/accumHeight",
+                         x, y, (LONG)g_accum_height);
+                return PDERR_NOERR;
+            }
+
+            g_page_width = (ULONG)x;
+            g_page_height = (ULONG)y;
             if (!mp_job_begin(g_page_width, g_page_height))
                 return PDERR_BUFFERMEMORY;
 
+            if (g_engine == MP_ENGINE_PWG &&
+                mp_looks_like_strip(g_page_width, g_page_height)) {
+                g_page_pending = TRUE;
+                g_accum_width = g_page_width;
+                g_accum_height = g_page_height;
+                mp_log_3("PWG page looks strip-printed, deferring submit - width/height",
+                         (LONG)g_page_width, (LONG)g_page_height, 0);
+            } else {
+                g_page_pending = FALSE;
+            }
+
             return PDERR_NOERR;
+        }
 
         case 1: { /* Raster row: ct -> PrtInfo, y = output row number. */
             struct PrtInfo *pi = (struct PrtInfo *)ct;
@@ -651,40 +821,27 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
         case 4: /* Close down. ct = final error code. */
             mp_log_3("Render end status/rows/expected", ct,
                      (LONG)g_rows_seen, (LONG)g_page_height);
+
+            if (g_page_pending) {
+                /* This band belongs to a page still being accumulated -
+                 * validate it wrote what was expected (the cumulative
+                 * total so far, matching the encoder's own rows_written
+                 * vs height invariant) but do not finish/submit yet; more
+                 * bands, or the real end at Close()/a differing-width
+                 * Render(0), decide that (see case 0 above). */
+                if (ct != 0 || g_job_failed ||
+                    g_job_rows_written != g_accum_height) {
+                    g_job_failed = TRUE;
+                    mp_log_text("Band failed inside an accumulating page - it will fail at finalize");
+                }
+                return PDERR_NOERR;
+            }
+
             {
-                BOOL job_ok = mp_job_finish();
+                BOOL job_ok = mp_job_finish(g_page_height);
                 if (ct == 0 && job_ok) {
-                    struct MPIPPResult result;
-                    LONG ipp_rc;
-                    CONST_STRPTR fname = mp_job_filename();
-                    CONST_STRPTR fmt;
-                    switch (g_engine) {
-                        case MP_ENGINE_PWG: fmt = (CONST_STRPTR)"image/pwg-raster"; break;
-                        case MP_ENGINE_PDF: fmt = (CONST_STRPTR)"application/pdf"; break;
-                        default:            fmt = (CONST_STRPTR)"image/jpeg"; break;
-                    }
-                    ipp_rc = mp_spool_ipp_submit(&g_config, fname, fmt, &result);
-                    mp_log_3("IPP result error/http/status",
-                             result.error, result.http_status,
-                             (LONG)result.ipp_status);
-
-                    if (ipp_rc == 0) {
-                        if (g_page_height < MP_TINY_PAGE_ROWS) {
-                            ++g_tiny_page_streak;
-                            if (g_tiny_page_streak >= MP_TINY_PAGE_STREAK_LIMIT) {
-                                g_runaway_tripped = TRUE;
-                                mp_log_3("Runaway tiny-page storm detected, refusing further pages this print - height/limit/streak",
-                                         (LONG)g_page_height, (LONG)MP_TINY_PAGE_ROWS,
-                                         (LONG)g_tiny_page_streak);
-                            }
-                        } else {
-                            g_tiny_page_streak = 0;
-                        }
-                    }
-
-                    if (ipp_rc != 0) return PDERR_CANCEL;
-                    if (!g_config.keep_job)
-                        mp_spool_job_delete(fname);
+                    if (mp_page_submit_and_track(g_page_height) != 0)
+                        return PDERR_CANCEL;
                 }
             }
             return PDERR_NOERR;

@@ -49,6 +49,14 @@ BOOL mp_spool_job_write(const UBYTE *data, ULONG length);
 void mp_spool_job_close(void);
 void mp_spool_job_delete(CONST_STRPTR filename);
 
+/* Rewrites length bytes at byte offset `offset` (from the start of the
+ * currently-open job file), then seeks back to the end so a following
+ * mp_spool_job_write() continues appending exactly where it left off.
+ * Used to patch a PWG page header's declared height once more bands than
+ * originally expected turn out to belong to the same page - see
+ * driver_core.c's strip-printing accumulation. */
+BOOL mp_spool_job_patch(ULONG offset, const UBYTE *data, ULONG length);
+
 /* Runs mp_ipp_print_document() inside the spool process, since it also
  * needs dos.library to reopen and read back the finished job file. */
 LONG mp_spool_ipp_submit(const struct MPConfig *cfg, CONST_STRPTR filename,

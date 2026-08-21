@@ -183,8 +183,6 @@ History
          Print Mode as undetected on printers that do support them
        - MintPrint Settings' Query no longer accepts an incomplete
          response from the printer as a successful result
-       - PWG Raster page geometry fix to avoid some printers
-         mis-paginating a single print across multiple physical sheets
        - Scaling now defaults to "auto" after a Query when the printer
          offers it, for better cross-printer compatibility
        - Added a safety guard against a rare runaway "many near-blank

@@ -3225,6 +3225,7 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     num_supported_media_sources = 0;
     num_supported_print_modes = 0;
     num_supported_quality = 0;
+    num_supported_dpi = 0;
     num_media_tray_mappings = 0;
     has_media_ready = FALSE;
     printer_make_model[0] = '\0';
@@ -3300,7 +3301,7 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
             "media-source-supported", "media-ready", "printer-input-tray",
             "printer-state", "print-color-mode-supported",
             "print-scaling-supported", "print-quality-supported",
-            "printer-resolution-supported",
+            "printer-resolution-default", "printer-resolution-supported",
             "pwg-raster-document-resolution-supported",
             "document-format-supported", "printer-make-and-model", NULL
         };
@@ -3698,7 +3699,8 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
                     else if (strcmp(name, "print-scaling-supported") == 0 && value_tag == 0x44) {
                         store_value(supported_scaling, &num_supported_scaling, value);
                         printf("Added print-scaling-supported: %s\n", value);
-                    } else if ((strcmp(name, "printer-resolution-supported") == 0 ||
+                    } else if ((strcmp(name, "printer-resolution-default") == 0 ||
+                                strcmp(name, "printer-resolution-supported") == 0 ||
                                 strcmp(name, "pwg-raster-document-resolution-supported") == 0) &&
                                value_tag == 0x32 && value_len == 9) {
                         mp_add_ipp_resolution((const UBYTE *)ipp_start + pos - value_len,

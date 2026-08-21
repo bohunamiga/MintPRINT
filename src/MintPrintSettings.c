@@ -118,7 +118,7 @@ struct DiscoveredPrinter {
 
 // Define the USED macro for GCC
 #define USED __attribute__((used))
-#define MINTPRINT_SETTINGS_VERSION "1.0.4"
+#define MINTPRINT_SETTINGS_VERSION "1.0.3b"
 
 /* Visible both to AmigaOS's Version command and in the About requester. */
 static const char USED mintprint_version[] =

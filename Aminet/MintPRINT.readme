@@ -2,7 +2,7 @@ Short:        IPP/AirPrint driver and setup tool
 Author:       Darren Banfi (boingball)
 Uploader:     boingball gmail com (Darren Banfi)
 Type:         driver/print
-Version:      1.0.3
+Version:      1.0.3b
 Requires:     68000+; AmigaOS 3.1+; TCP/IP stack providing bsdsocket.library
 Architecture: m68k-amigaos >= 3.1.0
 Distribution: MIT License - see LICENSE in the source repository
@@ -147,6 +147,14 @@ repository) run against the printer from a Windows PC on the same
 network. This helps separate printer-side IPP behaviour from Amiga-side
 driver problems without requiring any Amiga-specific diagnostic tools.
 
+The tested-printer list and full report template are maintained at:
+
+  https://github.com/boingball/MintPRINT/blob/main/docs/PRINTER_COMPATIBILITY.md
+
+Please include the AmigaOS version, TCP/IP stack, document engine, DPI,
+media/tray, scaling, quality and colour mode so a successful configuration
+can be reproduced by another user.
+
 When reporting an AmigaOS 3.1 problem, please also mention that the
 MintPRINT-OS31 driver build is being used.
 
@@ -173,6 +181,20 @@ Claude.
 
 History
 -------
+
+1.0.3b Page-boundary fixes and clearer setup options.
+
+       - Fixed multi-page PWG jobs being combined into one oversized
+         raster when applications left SPECIAL_NOFORMFEED set; complete
+         media-sized pages and narrow end-of-page auxiliary dumps now
+         provide safe physical-page boundaries
+       - Preserved media-height padding for genuine WordWorth strip
+         printing, preventing short portrait documents being rotated or
+         expanded while allowing multi-page documents to print every page
+       - Added a printer-capability-backed DPI selector and renamed it DPI
+       - Replaced the debug JPEG option with a simple Debug on/off setting
+       - Added an early TCP-stack check so the driver fails safely when no
+         bsdsocket.library-compatible stack is available
 
 1.0.3  WordWorth support and more reliable printer connections.
 

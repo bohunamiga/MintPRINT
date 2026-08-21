@@ -37,7 +37,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 15
+#define MP_DRIVER_REV 16
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -98,6 +98,8 @@ static ULONG g_tiny_page_streak = 0;
 static BOOL g_page_pending = FALSE;
 static ULONG g_accum_width = 0;
 static ULONG g_accum_height = 0;
+static ULONG g_aux_height = 0;
+static ULONG g_page_target_height = 0;
 static BOOL g_runaway_tripped = FALSE;
 static BOOL g_page_had_noformfeed = FALSE;
 static BOOL g_discard_aux_band = FALSE;
@@ -785,6 +787,8 @@ int PRT_STDARGS DriverOpen(struct IORequest *ior)
     g_page_had_noformfeed = FALSE;
     g_discard_aux_band = FALSE;
     g_discard_aux_band_has_ink = FALSE;
+    g_aux_height = 0;
+    g_page_target_height = 0;
     /* Loaded once per Open() bracket (i.e. once per print job) rather than
      * per-page inside Render() case 0: case 5, which sets the PED
      * resolution/MaxDots fields below, fires BEFORE case 0 on every job's
@@ -849,6 +853,7 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
         case 0: { /* Master initialisation: x/y are final output dimensions. */
             BOOL continuation;
             ULONG encoder_height;
+            ULONG media_height = 0;
             g_rows_seen = 0;
             g_discard_aux_band = FALSE;
             g_discard_aux_band_has_ink = FALSE;
@@ -878,11 +883,10 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                 return PDERR_CANCEL;
             }
 
-            /* Wordworth can issue a final four-pixel-wide graphics dump
-             * under the same SPECIAL_NOFORMFEED page. It is an auxiliary
-             * placement, not a new sheet and not a same-width horizontal
-             * band that can be appended to our streaming raster. Ignore it
-             * while preserving the real full-width page for finalisation. */
+            /* Wordworth can issue narrow graphics dumps under the same
+             * SPECIAL_NOFORMFEED page. They cannot be appended as horizontal
+             * rows to the full-width PWG raster, so ignore their pixels but
+             * retain their total height as page-boundary evidence. */
             if (g_page_pending && g_engine == MP_ENGINE_PWG &&
                 (g_current_special & SPECIAL_NOFORMFEED) &&
                 mp_is_tiny_auxiliary_band(g_accum_width, (ULONG)x)) {
@@ -924,7 +928,7 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             encoder_height = g_page_height;
             if (mp_detect_engine(&g_config) == MP_ENGINE_PWG &&
                 (g_current_special & SPECIAL_NOFORMFEED)) {
-                ULONG media_height = mp_media_target_height(
+                media_height = mp_media_target_height(
                     g_config.media, g_page_width, g_config.resolution);
                 if (media_height > encoder_height) {
                     encoder_height = media_height;
@@ -944,6 +948,8 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             g_page_pending = TRUE;
             g_accum_width = g_page_width;
             g_accum_height = g_page_height;
+            g_aux_height = 0;
+            g_page_target_height = media_height;
             g_page_had_noformfeed =
                 (g_current_special & SPECIAL_NOFORMFEED) ? TRUE : FALSE;
 
@@ -998,8 +1004,22 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                 mp_log_text(g_discard_aux_band_has_ink
                     ? "Discarded nonblank tiny NOFORMFEED auxiliary band"
                     : "Discarded blank tiny NOFORMFEED auxiliary band");
+                if (ct == 0) {
+                    if (g_aux_height > 0xffffffffUL - g_page_height)
+                        g_aux_height = 0xffffffffUL;
+                    else
+                        g_aux_height += g_page_height;
+                }
                 g_discard_aux_band = FALSE;
                 g_discard_aux_band_has_ink = FALSE;
+                if (!g_job_failed && mp_media_page_complete(
+                        g_accum_height, g_aux_height,
+                        g_page_target_height)) {
+                    mp_log_3("PWG media boundary reached rows/aux/target",
+                             (LONG)g_accum_height, (LONG)g_aux_height,
+                             (LONG)g_page_target_height);
+                    return mp_page_finalize() ? PDERR_NOERR : PDERR_CANCEL;
+                }
                 return PDERR_NOERR;
             }
 
@@ -1016,6 +1036,13 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             if (g_engine == MP_ENGINE_PWG &&
                 (g_current_special & SPECIAL_NOFORMFEED)) {
                 g_page_had_noformfeed = TRUE;
+                if (mp_media_page_complete(g_accum_height, g_aux_height,
+                                           g_page_target_height)) {
+                    mp_log_3("PWG media boundary reached rows/aux/target",
+                             (LONG)g_accum_height, (LONG)g_aux_height,
+                             (LONG)g_page_target_height);
+                    return mp_page_finalize() ? PDERR_NOERR : PDERR_CANCEL;
+                }
                 mp_log_text("SPECIAL_NOFORMFEED set - deferring, more bands expected");
                 return PDERR_NOERR;
             }

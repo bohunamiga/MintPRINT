@@ -108,3 +108,15 @@ int mp_is_tiny_auxiliary_band(unsigned long page_width,
     return band_width > 0 && band_width <= 8UL &&
            page_width >= band_width * 64UL;
 }
+
+int mp_media_page_complete(unsigned long raster_rows,
+                           unsigned long auxiliary_rows,
+                           unsigned long target_rows)
+{
+    if (!target_rows) return 0;
+    if (raster_rows >= target_rows) return 1;
+
+    /* Written this way instead of adding the two row counts so malformed
+     * input cannot wrap an unsigned long and hide a completed page. */
+    return auxiliary_rows >= target_rows - raster_rows;
+}

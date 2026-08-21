@@ -23,4 +23,13 @@ unsigned long mp_media_target_height(const char *media,
 int mp_is_tiny_auxiliary_band(unsigned long page_width,
                               unsigned long band_width);
 
+/* Decide whether the logical vertical extent accumulated under
+ * SPECIAL_NOFORMFEED has reached the configured physical media height.
+ * Auxiliary dumps are not written into the full-width PWG raster, but their
+ * height still contributes useful page-boundary evidence. A zero target
+ * means the media was unknown, so no automatic boundary is inferred. */
+int mp_media_page_complete(unsigned long raster_rows,
+                           unsigned long auxiliary_rows,
+                           unsigned long target_rows);
+
 #endif

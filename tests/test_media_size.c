@@ -61,6 +61,17 @@ int main(void)
     assert(!mp_is_tiny_auxiliary_band(2478UL, 100UL));
     assert(!mp_is_tiny_auxiliary_band(200UL, 4UL));
 
+    /* Rev15 merged these real multi-page sequences into one over-tall PWG
+     * page. A complete full-height raster is a page even when the app leaves
+     * NOFORMFEED set; the customer's two strips plus its narrow blank tail
+     * also reach one page. The older Wordworth 2100-row strip sequence plus
+     * 962 rows of narrow auxiliary dumps is still short of A4 and must stay
+     * open so finalisation can pad it to portrait media height. */
+    assert(mp_media_page_complete(3507UL, 0UL, 3507UL));
+    assert(mp_media_page_complete(3170UL, 285UL, 3437UL));
+    assert(!mp_media_page_complete(2100UL, 962UL, 3505UL));
+    assert(!mp_media_page_complete(3507UL, 0UL, 0UL));
+
     /* The fixed Wordworth path starts PWG at the complete media height,
      * then writes/pads exactly that many rows. Its header must therefore
      * remain portrait-shaped and internally consistent. */

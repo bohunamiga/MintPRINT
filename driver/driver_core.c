@@ -36,7 +36,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 12
+#define MP_DRIVER_REV 13
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -203,6 +203,7 @@ static void mp_log_append_long(LONG value)
 
 static void mp_log_text(const char *event)
 {
+    if (!g_config.debug) return;
     mp_log_reset();
     mp_log_append("MintPRINT: ");
     mp_log_append(event);
@@ -211,6 +212,7 @@ static void mp_log_text(const char *event)
 
 static void mp_log_3(const char *event, LONG a, LONG b, LONG c)
 {
+    if (!g_config.debug) return;
     mp_log_reset();
     mp_log_append("MintPRINT: ");
     mp_log_append(event);
@@ -225,7 +227,7 @@ static void mp_log_3(const char *event, LONG a, LONG b, LONG c)
 
 static void mp_log_config(const struct MPConfig *cfg, LONG source)
 {
-    if (!cfg) return;
+    if (!cfg || !cfg->debug) return;
 
     mp_log_reset();
     mp_log_append("MintPRINT: Config source=");
@@ -241,8 +243,8 @@ static void mp_log_config(const struct MPConfig *cfg, LONG source)
     mp_log_append_long((LONG)cfg->port);
     mp_log_append(" path=");
     mp_log_append(cfg->path);
-    mp_log_append(" keepjob=");
-    mp_log_append_long(cfg->keep_job ? 1 : 0);
+    mp_log_append(" debug=");
+    mp_log_append_long(cfg->debug ? 1 : 0);
     if (cfg->media[0]) { mp_log_append(" media="); mp_log_append(cfg->media); }
     if (cfg->source[0]) { mp_log_append(" source="); mp_log_append(cfg->source); }
     if (cfg->color[0]) { mp_log_append(" color="); mp_log_append(cfg->color); }
@@ -533,7 +535,7 @@ static BOOL mp_job_extend_pwg(ULONG extra_rows)
 }
 
 /* Submits the just-finished job file and applies the same runaway-storm
- * bookkeeping and keep_job cleanup either page-submission path needs.
+ * bookkeeping and debug-artifact cleanup either page-submission path needs.
  * rows_for_streak is the height the tiny-page-storm guard should judge
  * this submission by - the real total for a strip-accumulated page, not
  * any one band's own height. Returns mp_spool_ipp_submit()'s result. */
@@ -566,8 +568,8 @@ static LONG mp_page_submit_and_track(ULONG rows_for_streak)
         } else {
             g_tiny_page_streak = 0;
         }
-        if (!g_config.keep_job) mp_spool_job_delete(fname);
     }
+    if (!g_config.debug) mp_spool_job_delete(fname);
     return ipp_rc;
 }
 
@@ -620,7 +622,7 @@ static void mp_log_row(struct PrtInfo *pi, ULONG row)
     ULONG i;
     ULONG scaled_width = 0;
 
-    if (!pi) return;
+    if (!pi || !g_config.debug) return;
 
     if (pi->pi_ScaleX) {
         for (i = 0; i < pi->pi_width; ++i)
@@ -674,11 +676,14 @@ LONG PRT_STDARGS Init(struct PrinterData *pd)
         DOSBase = NULL;
         return -1;
     }
+    g_config_source = mp_spool_config_load(&g_config);
     mp_log_text("Init");
-    mp_log_reset();
-    mp_log_append("MintPRINT: Driver revision ");
-    mp_log_append_long((LONG)MP_DRIVER_REV);
-    mp_spool_log(g_log_line);
+    if (g_config.debug) {
+        mp_log_reset();
+        mp_log_append("MintPRINT: Driver revision ");
+        mp_log_append_long((LONG)MP_DRIVER_REV);
+        mp_spool_log(g_log_line);
+    }
     return 0;
 }
 

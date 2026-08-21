@@ -85,7 +85,7 @@ extern struct GfxBase *GfxBase;
 #define GAD_SCALING_MODE 8
 #define GAD_QUALITY_MODE 9
 #define GAD_IPP_PATH 10
-#define GAD_KEEPJOB 11
+#define GAD_DEBUG 11
 #define GAD_ENGINE 12
 #define GAD_SAVE_BUTTON 13
 #define GAD_DISCOVER_BUTTON 14
@@ -429,8 +429,8 @@ struct IntuitionBase *IntuitionBase = NULL;
 struct GfxBase *GfxBase = NULL;
 char ip_buffer[256] = "192.168.0.51:80";
 char driver_path_buffer[96] = "/ipp/print";
-BOOL driver_keep_job = TRUE;
-static STRPTR keep_job_labels[] = { "Delete job JPEG", "Keep debug JPEG", NULL };
+BOOL driver_debug = FALSE;
+static STRPTR debug_labels[] = { "Off", "On", NULL };
 /* Capture resolution driver.device reports to the app and renders at.
  * 600dpi quadruples raster size/RAM use for a real quality gain; 300dpi
  * (index 0) stays the default so existing users see no behaviour change. */
@@ -751,7 +751,7 @@ static void warn_if_engine_unsupported(const char *engine) {
 static void capture_driver_settings(struct Window *win) {
     struct Gadget *g;
     char *value = NULL;
-    ULONG active = driver_keep_job ? 1UL : 0UL;
+    ULONG active = driver_debug ? 1UL : 0UL;
 
     if (!win) return;
 
@@ -772,12 +772,12 @@ static void capture_driver_settings(struct Window *win) {
         driver_path_buffer[sizeof(driver_path_buffer) - 1] = '\0';
     }
 
-    g = find_gadget_by_id(GAD_KEEPJOB);
+    g = find_gadget_by_id(GAD_DEBUG);
     if (g) {
         GT_GetGadgetAttrs(g, win, NULL,
                           GTCY_Active, (ULONG)&active,
                           TAG_DONE);
-        driver_keep_job = active ? TRUE : FALSE;
+        driver_debug = active ? TRUE : FALSE;
     }
 
     g = find_gadget_by_id(GAD_ENGINE);
@@ -903,7 +903,7 @@ static BOOL write_driver_config_file(CONST_STRPTR filename) {
     FPuts(file, line);
     snprintf(line, sizeof(line), "ENGINE=%s\n", driver_engine_buffer);
     FPuts(file, line);
-    snprintf(line, sizeof(line), "KEEPJOB=%d\n", driver_keep_job ? 1 : 0);
+    snprintf(line, sizeof(line), "DEBUG=%d\n", driver_debug ? 1 : 0);
     FPuts(file, line);
     snprintf(line, sizeof(line), "RESOLUTION=%d\n", driver_resolution);
     FPuts(file, line);
@@ -978,7 +978,7 @@ static BOOL load_driver_config(void) {
 
     strcpy(driver_path_buffer, "/ipp/print");
     strcpy(driver_engine_buffer, "jpeg");
-    driver_keep_job = TRUE;
+    driver_debug = FALSE;
     driver_resolution = 300;
     driver_media_buffer[0] = '\0';
     driver_source_buffer[0] = '\0';
@@ -1028,8 +1028,12 @@ static BOOL load_driver_config(void) {
                 strcpy(driver_engine_buffer, "pdf");
             else
                 strcpy(driver_engine_buffer, "jpeg");
+        } else if (strncmp(line, "DEBUG=", 6) == 0) {
+            driver_debug = (line[6] == '0') ? FALSE : TRUE;
         } else if (strncmp(line, "KEEPJOB=", 8) == 0) {
-            driver_keep_job = (line[8] == '0') ? FALSE : TRUE;
+            /* Backward compatibility: the old diagnostic-artifact setting
+             * maps directly to the new, broader Debug switch. */
+            driver_debug = (line[8] == '0') ? FALSE : TRUE;
         } else if (strncmp(line, "RESOLUTION=", 11) == 0) {
             driver_resolution = (atoi(line + 11) == 600) ? 600 : 300;
         } else if (strncmp(line, "MEDIA=", 6) == 0) {
@@ -1395,10 +1399,10 @@ static void apply_driver_config_to_gadgets(struct Window *win) {
                           GTST_String, (ULONG)driver_path_buffer,
                           TAG_DONE);
 
-    g = find_gadget_by_id(GAD_KEEPJOB);
+    g = find_gadget_by_id(GAD_DEBUG);
     if (g)
         GT_SetGadgetAttrs(g, win, NULL,
-                          GTCY_Active, driver_keep_job ? 1 : 0,
+                          GTCY_Active, driver_debug ? 1 : 0,
                           TAG_DONE);
 
     g = find_gadget_by_id(GAD_ENGINE);
@@ -2142,12 +2146,13 @@ void custom_printf(const char *format, ...) {
     vsnprintf(temp, 256, format, args);
     va_end(args);
 
-    /* Also append to T:MintPRINT-gui.log, best-effort. custom_printf() is
+    /* In Debug mode also append to T:MintPRINT-gui.log, best-effort.
+     * custom_printf() is
      * this program's ONLY status output (see the file comment above its
      * forward declaration) - when the on-screen box itself is the thing
      * that's broken, there is otherwise no way to see what actually
      * happened, unlike the driver's own T:MintPRINT-driver.log. */
-    {
+    if (driver_debug) {
         BPTR log_fh = Open((CONST_STRPTR)"T:MintPRINT-gui.log", MODE_READWRITE);
         if (!log_fh) log_fh = Open((CONST_STRPTR)"T:MintPRINT-gui.log", MODE_NEWFILE);
         if (log_fh) {
@@ -4665,19 +4670,19 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
         return NULL;
     }
 
-    // Keep/delete the diagnostic JPEG after a successful driver print
+    // Enable/disable diagnostic logs and retained rendered jobs
     ng.ng_LeftEdge = 130;
     ng.ng_TopEdge += 20;
     ng.ng_Width = 180;
     ng.ng_Height = 12;
-    ng.ng_GadgetText = (STRPTR)"Debug JPEG:";
-    ng.ng_GadgetID = GAD_KEEPJOB;
+    ng.ng_GadgetText = (STRPTR)"Debug:";
+    ng.ng_GadgetID = GAD_DEBUG;
     gad = CreateGadget(CYCLE_KIND, gad, &ng,
-        GTCY_Labels, (ULONG)keep_job_labels,
-        GTCY_Active, driver_keep_job ? 1 : 0,
+        GTCY_Labels, (ULONG)debug_labels,
+        GTCY_Active, driver_debug ? 1 : 0,
         TAG_DONE);
     if (!gad) {
-        printf("Failed to create debug JPEG gadget\n");
+        printf("Failed to create debug gadget\n");
         return NULL;
     }
 

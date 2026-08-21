@@ -53,8 +53,8 @@ actual paper coming out the other end.
 
 If a PDF test print comes out wrong (garbled image, printer error,
 rejected job, or a viewer refusing to even open the file), the most
-useful next artifact is `T:MintPRINT-job.pdf` (kept when `KEEPJOB=1`,
-MintPrint Settings' default) copied off the Amiga - it's a plain text+binary
+useful next artifact is `T:MintPRINT-job.pdf` (kept when `DEBUG=1`) copied off
+the Amiga - it's a plain text+binary
 file, readable in any PDF viewer or text editor for the header/object
 structure, worth checking object-by-object against this file's layout if
 something looks off.

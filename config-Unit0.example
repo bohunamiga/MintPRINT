@@ -3,7 +3,7 @@ HOST=192.168.0.51
 PORT=80
 PATH=/ipp/print
 ENGINE=jpeg
-KEEPJOB=1
+DEBUG=0
 # Capability-backed defaults written by MintPrint Settings after Query Printer.
 MEDIA=
 SOURCE=

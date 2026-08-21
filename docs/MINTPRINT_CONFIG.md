@@ -25,11 +25,15 @@ The file is plain text:
     HOST=192.168.0.51
     PORT=80
     PATH=/ipp/print
-    KEEPJOB=1
+    DEBUG=0
 
-`KEEPJOB=1` leaves `T:MintPRINT-job.jpg` behind after a successful print for
-diagnostics. `KEEPJOB=0` removes the temporary JPEG after IPP succeeds. Failed
-jobs always keep the JPEG so the submitted document can be inspected.
+`DEBUG=0` is the default: no `T:MintPRINT-gui.log` or
+`T:MintPRINT-driver.log` is written, and the temporary rendered job is removed
+after submission (including a failed submission). `DEBUG=1` enables both logs
+and keeps `T:MintPRINT-job.jpg`, `.pwg`, or `.pdf` for diagnosis.
+
+For compatibility, existing `KEEPJOB=0`/`KEEPJOB=1` profiles are still read as
+Debug Off/On. MintPrint Settings writes `DEBUG=` when the profile is next saved.
 
 Settings are reloaded for each new graphics print, so changing Unit0 does not
 require unloading the driver. Replacing `DEVS:Printers/MintPRINT` itself still

@@ -57,6 +57,14 @@ void mp_spool_job_delete(CONST_STRPTR filename);
  * strip-printing accumulation. */
 BOOL mp_spool_job_patch(ULONG offset, const UBYTE *data, ULONG length);
 
+/* A second store used only while compressed duplex backside rows must be
+ * reordered. It keeps the main PWG stream open while rows are read back in
+ * the printer's native coordinate order. */
+BOOL mp_spool_aux_open(CONST_STRPTR filename);
+BOOL mp_spool_aux_write(const UBYTE *data, ULONG length);
+BOOL mp_spool_aux_read(ULONG offset, UBYTE *data, ULONG length);
+void mp_spool_aux_close(void);
+
 /* Runs mp_ipp_print_document() inside the spool process, since it also
  * needs dos.library to reopen and read back the finished job file. */
 LONG mp_spool_ipp_submit(const struct MPConfig *cfg, CONST_STRPTR filename,

@@ -34,6 +34,10 @@ enum {
     MP_SPOOL_CMD_JOB_PATCH,
     MP_SPOOL_CMD_JOB_CLOSE,
     MP_SPOOL_CMD_JOB_DELETE,
+    MP_SPOOL_CMD_AUX_OPEN,
+    MP_SPOOL_CMD_AUX_WRITE,
+    MP_SPOOL_CMD_AUX_READ,
+    MP_SPOOL_CMD_AUX_CLOSE,
     MP_SPOOL_CMD_IPP_SUBMIT,
     MP_SPOOL_CMD_CONFIG_LOAD,
     MP_SPOOL_CMD_QUIT
@@ -96,6 +100,7 @@ static LONG mp_spool_entry(void)
     struct MPSpoolMsg *quit_msg = NULL;
     BOOL running = TRUE;
     BPTR job_fh = 0;
+    BPTR aux_fh = 0;
 
     /* This is a real AmigaDOS Process, unlike an arbitrary caller of a
      * printer.device callback. Probe bsdsocket here so socket() is never
@@ -176,6 +181,42 @@ static LONG mp_spool_entry(void)
                     m->result = DeleteFile(m->filename) ? 0 : -1;
                     break;
 
+                case MP_SPOOL_CMD_AUX_OPEN:
+                    mp_spool_proc_close_job(&aux_fh);
+                    aux_fh = Open(m->filename, MODE_NEWFILE);
+                    m->result = aux_fh ? 0 : -1;
+                    break;
+
+                case MP_SPOOL_CMD_AUX_WRITE:
+                    if (aux_fh && m->data && m->length) {
+                        ULONG done = 0;
+                        m->result = 0;
+                        while (done < m->length) {
+                            LONG n = Write(aux_fh, (APTR)(m->data + done),
+                                          (LONG)(m->length - done));
+                            if (n <= 0) { m->result = -1; break; }
+                            done += (ULONG)n;
+                        }
+                    } else {
+                        m->result = -1;
+                    }
+                    break;
+
+                case MP_SPOOL_CMD_AUX_READ:
+                    if (aux_fh && m->data && m->length &&
+                        Seek(aux_fh, (LONG)m->offset, OFFSET_BEGINNING) != -1) {
+                        LONG n = Read(aux_fh, (APTR)m->data, (LONG)m->length);
+                        m->result = (n == (LONG)m->length) ? 0 : -1;
+                    } else {
+                        m->result = -1;
+                    }
+                    break;
+
+                case MP_SPOOL_CMD_AUX_CLOSE:
+                    mp_spool_proc_close_job(&aux_fh);
+                    m->result = 0;
+                    break;
+
                 case MP_SPOOL_CMD_IPP_SUBMIT:
                     m->result = mp_ipp_print_document(m->cfg, m->filename,
                                                       m->document_format,
@@ -203,6 +244,7 @@ static LONG mp_spool_entry(void)
                      * returns to dos.library's process startup code.
                      */
                     mp_spool_proc_close_job(&job_fh);
+                    mp_spool_proc_close_job(&aux_fh);
                     m->result = 0;
                     quit_msg = m;
                     running = FALSE;
@@ -374,6 +416,40 @@ void mp_spool_job_delete(CONST_STRPTR filename)
     mp_spool_send(&m);
 }
 
+BOOL mp_spool_aux_open(CONST_STRPTR filename)
+{
+    struct MPSpoolMsg m;
+    m.cmd = MP_SPOOL_CMD_AUX_OPEN;
+    m.filename = filename;
+    return mp_spool_send(&m);
+}
+
+BOOL mp_spool_aux_write(const UBYTE *data, ULONG length)
+{
+    struct MPSpoolMsg m;
+    m.cmd = MP_SPOOL_CMD_AUX_WRITE;
+    m.data = data;
+    m.length = length;
+    return mp_spool_send(&m);
+}
+
+BOOL mp_spool_aux_read(ULONG offset, UBYTE *data, ULONG length)
+{
+    struct MPSpoolMsg m;
+    m.cmd = MP_SPOOL_CMD_AUX_READ;
+    m.offset = offset;
+    m.data = data;
+    m.length = length;
+    return mp_spool_send(&m);
+}
+
+void mp_spool_aux_close(void)
+{
+    struct MPSpoolMsg m;
+    m.cmd = MP_SPOOL_CMD_AUX_CLOSE;
+    mp_spool_send(&m);
+}
+
 LONG mp_spool_ipp_submit(const struct MPConfig *cfg, CONST_STRPTR filename,
                          CONST_STRPTR document_format,
                          struct MPIPPResult *result)
@@ -388,6 +464,7 @@ LONG mp_spool_ipp_submit(const struct MPConfig *cfg, CONST_STRPTR filename,
     m.ipp_result.http_status = 0;
     m.ipp_result.ipp_status = 0xffff;
     m.ipp_result.document_bytes = 0;
+    m.result = -1;
 
     mp_spool_send(&m); /* m.result carries mp_ipp_print_document()'s return */
 

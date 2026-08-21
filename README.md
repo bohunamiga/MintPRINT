@@ -16,7 +16,8 @@ printer.device driver plus a GUI setup tool.
 - **`src/MintPrintSettings.c`** - MintPrint Settings, the GUI setup/test
   front-end. Discovers printers on the LAN (SSDP + mDNS), queries IPP
   capabilities, supports multiple saved printer profiles (Unit0-7), offers
-  to install/update the driver, and can send a test page. See
+  capability-gated one-sided/duplex choices, offers to install/update the
+  driver, and can send a test page. See
   `docs/MINTPRINT_PREFS.md`.
 - **`windows_ipp_probe.py`** - a small Windows-runnable diagnostic script
   for isolating printer-side vs Amiga-side IPP issues without needing

@@ -41,6 +41,13 @@ int main(void)
     unsigned char *scratch, *rgb;
     struct TestSink sink;
     MPPwgEncoder encoder;
+    struct TestSink page_sink;
+    unsigned char tiny_rgb[3] = { 255, 255, 255 };
+    unsigned char tiny_scratch[32];
+    unsigned char reverse_row[9] = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+    const unsigned char *encoded_row;
+    unsigned long encoded_length;
+    long cross_feed, feed;
 
     assert(mp_media_dimensions_100mm("iso_a4_210x297mm", &x, &y));
     assert(x == 21000UL && y == 29700UL);
@@ -92,6 +99,72 @@ int main(void)
     assert(mp_pwg_finish(&encoder));
     free(rgb);
     free(scratch);
+
+    /* A multi-page PWG document has RaS2 once, then a bare 1796-byte page
+     * header for every additional page. */
+    memset(&page_sink, 0, sizeof(page_sink));
+    assert(mp_pwg_begin_page(&encoder, 1, 1, 0, 0, 300UL, 1,
+                             1, 0, 1, 1,
+                             tiny_scratch, sizeof(tiny_scratch),
+                             sink_write, &page_sink));
+    assert(page_sink.bytes == 1800UL);
+    assert(memcmp(page_sink.header, "RaS2", 4) == 0);
+    assert(be32(page_sink.header + 4UL + 272UL) == 1UL); /* Duplex */
+    assert(be32(page_sink.header + 4UL + 368UL) == 0UL); /* Tumble */
+    assert(be32(page_sink.header + 4UL + 456UL) == 1UL);
+    assert(be32(page_sink.header + 4UL + 460UL) == 1UL);
+    assert(mp_pwg_encode_scanline(&encoder, tiny_rgb,
+                                  &encoded_row, &encoded_length));
+    assert(page_sink.bytes == 1800UL);
+    assert(encoder.rows_written == 0UL);
+    assert(mp_pwg_write_encoded_scanline(&encoder, encoded_row,
+                                         encoded_length));
+    assert(mp_pwg_finish(&encoder));
+
+    memset(&page_sink, 0, sizeof(page_sink));
+    assert(mp_pwg_begin_page(&encoder, 1, 1, 0, 0, 300UL, 0,
+                             1, 1, -1, -1,
+                             tiny_scratch, sizeof(tiny_scratch),
+                             sink_write, &page_sink));
+    assert(page_sink.bytes == 1796UL);
+    assert(memcmp(page_sink.header, "RaS2", 4) != 0);
+    assert(be32(page_sink.header + MP_PWG_HEIGHT_HEADER_OFFSET) == 1UL);
+    assert(be32(page_sink.header + MP_PWG_ROWCOUNT_HEADER_OFFSET) == 1UL);
+    assert(be32(page_sink.header + 272UL) == 1UL); /* Duplex */
+    assert(be32(page_sink.header + 368UL) == 1UL); /* Tumble */
+    assert(be32(page_sink.header + 456UL) == 0xffffffffUL);
+    assert(be32(page_sink.header + 460UL) == 0xffffffffUL);
+    assert(mp_pwg_write_scanline(&encoder, tiny_rgb));
+    assert(mp_pwg_finish(&encoder));
+
+    /* PWG 5102.4 Table 9 backside coordinate systems. */
+    mp_pwg_backside_transform("two-sided-long-edge", "rotated",
+                              &cross_feed, &feed);
+    assert(cross_feed == -1 && feed == -1);
+    mp_pwg_backside_transform("two-sided-short-edge", "rotated",
+                              &cross_feed, &feed);
+    assert(cross_feed == 1 && feed == 1);
+    mp_pwg_reverse_rgb_row(reverse_row, 3UL);
+    assert(reverse_row[0] == 7 && reverse_row[1] == 8 &&
+           reverse_row[2] == 9 && reverse_row[3] == 4 &&
+           reverse_row[4] == 5 && reverse_row[5] == 6 &&
+           reverse_row[6] == 1 && reverse_row[7] == 2 &&
+           reverse_row[8] == 3);
+    mp_pwg_backside_transform("two-sided-long-edge", "flipped",
+                              &cross_feed, &feed);
+    assert(cross_feed == 1 && feed == -1);
+    mp_pwg_backside_transform("two-sided-short-edge", "flipped",
+                              &cross_feed, &feed);
+    assert(cross_feed == -1 && feed == 1);
+    mp_pwg_backside_transform("two-sided-long-edge", "manual-tumble",
+                              &cross_feed, &feed);
+    assert(cross_feed == 1 && feed == 1);
+    mp_pwg_backside_transform("two-sided-short-edge", "manual-tumble",
+                              &cross_feed, &feed);
+    assert(cross_feed == -1 && feed == -1);
+    mp_pwg_backside_transform("two-sided-long-edge", "normal",
+                              &cross_feed, &feed);
+    assert(cross_feed == 1 && feed == 1);
 
     puts("media/page geometry tests passed");
     return 0;

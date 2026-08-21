@@ -2284,7 +2284,7 @@ static void show_about(struct Window *win) {
     }
 
     snprintf(msg, sizeof(msg),
-        "MintPRINT v1.0.2a - IPP/AirPrint printing for AmigaOS\n\n"
+        "MintPRINT v1.0.2b - IPP/AirPrint printing for AmigaOS\n\n"
         "Installed driver (DEVS:Printers/MintPRINT): %s\n"
         "Bundled driver (next to this program): %s\n\n"
         "Bug reports and source:\n"
@@ -2943,11 +2943,17 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     }
     int offset = 0;
 
+    /* 631 is the default/implied port for the ipp:// scheme and is safe to
+     * omit; any other port (e.g. 80) must be stated explicitly or the URI
+     * silently claims a printer on 631 while we actually connect elsewhere.
+     * Use the configured IPP path (driver_path_buffer) rather than a
+     * hardcoded one, so this matches whatever the user's printer actually
+     * needs (e.g. Tallguy58's Canon needs /ipp/print, not /ipp). */
     char uri[128];
-    if (port == 80 || port == 631) {
-        snprintf(uri, sizeof(uri), "ipp://%s/ipp/print", ip);
+    if (port == 631) {
+        snprintf(uri, sizeof(uri), "ipp://%s%s", ip, driver_path_buffer);
     } else {
-        snprintf(uri, sizeof(uri), "ipp://%s:%d/ipp/print", ip, port);
+        snprintf(uri, sizeof(uri), "ipp://%s:%d%s", ip, port, driver_path_buffer);
     }
     int uri_len = strlen(uri);
 
@@ -2972,13 +2978,37 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     ipp_payload[offset++] = uri_len & 0xFF;
     memcpy(&ipp_payload[offset], uri, uri_len); offset += uri_len;
 
-    const char *requested = "media-source-supported,media-ready,printer-input-tray,printer-state,print-color-mode-supported,print-scaling-supported,print-quality-supported,document-format-supported,printer-make-and-model";
-    int requested_len = strlen(requested);
-    ipp_payload[offset++] = 0x44; ipp_payload[offset++] = 0x00; ipp_payload[offset++] = 0x12;
-    memcpy(&ipp_payload[offset], "requested-attributes", 18); offset += 18;
-    ipp_payload[offset++] = (requested_len >> 8) & 0xFF;
-    ipp_payload[offset++] = requested_len & 0xFF;
-    memcpy(&ipp_payload[offset], requested, requested_len); offset += requested_len;
+    /* requested-attributes is 1setOf keyword (RFC 8011 3.1.7): each
+     * attribute name is its own value, not one comma-joined string - a
+     * single keyword value can't hold multiple keywords. The first value
+     * carries the attribute's own name; every value after it is an
+     * "additional value" and repeats with name-length 0.
+     * (This also used to send the name itself truncated to 18 bytes -
+     * "requested-attribut" - instead of the full 20-byte
+     * "requested-attributes", which alone was enough to make a strict
+     * printer not recognise the filter at all.) */
+    {
+        static const char *mp_requested_attrs[] = {
+            "media-source-supported", "media-ready", "printer-input-tray",
+            "printer-state", "print-color-mode-supported",
+            "print-scaling-supported", "print-quality-supported",
+            "document-format-supported", "printer-make-and-model", NULL
+        };
+        int i;
+        for (i = 0; mp_requested_attrs[i]; i++) {
+            int attr_len = strlen(mp_requested_attrs[i]);
+            ipp_payload[offset++] = 0x44; // keyword
+            if (i == 0) {
+                ipp_payload[offset++] = 0x00; ipp_payload[offset++] = 0x14;
+                memcpy(&ipp_payload[offset], "requested-attributes", 20); offset += 20;
+            } else {
+                ipp_payload[offset++] = 0x00; ipp_payload[offset++] = 0x00; // additional value
+            }
+            ipp_payload[offset++] = (attr_len >> 8) & 0xFF;
+            ipp_payload[offset++] = attr_len & 0xFF;
+            memcpy(&ipp_payload[offset], mp_requested_attrs[i], attr_len); offset += attr_len;
+        }
+    }
     /* No print-scaling (or any other Job Template attribute) belongs here -
      * this is a capability query, not a job. A stray "print-scaling"
      * keyword used to get appended to this request's operation-attributes
@@ -2998,8 +3028,8 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
         return -1;
     }
     snprintf(http_header, 256,
-             "POST /ipp HTTP/1.1\r\nHost: %s\r\nContent-Type: application/ipp\r\nContent-Length: %d\r\nConnection: close\r\n\r\n",
-             ip, offset);
+             "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/ipp\r\nContent-Length: %d\r\nConnection: close\r\n\r\n",
+             driver_path_buffer, ip, offset);
 
     // Open socket
     int sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -3410,6 +3440,24 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
 
     if (attributes_processed >= max_attributes) {
         printf("Reached maximum attribute limit (%d), aborting parsing\n", max_attributes);
+    }
+
+    /* A response that parses but yields nothing usable (no formats, no
+     * quality, no scaling, no media, no print modes, no make/model) is not
+     * a printer that genuinely supports nothing - every real IPP
+     * Everywhere/AirPrint printer reports at least some of these. Treat it
+     * as a failed query so perform_query_flow() retries the next
+     * port/attempt instead of caching an empty result. */
+    if (num_supported_formats == 0 && num_supported_quality == 0 &&
+        num_supported_scaling == 0 && num_supported_media == 0 &&
+        num_supported_print_modes == 0 && printer_make_model[0] == '\0') {
+        printf("Printer reported no usable capabilities - treating as a failed query\n");
+        snprintf(response, maxlen, "Printer reported no capabilities");
+        CloseSocket(sockfd);
+        free(name);
+        free(value);
+        operation_in_progress = FALSE;
+        return -1;
     }
 
     int media_index = 0;

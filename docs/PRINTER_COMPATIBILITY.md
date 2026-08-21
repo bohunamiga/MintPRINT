@@ -173,7 +173,8 @@ a named community hardware result so far.
 
 In the standard AmigaOS Printer Preferences editor, select **MintPRINT** as the
 Printer Type. For the normal OS 3.5+/3.2 driver, that is the only setting in
-this editor that MintPRINT itself requires.
+that particular editor that MintPRINT itself requires. Do not confuse it with
+the separate **Graphics Printer Preferences** editor described below.
 
 The normal driver declares `PRTA_NoIO`, so Printer Port, device name and Device
 Unit are not used. MintPRINT sends over IPP using the host, port and path saved
@@ -190,6 +191,43 @@ Printer Preferences values do not configure MintPRINT's IPP output.
 
 This does not apply unchanged to the separate AmigaOS 3.1 classic build, which
 cannot use the V44 `PRTA_NoIO` tag and still needs dedicated hardware testing.
+
+### AmigaOS Graphics Printer Preferences
+
+These settings **do affect graphics printing**. AmigaOS `printer.device`
+applies them while converting an application's bitmap into the raster rows
+delivered to MintPRINT. An application can override them by supplying its own
+`PRD_DUMPRPORT` dimensions and special flags. The controls and their effects
+are described in the
+[AmigaOS Workbench printer manual](https://wiki.amigaos.net/wiki/AmigaOS_Manual%3A_Workbench_Printers#PrinterGfx_Preferences_Editor).
+
+Recommended AmigaOS 3.2.3 baseline:
+
+```text
+Dithering:       Ordered
+Scaling:         Fraction
+Image:           Positive
+Aspect:          Horizontal (portrait)
+Shade:           Color
+Density:         1
+Smoothing:       Off
+Center Picture:  Off
+Color correction: Off
+Left Edge:       0
+Limits Type:     Ignore
+```
+
+The important difference from the OS defaults shown in the current test is
+**Shade**: `Black & White` converts the graphics to black and white before
+MintPRINT receives it; use `Color` for colour output. Threshold only applies in
+Black & White mode. `Horizontal` means portrait and `Vertical` means landscape.
+`Limits=Ignore` leaves the requested print size under application control and
+avoids an additional hidden width/height constraint.
+
+PrinterGfx Density is not MintPRINT's IPP resolution selector. MintPRINT's DPI
+comes from MintPrint Settings; keep the OS density at `1` as the baseline and
+record application-specific density overrides such as those required by
+Wordworth and ArtEffect.
 
 ## Application compatibility
 

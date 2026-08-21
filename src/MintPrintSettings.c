@@ -85,13 +85,14 @@ extern struct GfxBase *GfxBase;
 #define GAD_SCALING_MODE 8
 #define GAD_QUALITY_MODE 9
 #define GAD_IPP_PATH 10
-#define GAD_KEEPJOB 11
+#define GAD_DEBUG 11
 #define GAD_ENGINE 12
 #define GAD_SAVE_BUTTON 13
 #define GAD_DISCOVER_BUTTON 14
 #define GAD_UNIT_DROPDOWN 15
 #define GAD_SET_ACTIVE_BUTTON 16
 #define GAD_MODEL_DISPLAY 17
+#define GAD_RESOLUTION 18
 
 // Discovery selection dialog gadget IDs (separate window/gadget list)
 #define GAD_DISC_CYCLE  1
@@ -167,6 +168,10 @@ int num_supported_orientations = 0;
 char supported_print_modes[MAX_VALUES][MAX_ATTR_LEN];
 int num_supported_print_modes = 0;
 
+#define MP_MAX_DPI_OPTIONS 2
+int supported_dpi[MP_MAX_DPI_OPTIONS];
+int num_supported_dpi = 0;
+
 char *print_mode_options[MAX_PRINT_MODES];
 int num_print_modes = 0;
 static char initial_print_mode_value[MAX_ATTR_LEN] = "Not Detected";
@@ -200,6 +205,9 @@ static STRPTR mp_print_mode_label_ptrs[MAX_VALUES + 2];
 
 static char mp_quality_label_storage[MAX_VALUES + 1][32];
 static STRPTR mp_quality_label_ptrs[MAX_VALUES + 2];
+
+static char mp_dpi_label_storage[MP_MAX_DPI_OPTIONS + 1][16];
+static STRPTR mp_dpi_label_ptrs[MP_MAX_DPI_OPTIONS + 2];
 
 static char mp_unit_label_storage[MAX_UNITS][MP_UNIT_LABEL_LEN];
 static STRPTR mp_unit_label_ptrs[MAX_UNITS + 1];
@@ -252,6 +260,65 @@ void store_value(char dest[MAX_VALUES][MAX_ATTR_LEN], int *count, const char *va
 void store_int_value(int dest[MAX_VALUES], int *count, int val) {
     if (*count >= MAX_VALUES) return;
     dest[(*count)++] = val;
+}
+
+static void mp_add_supported_dpi(int dpi) {
+    int i;
+
+    if (dpi != 300 && dpi != 600) return;
+    for (i = 0; i < num_supported_dpi; ++i) {
+        if (supported_dpi[i] == dpi) return;
+    }
+    if (num_supported_dpi < MP_MAX_DPI_OPTIONS)
+        supported_dpi[num_supported_dpi++] = dpi;
+}
+
+static int mp_normalise_ipp_dpi(ULONG resolution, UBYTE units) {
+    ULONG dpi = resolution;
+
+    if (units == 4) {
+        /* IPP dpcm -> dpi. Tolerances below absorb the integer rounding
+         * used by printers for 118dpcm/236dpcm (roughly 300/600dpi). */
+        dpi = (resolution * 254UL + 50UL) / 100UL;
+    } else if (units != 3) {
+        return 0;
+    }
+
+    if (dpi >= 295UL && dpi <= 305UL) return 300;
+    if (dpi >= 595UL && dpi <= 605UL) return 600;
+    return 0;
+}
+
+static void mp_add_ipp_resolution(const UBYTE *raw, int value_len) {
+    ULONG xres;
+    ULONG yres;
+    int xdpi;
+    int ydpi;
+
+    if (!raw || value_len != 9) return;
+
+    xres = ((ULONG)raw[0] << 24) | ((ULONG)raw[1] << 16) |
+           ((ULONG)raw[2] << 8) | (ULONG)raw[3];
+    yres = ((ULONG)raw[4] << 24) | ((ULONG)raw[5] << 16) |
+           ((ULONG)raw[6] << 8) | (ULONG)raw[7];
+    xdpi = mp_normalise_ipp_dpi(xres, raw[8]);
+    ydpi = mp_normalise_ipp_dpi(yres, raw[8]);
+
+    /* The driver currently has one DPI setting for both axes, so do not
+     * advertise asymmetric printer resolutions it cannot represent. */
+    if (xdpi && xdpi == ydpi) {
+        mp_add_supported_dpi(xdpi);
+        printf("Printer supports %d DPI\n", xdpi);
+    }
+}
+
+static int mp_dpi_active_index(int dpi) {
+    int i;
+
+    for (i = 0; i < num_supported_dpi; ++i) {
+        if (supported_dpi[i] == dpi) return i;
+    }
+    return 0;
 }
 
 // Media Size Helper
@@ -362,8 +429,14 @@ struct IntuitionBase *IntuitionBase = NULL;
 struct GfxBase *GfxBase = NULL;
 char ip_buffer[256] = "192.168.0.51:80";
 char driver_path_buffer[96] = "/ipp/print";
-BOOL driver_keep_job = TRUE;
-static STRPTR keep_job_labels[] = { "Delete job JPEG", "Keep debug JPEG", NULL };
+BOOL driver_debug = FALSE;
+static STRPTR debug_labels[] = { "Off", "On", NULL };
+/* Capture resolution driver.device reports to the app and renders at.
+ * 600dpi quadruples raster size/RAM use for a real quality gain; 300dpi
+ * (index 0) stays the default so existing users see no behaviour change. */
+STRPTR *resolution_labels = mp_dpi_label_ptrs;
+static char initial_dpi_value[16] = "300 dpi";
+int driver_resolution = 300;
 char driver_engine_buffer[32] = "jpeg";
 #define MP_ENGINE_MAX 3
 
@@ -678,7 +751,7 @@ static void warn_if_engine_unsupported(const char *engine) {
 static void capture_driver_settings(struct Window *win) {
     struct Gadget *g;
     char *value = NULL;
-    ULONG active = driver_keep_job ? 1UL : 0UL;
+    ULONG active = driver_debug ? 1UL : 0UL;
 
     if (!win) return;
 
@@ -699,12 +772,12 @@ static void capture_driver_settings(struct Window *win) {
         driver_path_buffer[sizeof(driver_path_buffer) - 1] = '\0';
     }
 
-    g = find_gadget_by_id(GAD_KEEPJOB);
+    g = find_gadget_by_id(GAD_DEBUG);
     if (g) {
         GT_GetGadgetAttrs(g, win, NULL,
                           GTCY_Active, (ULONG)&active,
                           TAG_DONE);
-        driver_keep_job = active ? TRUE : FALSE;
+        driver_debug = active ? TRUE : FALSE;
     }
 
     g = find_gadget_by_id(GAD_ENGINE);
@@ -720,6 +793,16 @@ static void capture_driver_settings(struct Window *win) {
             driver_engine_buffer[sizeof(driver_engine_buffer) - 1] = '\0';
         }
         warn_if_engine_unsupported(driver_engine_buffer);
+    }
+
+    g = find_gadget_by_id(GAD_RESOLUTION);
+    if (g) {
+        ULONG res_active = 0;
+        GT_GetGadgetAttrs(g, win, NULL,
+                          GTCY_Active, (ULONG)&res_active,
+                          TAG_DONE);
+        if (res_active < (ULONG)num_supported_dpi)
+            driver_resolution = supported_dpi[res_active];
     }
 
     /* Persist the capability-backed choices currently visible in the GUI. */
@@ -820,7 +903,9 @@ static BOOL write_driver_config_file(CONST_STRPTR filename) {
     FPuts(file, line);
     snprintf(line, sizeof(line), "ENGINE=%s\n", driver_engine_buffer);
     FPuts(file, line);
-    snprintf(line, sizeof(line), "KEEPJOB=%d\n", driver_keep_job ? 1 : 0);
+    snprintf(line, sizeof(line), "DEBUG=%d\n", driver_debug ? 1 : 0);
+    FPuts(file, line);
+    snprintf(line, sizeof(line), "RESOLUTION=%d\n", driver_resolution);
     FPuts(file, line);
     snprintf(line, sizeof(line), "MEDIA=%s\n", driver_media_buffer);
     FPuts(file, line);
@@ -893,7 +978,8 @@ static BOOL load_driver_config(void) {
 
     strcpy(driver_path_buffer, "/ipp/print");
     strcpy(driver_engine_buffer, "jpeg");
-    driver_keep_job = TRUE;
+    driver_debug = FALSE;
+    driver_resolution = 300;
     driver_media_buffer[0] = '\0';
     driver_source_buffer[0] = '\0';
     driver_color_buffer[0] = '\0';
@@ -942,8 +1028,14 @@ static BOOL load_driver_config(void) {
                 strcpy(driver_engine_buffer, "pdf");
             else
                 strcpy(driver_engine_buffer, "jpeg");
+        } else if (strncmp(line, "DEBUG=", 6) == 0) {
+            driver_debug = (line[6] == '0') ? FALSE : TRUE;
         } else if (strncmp(line, "KEEPJOB=", 8) == 0) {
-            driver_keep_job = (line[8] == '0') ? FALSE : TRUE;
+            /* Backward compatibility: the old diagnostic-artifact setting
+             * maps directly to the new, broader Debug switch. */
+            driver_debug = (line[8] == '0') ? FALSE : TRUE;
+        } else if (strncmp(line, "RESOLUTION=", 11) == 0) {
+            driver_resolution = (atoi(line + 11) == 600) ? 600 : 300;
         } else if (strncmp(line, "MEDIA=", 6) == 0) {
             strncpy(driver_media_buffer, line + 6, sizeof(driver_media_buffer) - 1);
             driver_media_buffer[sizeof(driver_media_buffer) - 1] = '\0';
@@ -1003,6 +1095,9 @@ static void seed_saved_option_labels(void) {
     else
         strcpy(initial_quality_value, "Not Detected");
 
+    snprintf(initial_dpi_value, sizeof(initial_dpi_value), "%d dpi",
+             driver_resolution);
+
     mp_media_label_ptrs[0] = mp_media_label_storage[0];
     strncpy(mp_media_label_storage[0], initial_media_value,
             sizeof(mp_media_label_storage[0]) - 1);
@@ -1027,10 +1122,17 @@ static void seed_saved_option_labels(void) {
     mp_quality_label_storage[0][sizeof(mp_quality_label_storage[0]) - 1] = '\0';
     mp_quality_label_ptrs[1] = NULL;
 
+    mp_dpi_label_ptrs[0] = mp_dpi_label_storage[0];
+    strncpy(mp_dpi_label_storage[0], initial_dpi_value,
+            sizeof(mp_dpi_label_storage[0]) - 1);
+    mp_dpi_label_storage[0][sizeof(mp_dpi_label_storage[0]) - 1] = '\0';
+    mp_dpi_label_ptrs[1] = NULL;
+
     media_dropdown_items = mp_media_label_ptrs;
     print_mode_labels = mp_print_mode_label_ptrs;
     scaling_mode_labels = mp_scaling_label_ptrs;
     quality_mode_labels = mp_quality_label_ptrs;
+    resolution_labels = mp_dpi_label_ptrs;
 }
 
 static void apply_saved_option_state(struct Window *win) {
@@ -1066,6 +1168,16 @@ static void apply_saved_option_state(struct Window *win) {
                               GTCY_Labels, (ULONG)quality_mode_labels,
                               GTCY_Active, 0,
                               GA_Disabled, driver_quality_buffer[0] ? FALSE : TRUE,
+                              TAG_DONE);
+    }
+
+    if (num_supported_dpi == 0) {
+        g = find_gadget_by_id(GAD_RESOLUTION);
+        if (g)
+            GT_SetGadgetAttrs(g, win, NULL,
+                              GTCY_Labels, (ULONG)resolution_labels,
+                              GTCY_Active, 0,
+                              GA_Disabled, TRUE,
                               TAG_DONE);
     }
 
@@ -1287,16 +1399,22 @@ static void apply_driver_config_to_gadgets(struct Window *win) {
                           GTST_String, (ULONG)driver_path_buffer,
                           TAG_DONE);
 
-    g = find_gadget_by_id(GAD_KEEPJOB);
+    g = find_gadget_by_id(GAD_DEBUG);
     if (g)
         GT_SetGadgetAttrs(g, win, NULL,
-                          GTCY_Active, driver_keep_job ? 1 : 0,
+                          GTCY_Active, driver_debug ? 1 : 0,
                           TAG_DONE);
 
     g = find_gadget_by_id(GAD_ENGINE);
     if (g)
         GT_SetGadgetAttrs(g, win, NULL,
                           GTCY_Active, mp_engine_active_index(),
+                          TAG_DONE);
+
+    g = find_gadget_by_id(GAD_RESOLUTION);
+    if (g)
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GTCY_Active, (ULONG)mp_dpi_active_index(driver_resolution),
                           TAG_DONE);
 
     g = find_gadget_by_id(GAD_MODEL_DISPLAY);
@@ -1431,6 +1549,55 @@ void update_print_mode_dropdown(struct Window *win) {
                           GTCY_Labels, (ULONG)print_mode_labels,
                           GTCY_Active, 0,
                           GA_Disabled, num_supported_print_modes > 0 ? FALSE : TRUE,
+                          TAG_DONE);
+        RefreshGList(g, win, NULL, 1);
+        GT_RefreshWindow(win, NULL);
+    }
+}
+
+void update_dpi_dropdown(struct Window *win) {
+    struct Gadget *g;
+    int i;
+    int active = 0;
+    int count = num_supported_dpi;
+
+    if (count <= 0) {
+        /* Do not invent 600dpi support when the printer reports no
+         * resolution capability. Keep the historical safe default visible
+         * but disable the selector until a Query returns real values. */
+        driver_resolution = 300;
+        count = 1;
+        mp_dpi_label_ptrs[0] = mp_dpi_label_storage[0];
+        strcpy(mp_dpi_label_storage[0], "300 dpi");
+    } else {
+        for (i = 0; i < count; ++i) {
+            mp_dpi_label_ptrs[i] = mp_dpi_label_storage[i];
+            snprintf(mp_dpi_label_storage[i],
+                     sizeof(mp_dpi_label_storage[i]),
+                     "%d dpi", supported_dpi[i]);
+            if (supported_dpi[i] == driver_resolution) active = i;
+        }
+
+        if (supported_dpi[active] != driver_resolution) {
+            for (i = 0; i < count; ++i) {
+                if (supported_dpi[i] == 300) {
+                    active = i;
+                    break;
+                }
+            }
+            driver_resolution = supported_dpi[active];
+        }
+    }
+
+    mp_dpi_label_ptrs[count] = NULL;
+    resolution_labels = mp_dpi_label_ptrs;
+
+    g = find_gadget_by_id(GAD_RESOLUTION);
+    if (g && win) {
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GTCY_Labels, (ULONG)resolution_labels,
+                          GTCY_Active, (ULONG)active,
+                          GA_Disabled, num_supported_dpi > 0 ? FALSE : TRUE,
                           TAG_DONE);
         RefreshGList(g, win, NULL, 1);
         GT_RefreshWindow(win, NULL);
@@ -1590,6 +1757,7 @@ static void mp_cache_clear_capabilities(void) {
     num_supported_media_sources = 0;
     num_supported_print_modes = 0;
     num_supported_quality = 0;
+    num_supported_dpi = 0;
     num_media_tray_mappings = 0;
     has_media_ready = FALSE;
 }
@@ -1666,6 +1834,11 @@ static BOOL mp_cache_write_file(CONST_STRPTR filename,
 
     for (i = 0; i < num_supported_quality; ++i) {
         snprintf(line, sizeof(line), "QUALITY=%s\n", supported_quality[i]);
+        FPuts(fh, line);
+    }
+
+    for (i = 0; i < num_supported_dpi; ++i) {
+        snprintf(line, sizeof(line), "DPI=%d\n", supported_dpi[i]);
         FPuts(fh, line);
     }
 
@@ -1814,6 +1987,8 @@ static BOOL mp_cache_load_file(CONST_STRPTR filename) {
                               mp_cap_cache_line + 8);
                 num_supported_quality++;
             }
+        } else if (strncmp(mp_cap_cache_line, "DPI=", 4) == 0) {
+            mp_add_supported_dpi(atoi(mp_cap_cache_line + 4));
         }
     }
 
@@ -1852,6 +2027,7 @@ static void apply_cached_capabilities(struct Window *win) {
     update_print_mode_dropdown(win);
     update_scaling_dropdown(win);
     update_quality_dropdown(win);
+    update_dpi_dropdown(win);
 
     /* Put the user's saved Unit0 choices back on top of the available lists. */
     apply_job_defaults_to_gadgets(win);
@@ -1970,12 +2146,13 @@ void custom_printf(const char *format, ...) {
     vsnprintf(temp, 256, format, args);
     va_end(args);
 
-    /* Also append to T:MintPRINT-gui.log, best-effort. custom_printf() is
+    /* In Debug mode also append to T:MintPRINT-gui.log, best-effort.
+     * custom_printf() is
      * this program's ONLY status output (see the file comment above its
      * forward declaration) - when the on-screen box itself is the thing
      * that's broken, there is otherwise no way to see what actually
      * happened, unlike the driver's own T:MintPRINT-driver.log. */
-    {
+    if (driver_debug) {
         BPTR log_fh = Open((CONST_STRPTR)"T:MintPRINT-gui.log", MODE_READWRITE);
         if (!log_fh) log_fh = Open((CONST_STRPTR)"T:MintPRINT-gui.log", MODE_NEWFILE);
         if (log_fh) {
@@ -3053,6 +3230,7 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     num_supported_media_sources = 0;
     num_supported_print_modes = 0;
     num_supported_quality = 0;
+    num_supported_dpi = 0;
     num_media_tray_mappings = 0;
     has_media_ready = FALSE;
     printer_make_model[0] = '\0';
@@ -3128,6 +3306,8 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
             "media-source-supported", "media-ready", "printer-input-tray",
             "printer-state", "print-color-mode-supported",
             "print-scaling-supported", "print-quality-supported",
+            "printer-resolution-default", "printer-resolution-supported",
+            "pwg-raster-document-resolution-supported",
             "document-format-supported", "printer-make-and-model", NULL
         };
         int i;
@@ -3524,6 +3704,12 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
                     else if (strcmp(name, "print-scaling-supported") == 0 && value_tag == 0x44) {
                         store_value(supported_scaling, &num_supported_scaling, value);
                         printf("Added print-scaling-supported: %s\n", value);
+                    } else if ((strcmp(name, "printer-resolution-default") == 0 ||
+                                strcmp(name, "printer-resolution-supported") == 0 ||
+                                strcmp(name, "pwg-raster-document-resolution-supported") == 0) &&
+                               value_tag == 0x32 && value_len == 9) {
+                        mp_add_ipp_resolution((const UBYTE *)ipp_start + pos - value_len,
+                                              value_len);
                     } else if (strcmp(name, "print-quality-supported") == 0 && value_tag == 0x21) {
                         int quality = atoi(value);
                         if (num_supported_quality < MAX_QUALITIES) {
@@ -3663,6 +3849,7 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     if (window) update_scaling_dropdown(window);
     ensure_quality_defaults();
     if (window) update_quality_dropdown(window);
+    if (window) update_dpi_dropdown(window);
     if (window) update_engine_dropdown(window);
 
     if (printer_make_model[0]) {
@@ -4483,19 +4670,19 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
         return NULL;
     }
 
-    // Keep/delete the diagnostic JPEG after a successful driver print
+    // Enable/disable diagnostic logs and retained rendered jobs
     ng.ng_LeftEdge = 130;
     ng.ng_TopEdge += 20;
     ng.ng_Width = 180;
     ng.ng_Height = 12;
-    ng.ng_GadgetText = (STRPTR)"Debug JPEG:";
-    ng.ng_GadgetID = GAD_KEEPJOB;
+    ng.ng_GadgetText = (STRPTR)"Debug:";
+    ng.ng_GadgetID = GAD_DEBUG;
     gad = CreateGadget(CYCLE_KIND, gad, &ng,
-        GTCY_Labels, (ULONG)keep_job_labels,
-        GTCY_Active, driver_keep_job ? 1 : 0,
+        GTCY_Labels, (ULONG)debug_labels,
+        GTCY_Active, driver_debug ? 1 : 0,
         TAG_DONE);
     if (!gad) {
-        printf("Failed to create debug JPEG gadget\n");
+        printf("Failed to create debug gadget\n");
         return NULL;
     }
 
@@ -4543,6 +4730,23 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
         GTCY_Active, 0,
         GA_Disabled, driver_quality_buffer[0] ? FALSE : TRUE,
         TAG_DONE);
+
+    // Capture DPI - shares the Quality row and is populated by Query from
+    // printer-resolution-supported/PWG raster resolution capabilities.
+    ng.ng_LeftEdge = 400;
+    ng.ng_Width = 100;
+    ng.ng_Height = 12;
+    ng.ng_GadgetText = (STRPTR)"DPI:";
+    ng.ng_GadgetID = GAD_RESOLUTION;
+    gad = CreateGadget(CYCLE_KIND, gad, &ng,
+        GTCY_Labels, (ULONG)resolution_labels,
+        GTCY_Active, (ULONG)mp_dpi_active_index(driver_resolution),
+        GA_Disabled, num_supported_dpi > 0 ? FALSE : TRUE,
+        TAG_DONE);
+    if (!gad) {
+        printf("Failed to create DPI gadget\n");
+        return NULL;
+    }
 
     // Print Mode radio buttons
     ng.ng_LeftEdge = 130;
@@ -4913,6 +5117,42 @@ void process_window_events(struct Window *win) {
     free(response); // Free the dynamically allocated buffer
 }
 
+static BOOL mp_open_tcp_stack(void) {
+    LONG probe_socket;
+
+    /* Match the minimum version used by the printer driver. Opening the
+     * library alone is not quite enough: a stale/incomplete installation can
+     * expose bsdsocket.library while still being unable to create sockets. */
+    SocketBase = OpenLibrary("bsdsocket.library", 4);
+    if (!SocketBase) return FALSE;
+
+    probe_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (probe_socket < 0) {
+        CloseLibrary(SocketBase);
+        SocketBase = NULL;
+        return FALSE;
+    }
+
+    CloseSocket(probe_socket);
+    return TRUE;
+}
+
+static void mp_show_tcp_stack_required(void) {
+    struct EasyStruct es;
+
+    es.es_StructSize = sizeof(struct EasyStruct);
+    es.es_Flags = 0;
+    es.es_Title = (UBYTE *)"MintPrint Settings";
+    es.es_TextFormat = (UBYTE *)
+        "MintPRINT needs a running TCP/IP stack.\n\n"
+        "bsdsocket.library V4 could not be opened, or it could not\n"
+        "create a socket. Start or install Roadshow, AmiTCP, Miami,\n"
+        "or another compatible TCP/IP stack, then run MintPRINT again.\n\n"
+        "No printer settings or driver files have been changed.";
+    es.es_GadgetFormat = (UBYTE *)"Exit";
+    EasyRequest(NULL, &es, NULL);
+}
+
 // Main function
 int main(void) {
     UWORD topborder;
@@ -4939,9 +5179,9 @@ int main(void) {
         return 1;
     }
 
-    SocketBase = OpenLibrary("bsdsocket.library", 0);
-    if (!SocketBase) {
-        printf("Failed to open bsdsocket.library\n");
+    if (!mp_open_tcp_stack()) {
+        printf("A working bsdsocket.library V4 TCP/IP stack is required\n");
+        mp_show_tcp_stack_required();
         CloseLibrary(GadToolsBase);
         CloseLibrary((struct Library *)GfxBase);
         CloseLibrary((struct Library *)IntuitionBase);

@@ -39,9 +39,11 @@ needs.
 The machine therefore needs a working `bsdsocket.library`-compatible TCP/IP
 stack such as Roadshow, AmiTCP, Miami, or another compatible stack.
 
-MintPrint Settings already opens `bsdsocket.library`, so failure to provide a
-compatible stack should be visible immediately rather than producing a silent
-print failure.
+MintPrint Settings requires `bsdsocket.library` V4 and verifies that it can
+create a socket before opening the main window. If that check fails it shows a
+requester and exits without installing or changing the driver. The driver
+performs the same check during `Init()`, before printer.device can begin sending
+raster rows.
 
 ## Build
 

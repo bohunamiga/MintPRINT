@@ -16,7 +16,8 @@ struct MPConfig {
     char host[MP_CONFIG_HOST_MAX];
     UWORD port;
     char path[MP_CONFIG_PATH_MAX];
-    BOOL keep_job;
+    BOOL debug;
+    UWORD resolution; /* capture DPI: 300 or 600, see RESOLUTION= */
     char engine[MP_CONFIG_ENGINE_MAX];
     char media[MP_CONFIG_OPTION_MAX];
     char source[MP_CONFIG_OPTION_MAX];

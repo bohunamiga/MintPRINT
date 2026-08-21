@@ -110,6 +110,7 @@ unsigned long mp_pdf_scratch_size(unsigned long width)
 }
 
 int mp_pdf_begin(MPPdfEncoder *e, unsigned long width, unsigned long height,
+                 unsigned long dpi,
                  unsigned char *scratch, unsigned long scratch_size,
                  MPPdfWriteFn write_fn, void *write_ctx)
 {
@@ -126,11 +127,13 @@ int mp_pdf_begin(MPPdfEncoder *e, unsigned long width, unsigned long height,
     e->file_offset = 0;
     e->image_stream_bytes = 0;
     e->failed = 0;
+    if (!dpi) dpi = 300UL;
 
-    /* MediaBox in points (1/72in), from pixels at 300 DPI - matches the
-     * PWG Raster path's PageSize field exactly (see pwg_writer.c). */
-    pdf_w = (width * 72UL) / 300UL;
-    pdf_h = (height * 72UL) / 300UL;
+    /* MediaBox in points (1/72in), from pixels at the capture DPI -
+     * matches the PWG Raster path's PageSize field exactly (see
+     * pwg_writer.c). */
+    pdf_w = (width * 72UL) / dpi;
+    pdf_h = (height * 72UL) / dpi;
     if (!pdf_w) pdf_w = 1UL;
     if (!pdf_h) pdf_h = 1UL;
 

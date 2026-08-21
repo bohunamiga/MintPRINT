@@ -25,7 +25,7 @@ way to be fully sure.
 
 If a PWG Raster test print comes out wrong (garbled image, printer error,
 rejected job), the most useful next artifact is `T:MintPRINT-job.pwg`
-(kept when `KEEPJOB=1`, which is MintPrint Settings' default) copied off the
+(kept when `DEBUG=1`) copied off the
 Amiga - the first ~1800 bytes are the sync word + page header and are worth
 checking against `cups/raster.h`'s `cups_page_header2_t` field-by-field if
 something looks off.

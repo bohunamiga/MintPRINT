@@ -97,7 +97,14 @@ static LONG mp_spool_entry(void)
     BOOL running = TRUE;
     BPTR job_fh = 0;
 
-    port = CreateMsgPort();
+    /* This is a real AmigaDOS Process, unlike an arbitrary caller of a
+     * printer.device callback. Probe bsdsocket here so socket() is never
+     * invoked from a potentially bare Task. If the probe fails, leave port
+     * NULL; the normal startup handshake below wakes Init(), which then
+     * rejects the driver cleanly before raster generation starts. */
+    port = NULL;
+    if (mp_ipp_socket_available())
+        port = CreateMsgPort();
     if (port) {
         port->mp_Node.ln_Name = (char *)MP_SPOOL_PORT_NAME;
         port->mp_Node.ln_Pri = 0;

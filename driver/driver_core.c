@@ -36,7 +36,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 10
+#define MP_DRIVER_REV 13
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -203,6 +203,7 @@ static void mp_log_append_long(LONG value)
 
 static void mp_log_text(const char *event)
 {
+    if (!g_config.debug) return;
     mp_log_reset();
     mp_log_append("MintPRINT: ");
     mp_log_append(event);
@@ -211,6 +212,7 @@ static void mp_log_text(const char *event)
 
 static void mp_log_3(const char *event, LONG a, LONG b, LONG c)
 {
+    if (!g_config.debug) return;
     mp_log_reset();
     mp_log_append("MintPRINT: ");
     mp_log_append(event);
@@ -225,7 +227,7 @@ static void mp_log_3(const char *event, LONG a, LONG b, LONG c)
 
 static void mp_log_config(const struct MPConfig *cfg, LONG source)
 {
-    if (!cfg) return;
+    if (!cfg || !cfg->debug) return;
 
     mp_log_reset();
     mp_log_append("MintPRINT: Config source=");
@@ -241,8 +243,8 @@ static void mp_log_config(const struct MPConfig *cfg, LONG source)
     mp_log_append_long((LONG)cfg->port);
     mp_log_append(" path=");
     mp_log_append(cfg->path);
-    mp_log_append(" keepjob=");
-    mp_log_append_long(cfg->keep_job ? 1 : 0);
+    mp_log_append(" debug=");
+    mp_log_append_long(cfg->debug ? 1 : 0);
     if (cfg->media[0]) { mp_log_append(" media="); mp_log_append(cfg->media); }
     if (cfg->source[0]) { mp_log_append(" source="); mp_log_append(cfg->source); }
     if (cfg->color[0]) { mp_log_append(" color="); mp_log_append(cfg->color); }
@@ -361,7 +363,7 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
     switch (g_engine) {
         case MP_ENGINE_PWG: {
             /* PageSize is deliberately derived from the actual raster
-             * pixels (page_pts_x/y = 0 -> mp_pwg_begin's own pixel/300dpi
+             * pixels (page_pts_x/y = 0 -> mp_pwg_begin's own pixel/dpi
              * fallback), NOT from the configured media=. A real hardware
              * test proved that route wrong: declaring PageSize as full
              * A4 while the raster only covered a few inches of it made
@@ -372,6 +374,7 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
              * the whole page" so the printer doesn't try to fill more of
              * one than we actually sent. */
             if (!mp_pwg_begin(&g_pwg, width, height, 0, 0,
+                              g_config.resolution,
                               g_pwg_scratch, g_pwg_scratch_bytes,
                               mp_job_file_write, NULL)) {
                 mp_log_text("PWG encoder begin failed");
@@ -384,7 +387,8 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
             break;
         }
         case MP_ENGINE_PDF:
-            if (!mp_pdf_begin(&g_pdf, width, height, g_pdf_scratch,
+            if (!mp_pdf_begin(&g_pdf, width, height, g_config.resolution,
+                              g_pdf_scratch,
                               g_pdf_scratch_bytes, mp_job_file_write, NULL)) {
                 mp_log_text("PDF encoder begin failed");
                 g_job_failed = TRUE;
@@ -531,7 +535,7 @@ static BOOL mp_job_extend_pwg(ULONG extra_rows)
 }
 
 /* Submits the just-finished job file and applies the same runaway-storm
- * bookkeeping and keep_job cleanup either page-submission path needs.
+ * bookkeeping and debug-artifact cleanup either page-submission path needs.
  * rows_for_streak is the height the tiny-page-storm guard should judge
  * this submission by - the real total for a strip-accumulated page, not
  * any one band's own height. Returns mp_spool_ipp_submit()'s result. */
@@ -564,8 +568,8 @@ static LONG mp_page_submit_and_track(ULONG rows_for_streak)
         } else {
             g_tiny_page_streak = 0;
         }
-        if (!g_config.keep_job) mp_spool_job_delete(fname);
     }
+    if (!g_config.debug) mp_spool_job_delete(fname);
     return ipp_rc;
 }
 
@@ -618,7 +622,7 @@ static void mp_log_row(struct PrtInfo *pi, ULONG row)
     ULONG i;
     ULONG scaled_width = 0;
 
-    if (!pi) return;
+    if (!pi || !g_config.debug) return;
 
     if (pi->pi_ScaleX) {
         for (i = 0; i < pi->pi_width; ++i)
@@ -663,12 +667,23 @@ LONG PRT_STDARGS Init(struct PrinterData *pd)
     }
 
     mp_config_defaults(&g_config);
-    mp_spool_ensure_running();
+    /* mp_spool_ensure_running() performs the functional socket probe inside
+     * its dedicated Process. That matters because printer.device callbacks
+     * can originate from a bare Task, where calling bsdsocket directly is
+     * not a safe assumption. Fail before any raster rows are accepted. */
+    if (!mp_spool_ensure_running()) {
+        CloseLibrary((struct Library *)DOSBase);
+        DOSBase = NULL;
+        return -1;
+    }
+    g_config_source = mp_spool_config_load(&g_config);
     mp_log_text("Init");
-    mp_log_reset();
-    mp_log_append("MintPRINT: Driver revision ");
-    mp_log_append_long((LONG)MP_DRIVER_REV);
-    mp_spool_log(g_log_line);
+    if (g_config.debug) {
+        mp_log_reset();
+        mp_log_append("MintPRINT: Driver revision ");
+        mp_log_append_long((LONG)MP_DRIVER_REV);
+        mp_spool_log(g_log_line);
+    }
     return 0;
 }
 
@@ -695,6 +710,13 @@ int PRT_STDARGS DriverOpen(struct IORequest *ior)
     g_page_pending = FALSE;
     g_sizing_pass = FALSE;
     g_current_special = 0;
+    /* Loaded once per Open() bracket (i.e. once per print job) rather than
+     * per-page inside Render() case 0: case 5, which sets the PED
+     * resolution/MaxDots fields below, fires BEFORE case 0 on every job's
+     * first page, so it needs the real configured resolution available
+     * here already, not just Init()'s one-time compiled-in default. */
+    g_config_source = mp_spool_config_load(&g_config);
+    mp_log_config(&g_config, g_config_source);
     mp_log_text("Open");
     return 0;
 }
@@ -732,26 +754,35 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
         case 5: /* Pre-master initialisation. x = io_Special density flags. */
             g_current_special = (ULONG)x;
             if (PED) {
-                PED->ped_MaxXDots = 4096;
-                PED->ped_MaxYDots = 6144;
-                PED->ped_XDotsInch = 300;
-                PED->ped_YDotsInch = 300;
+                /* g_config was loaded in DriverOpen() for this job, so the
+                 * user's configured capture resolution is already known
+                 * here. 4096x6144 @ 300dpi are the historical bounds; at
+                 * 600dpi they are doubled so common paper sizes (e.g. A4
+                 * at 600dpi is ~4960x7014 dots) aren't clipped. */
+                BOOL hires = (g_config.resolution == 600);
+                PED->ped_MaxXDots = hires ? 8192 : 4096;
+                PED->ped_MaxYDots = hires ? 12288 : 6144;
+                PED->ped_XDotsInch = hires ? 600 : 300;
+                PED->ped_YDotsInch = hires ? 600 : 300;
                 PED->ped_NumRows = 1;
             }
-            mp_log_3("Render pre-master special/maxX/maxY", x, 4096, 6144);
+            mp_log_3("Render pre-master special/maxX/maxY", x,
+                     PED ? (LONG)PED->ped_MaxXDots : 0,
+                     PED ? (LONG)PED->ped_MaxYDots : 0);
             return PDERR_NOERR;
 
         case 0: { /* Master initialisation: x/y are final output dimensions. */
             BOOL continuation;
             g_rows_seen = 0;
-            g_config_source = mp_spool_config_load(&g_config);
+            /* g_config was already loaded once for this job in DriverOpen()
+             * - case 5 (which fires before this on the job's first page)
+             * needs it that early for the PED resolution fields below. */
             /* ct's meaning here is undocumented in this codebase - logging
              * its raw value (not just whether it's nonzero) in case it
              * turns out to carry a page/band number we've been discarding.
              * See the "multiple Render(0) cycles inside one Open/Close"
              * investigation in the project history around this line. */
             mp_log_3("Render begin width/height/ct", x, y, ct);
-            mp_log_config(&g_config, g_config_source);
 
             /* SPECIAL_NOPRINT: a sizing-only pass (RKM) - the app is
              * asking how big its dump would be, not asking for output.

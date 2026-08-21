@@ -19,6 +19,26 @@ extern struct ExecBase *SysBase;
 extern struct DosLibrary *DOSBase;
 struct Library *SocketBase = NULL;
 
+BOOL mp_ipp_socket_available(void)
+{
+    LONG probe_socket;
+
+    SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
+    if (!SocketBase) return FALSE;
+
+    probe_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (probe_socket < 0) {
+        CloseLibrary(SocketBase);
+        SocketBase = NULL;
+        return FALSE;
+    }
+
+    CloseSocket(probe_socket);
+    CloseLibrary(SocketBase);
+    SocketBase = NULL;
+    return TRUE;
+}
+
 static ULONG mp_len(const char *s)
 {
     ULONG n = 0;

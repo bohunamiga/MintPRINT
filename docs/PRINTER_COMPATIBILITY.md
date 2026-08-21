@@ -24,7 +24,7 @@ accepts a job and silently discards it.
 
 | Printer and machine | Status | AmigaOS | TCP/IP stack | Confirmed engine/result | Required or known settings |
 |---|---|---|---|---|---|
-| **Brother MFC-J6930DW** | ✅ Working | Not recorded | Not recorded | PWG Raster | Port `631`; path `/ipp/print`; `300 dpi`; A4; tray `auto`; scaling `auto`; quality `draft`; colour |
+| **Brother MFC-J6930DW** | ✅ Working | 3.2.3 | Roadshow | PWG Raster | Port `631`; path `/ipp/print`; `300 dpi`; A4; tray `auto`; scaling `auto`; quality `draft`; colour |
 | **Brother HL-L2350DW** on A500 PiStorm, Wi-Fi | ✅ Working | 3.2.3 | Roadshow | Original Aminet release reported as working perfectly; exact engine was not recorded | No printer-specific override reported |
 | **Brother HL-L2350DW** on A4000, CSMkII 060/50 and Ariadne-II, wired | 🟡 Partial | 3.2.3 | Roadshow | A simple AmigaWriter document now prints perfectly with MintPRINT 1.0.3 and scaling `auto` | An unexpected Brother direct-print error sheet follows some jobs; MintPRINT Test Print is still enlarged/cropped |
 | **Canon TS8360** (IPP identifies it as **TS8300 series**) | 🟡 Partial | 3.2.3 | Not reported | PWG Raster and JPEG print colour pictures correctly in portrait and landscape; text/application cases remain incomplete | Port `631`; path `/ipp/print`; printer reports `600 dpi`, A4, source `auto`, quality `draft`, scaling `auto`; Query fix in PR #16 awaits confirmation |

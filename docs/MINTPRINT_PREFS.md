@@ -20,6 +20,8 @@ Layout:
 - Query Printer sits beside Printer IP/Host.
 - Discover sits directly below Query and searches the LAN for printers.
 - Printer Engine offers JPEG, PWG Raster, and PDF.
+- Sides defaults to One-sided and only offers capability-confirmed duplex
+  modes after Query Printer.
 - Save sits beside Exit.
 - Test Print prints the built-in test page through `printer.device`.
 
@@ -61,6 +63,15 @@ yet.
 
 The driver reloads Unit0 at the start of every graphics print. Replacing the
 printer driver binary itself still requires a reboot before testing it.
+
+## Duplex
+
+Query Printer reads `sides-supported` plus the IPP multi-document operation
+attributes needed by MintPRINT's page-at-a-time driver. The **Sides** selector
+is enabled only when both the chosen duplex binding and the complete transport
+are advertised. Unsupported or incomplete capability sets remain safely
+one-sided. See `docs/DUPLEX_PRINTING.md` for the protocol design and test
+matrix.
 
 ## LAN printer discovery
 
@@ -146,8 +157,8 @@ capabilities for whichever unit is currently selected to:
 
 (`N` is the selected unit's number - `Unit0.cache`, `Unit1.cache`, ...) The
 cache contains the available media/tray mappings, colour modes, quality
-levels, scaling choices, detected document formats and other detected IPP
-values. Each unit's own config file remains what stores its selected
+levels, scaling and sides choices, detected document formats, multi-document
+support and other detected IPP values. Each unit's own config file remains what stores its selected
 defaults.
 
 When a unit is loaded (at startup, via the Unit dropdown, or File > Reload),

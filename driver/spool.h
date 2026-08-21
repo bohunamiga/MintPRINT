@@ -63,4 +63,12 @@ LONG mp_spool_ipp_submit(const struct MPConfig *cfg, CONST_STRPTR filename,
                          CONST_STRPTR document_format,
                          struct MPIPPResult *result);
 
+LONG mp_spool_ipp_create_job(const struct MPConfig *cfg,
+                             struct MPIPPResult *result);
+LONG mp_spool_ipp_send_document(const struct MPConfig *cfg, ULONG job_id,
+                                CONST_STRPTR filename,
+                                CONST_STRPTR document_format,
+                                BOOL last_document,
+                                struct MPIPPResult *result);
+
 #endif

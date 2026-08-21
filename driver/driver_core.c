@@ -37,7 +37,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 16
+#define MP_DRIVER_REV 17
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -130,6 +130,8 @@ static MPPwgEncoder g_pwg;
 static MPPdfEncoder g_pdf;
 static struct MPConfig g_config;
 static LONG g_config_source = MP_CONFIG_SOURCE_DEFAULTS;
+static ULONG g_remote_job_id = 0;
+static BOOL g_duplex_job_failed = FALSE;
 
 /* cfg->engine is always exactly "jpeg", "pwg-raster", or "pdf" - config.c
  * only ever writes one of those three literal strings - so checking the
@@ -149,6 +151,20 @@ static CONST_STRPTR mp_job_filename(void)
         case MP_ENGINE_PDF: return MP_JOB_FILE_PDF;
         default:            return MP_JOB_FILE_JPEG;
     }
+}
+
+static CONST_STRPTR mp_document_format(void)
+{
+    switch (g_engine) {
+        case MP_ENGINE_PWG: return (CONST_STRPTR)"image/pwg-raster";
+        case MP_ENGINE_PDF: return (CONST_STRPTR)"application/pdf";
+        default:            return (CONST_STRPTR)"image/jpeg";
+    }
+}
+
+static BOOL mp_duplex_requested(void)
+{
+    return g_config.sides[0] == 't';
 }
 
 static ULONG mp_strlen(const char *s)
@@ -577,23 +593,53 @@ static BOOL mp_row_has_ink(struct PrtInfo *pi)
 
 /* Submits the just-finished job file and applies the same runaway-storm
  * bookkeeping and debug-artifact cleanup either page-submission path needs.
+ * One-sided output deliberately keeps the old one-Print-Job-per-page route.
+ * Duplex output instead creates one remote IPP Job and adds each Amiga page
+ * as a Send-Document document; multiple-document-handling=single-document
+ * makes those document boundaries behave as page boundaries on one sheet
+ * stream, rather than forcing a new front side for every page.
  * rows_for_streak is the height the tiny-page-storm guard should judge
  * this submission by - the real total for a strip-accumulated page, not
- * any one band's own height. Returns mp_spool_ipp_submit()'s result. */
+ * any one band's own height. Returns the IPP operation's result. */
 static LONG mp_page_submit_and_track(ULONG rows_for_streak)
 {
     struct MPIPPResult result;
     LONG ipp_rc;
     CONST_STRPTR fname = mp_job_filename();
-    CONST_STRPTR fmt;
+    CONST_STRPTR fmt = mp_document_format();
 
-    switch (g_engine) {
-        case MP_ENGINE_PWG: fmt = (CONST_STRPTR)"image/pwg-raster"; break;
-        case MP_ENGINE_PDF: fmt = (CONST_STRPTR)"application/pdf"; break;
-        default:            fmt = (CONST_STRPTR)"image/jpeg"; break;
+    if (mp_duplex_requested()) {
+        if (g_duplex_job_failed) {
+            ipp_rc = -1;
+            result.error = ipp_rc;
+            result.http_status = 0;
+            result.ipp_status = 0xffff;
+            result.document_bytes = 0;
+            result.job_id = g_remote_job_id;
+        } else {
+            if (g_remote_job_id == 0) {
+                ipp_rc = mp_spool_ipp_create_job(&g_config, &result);
+                if (ipp_rc == 0) {
+                    g_remote_job_id = result.job_id;
+                    mp_log_3("IPP duplex Create-Job id/http/status",
+                             (LONG)g_remote_job_id, result.http_status,
+                             (LONG)result.ipp_status);
+                }
+            } else {
+                ipp_rc = 0;
+            }
+
+            if (ipp_rc == 0) {
+                ipp_rc = mp_spool_ipp_send_document(&g_config,
+                                                     g_remote_job_id,
+                                                     fname, fmt, FALSE,
+                                                     &result);
+            }
+            if (ipp_rc != 0) g_duplex_job_failed = TRUE;
+        }
+    } else {
+        ipp_rc = mp_spool_ipp_submit(&g_config, fname, fmt, &result);
     }
-
-    ipp_rc = mp_spool_ipp_submit(&g_config, fname, fmt, &result);
     mp_log_3("IPP result error/http/status",
              result.error, result.http_status, (LONG)result.ipp_status);
 
@@ -789,6 +835,8 @@ int PRT_STDARGS DriverOpen(struct IORequest *ior)
     g_discard_aux_band_has_ink = FALSE;
     g_aux_height = 0;
     g_page_target_height = 0;
+    g_remote_job_id = 0;
+    g_duplex_job_failed = FALSE;
     /* Loaded once per Open() bracket (i.e. once per print job) rather than
      * per-page inside Render() case 0: case 5, which sets the PED
      * resolution/MaxDots fields below, fires BEFORE case 0 on every job's
@@ -802,11 +850,28 @@ int PRT_STDARGS DriverOpen(struct IORequest *ior)
 
 VOID PRT_STDARGS DriverClose(struct IORequest *ior)
 {
+    struct MPIPPResult result;
+    LONG ipp_rc;
+
     (void)ior;
     /* A strip-printed page can still be mid-accumulation when the whole
      * print request ends normally - finalize and submit it rather than
      * silently discarding its last (possibly only) bands. */
     if (g_page_pending) mp_page_finalize();
+
+    /* The caller does not tell Render(4) which physical page is the last
+     * one. Close the multi-document IPP Job here with the standards-defined
+     * empty final Send-Document. This releases even a partially failed Job
+     * instead of leaving it indefinitely in a pending state. */
+    if (g_remote_job_id != 0) {
+        ipp_rc = mp_spool_ipp_send_document(&g_config, g_remote_job_id,
+                                             NULL, NULL, TRUE, &result);
+        mp_log_3("IPP duplex close error/http/status",
+                 result.error, result.http_status,
+                 (LONG)result.ipp_status);
+        if (ipp_rc != 0) g_duplex_job_failed = TRUE;
+        g_remote_job_id = 0;
+    }
     mp_job_cleanup();
     mp_log_text("Close");
 }

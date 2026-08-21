@@ -94,6 +94,10 @@ void mp_config_defaults(struct MPConfig *cfg)
     cfg->color[0] = 0;
     cfg->quality[0] = 0;
     cfg->scaling[0] = 0;
+    /* Preserve the historical no-attribute behaviour for an old Unit0
+     * file that predates SIDES=.  Settings writes one-sided explicitly
+     * when the user next saves, but an upgrade alone must not add a new
+     * job-template attribute to printers that were already working. */
     cfg->sides[0] = 0;
 }
 
@@ -204,7 +208,14 @@ LONG mp_config_load(struct MPConfig *cfg)
         }
         if (mp_cfg_starts(g_config_line, "SIDES=")) {
             value = g_config_line + 6;
-            if (value[0]) mp_cfg_copy(cfg->sides, sizeof(cfg->sides), value);
+            if ((mp_cfg_starts(value, "one-sided") &&
+                 mp_cfg_len(value) == 9) ||
+                (mp_cfg_starts(value, "two-sided-long-edge") &&
+                 mp_cfg_len(value) == 19) ||
+                (mp_cfg_starts(value, "two-sided-short-edge") &&
+                 mp_cfg_len(value) == 20)) {
+                mp_cfg_copy(cfg->sides, sizeof(cfg->sides), value);
+            }
             continue;
         }
     }

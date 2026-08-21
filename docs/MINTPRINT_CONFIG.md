@@ -26,6 +26,7 @@ The file is plain text:
     PORT=80
     PATH=/ipp/print
     DEBUG=0
+    SIDES=
 
 `DEBUG=0` is the default: no `T:MintPRINT-gui.log` or
 `T:MintPRINT-driver.log` is written, and the temporary rendered job is removed
@@ -34,6 +35,14 @@ and keeps `T:MintPRINT-job.jpg`, `.pwg`, or `.pdf` for diagnosis.
 
 For compatibility, existing `KEEPJOB=0`/`KEEPJOB=1` profiles are still read as
 Debug Off/On. MintPrint Settings writes `DEBUG=` when the profile is next saved.
+
+`SIDES=` accepts `one-sided`, `two-sided-long-edge`, or
+`two-sided-short-edge`. MintPrint Settings displays One-sided by default and
+only offers duplex values confirmed by Query Printer. For a printer that does
+not advertise duplex, Settings saves an empty `SIDES=` value so the driver
+omits the optional IPP attribute; absence still means one-sided. Old profiles
+without a `SIDES=` line preserve the historical request shape. See
+`docs/DUPLEX_PRINTING.md`.
 
 Settings are reloaded for each new graphics print, so changing Unit0 does not
 require unloading the driver. Replacing `DEVS:Printers/MintPRINT` itself still

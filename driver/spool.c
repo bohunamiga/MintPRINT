@@ -35,6 +35,8 @@ enum {
     MP_SPOOL_CMD_JOB_CLOSE,
     MP_SPOOL_CMD_JOB_DELETE,
     MP_SPOOL_CMD_IPP_SUBMIT,
+    MP_SPOOL_CMD_IPP_CREATE_JOB,
+    MP_SPOOL_CMD_IPP_SEND_DOCUMENT,
     MP_SPOOL_CMD_CONFIG_LOAD,
     MP_SPOOL_CMD_QUIT
 };
@@ -50,6 +52,8 @@ struct MPSpoolMsg {
     const struct MPConfig *cfg;
     struct MPConfig *cfg_io;
     CONST_STRPTR document_format;
+    ULONG job_id;
+    BOOL last_document;
     struct MPIPPResult ipp_result;
     LONG result;
 };
@@ -179,6 +183,18 @@ static LONG mp_spool_entry(void)
                 case MP_SPOOL_CMD_IPP_SUBMIT:
                     m->result = mp_ipp_print_document(m->cfg, m->filename,
                                                       m->document_format,
+                                                      &m->ipp_result);
+                    break;
+
+                case MP_SPOOL_CMD_IPP_CREATE_JOB:
+                    m->result = mp_ipp_create_job(m->cfg, &m->ipp_result);
+                    break;
+
+                case MP_SPOOL_CMD_IPP_SEND_DOCUMENT:
+                    m->result = mp_ipp_send_document(m->cfg, m->job_id,
+                                                      m->filename,
+                                                      m->document_format,
+                                                      m->last_document,
                                                       &m->ipp_result);
                     break;
 
@@ -388,8 +404,57 @@ LONG mp_spool_ipp_submit(const struct MPConfig *cfg, CONST_STRPTR filename,
     m.ipp_result.http_status = 0;
     m.ipp_result.ipp_status = 0xffff;
     m.ipp_result.document_bytes = 0;
+    m.ipp_result.job_id = 0;
+    m.result = -1;
 
     mp_spool_send(&m); /* m.result carries mp_ipp_print_document()'s return */
+
+    if (result) *result = m.ipp_result;
+    return m.result;
+}
+
+LONG mp_spool_ipp_create_job(const struct MPConfig *cfg,
+                             struct MPIPPResult *result)
+{
+    struct MPSpoolMsg m;
+
+    m.cmd = MP_SPOOL_CMD_IPP_CREATE_JOB;
+    m.cfg = cfg;
+    m.ipp_result.error = -1;
+    m.ipp_result.http_status = 0;
+    m.ipp_result.ipp_status = 0xffff;
+    m.ipp_result.document_bytes = 0;
+    m.ipp_result.job_id = 0;
+    m.result = -1;
+
+    mp_spool_send(&m);
+
+    if (result) *result = m.ipp_result;
+    return m.result;
+}
+
+LONG mp_spool_ipp_send_document(const struct MPConfig *cfg, ULONG job_id,
+                                CONST_STRPTR filename,
+                                CONST_STRPTR document_format,
+                                BOOL last_document,
+                                struct MPIPPResult *result)
+{
+    struct MPSpoolMsg m;
+
+    m.cmd = MP_SPOOL_CMD_IPP_SEND_DOCUMENT;
+    m.cfg = cfg;
+    m.job_id = job_id;
+    m.filename = filename;
+    m.document_format = document_format;
+    m.last_document = last_document;
+    m.ipp_result.error = -1;
+    m.ipp_result.http_status = 0;
+    m.ipp_result.ipp_status = 0xffff;
+    m.ipp_result.document_bytes = 0;
+    m.ipp_result.job_id = job_id;
+    m.result = -1;
+
+    mp_spool_send(&m);
 
     if (result) *result = m.ipp_result;
     return m.result;

@@ -2953,16 +2953,21 @@ static int mp_connect_with_timeout(int sockfd, struct sockaddr_in *addr, int tim
     }
 
     rc = connect(sockfd, (struct sockaddr *)addr, sizeof(*addr));
-    connect_errno = errno;
-    printf("connect: immediate rc=%d errno=%d\n", rc, rc < 0 ? connect_errno : 0);
+    connect_errno = (rc < 0) ? Errno() : 0;
+    printf("connect: immediate rc=%d errno=%d Errno()=%d\n", rc, errno, connect_errno);
 
-    /* Which errno signals "in progress, not decided yet" on a non-blocking
-     * connect isn't standardised across bsdsocket.library stacks - this
-     * codebase's only prior attempt at non-blocking sockets never got far
-     * enough to record which one this stack actually uses (see the
-     * function comment above), so both of the two errno values any real
-     * stack could plausibly use here are accepted rather than gambling on
-     * just one. */
+    /* AmigaOS bsdsocket.library does NOT update the standard C errno
+     * global - confirmed for real: a prior build of this exact function
+     * logged "rc=-1 errno=0" on every attempt, which is what happens when
+     * nothing ever sets errno at all, not what any real connect() failure
+     * looks like. bsdsocket.library tracks its own error state instead,
+     * read back with its own Errno() function (see proto/bsdsocket.h) -
+     * that's what's checked below, not errno.
+     *
+     * Which value Errno() returns for "in progress, not decided yet" on a
+     * non-blocking connect also isn't standardised across
+     * bsdsocket.library stacks, so both EINPROGRESS and EWOULDBLOCK are
+     * accepted rather than gambling on just one. */
     if (rc < 0 && (connect_errno == EINPROGRESS || connect_errno == EWOULDBLOCK)) {
         int elapsed_ms = 0;
         const int chunk_ms = 250;
@@ -2992,7 +2997,8 @@ static int mp_connect_with_timeout(int sockfd, struct sockaddr_in *addr, int tim
                 int so_err = 0;
                 socklen_t optlen = sizeof(so_err);
                 int gso_rc = getsockopt(sockfd, SOL_SOCKET, SO_ERROR, (char *)&so_err, &optlen);
-                printf("connect: WaitSelect ready, getsockopt rc=%d so_err=%d\n", gso_rc, so_err);
+                printf("connect: WaitSelect ready, getsockopt rc=%d so_err=%d Errno()=%d\n",
+                       gso_rc, so_err, (gso_rc < 0) ? Errno() : 0);
                 if (gso_rc == 0) {
                     if (so_err == 0) {
                         outcome = 0;

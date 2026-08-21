@@ -1970,6 +1970,23 @@ void custom_printf(const char *format, ...) {
     vsnprintf(temp, 256, format, args);
     va_end(args);
 
+    /* Also append to T:MintPRINT-gui.log, best-effort. custom_printf() is
+     * this program's ONLY status output (see the file comment above its
+     * forward declaration) - when the on-screen box itself is the thing
+     * that's broken, there is otherwise no way to see what actually
+     * happened, unlike the driver's own T:MintPRINT-driver.log. */
+    {
+        BPTR log_fh = Open((CONST_STRPTR)"T:MintPRINT-gui.log", MODE_READWRITE);
+        if (!log_fh) log_fh = Open((CONST_STRPTR)"T:MintPRINT-gui.log", MODE_NEWFILE);
+        if (log_fh) {
+            LONG len = (LONG)strlen(temp);
+            Seek(log_fh, 0, OFFSET_END);
+            if (len) Write(log_fh, (APTR)temp, len);
+            Write(log_fh, (APTR)"\n", 1);
+            Close(log_fh);
+        }
+    }
+
     // Strip trailing newline
     size_t len = strlen(temp);
     if (len > 0 && temp[len - 1] == '\n') {

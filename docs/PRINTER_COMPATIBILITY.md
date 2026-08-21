@@ -248,6 +248,7 @@ graphics dumps to assemble one physical page.
 | **DPaint V** | ❌ Not working | Same revision-15 test machine | Printing crashes DPaint with Software Failure `#8000000A` | No working setup confirmed; capture `T:MintPRINT-driver.log` from the failed attempt |
 | **MultiView** | ✅ Working | AmigaOS 3.2.3, same revision-15 test environment; OS Printer Preferences left at defaults apart from selecting MintPRINT | Prints successfully using the active MintPRINT preferences | Select **Print**; MultiView provides no application-specific print settings |
 | **GfxDump** | ✅ Working | AmigaOS 3.2.3, same revision-15 test environment | The OS tool sends its graphics dump directly through `printer.device` to MintPRINT and prints successfully | Select MintPRINT in OS Printer Preferences; no application-specific setup |
+| **Directory Opus 4.16** | ❌ Not working | AmigaOS 3.2.3, same revision-15 test environment | The Print button opens and closes MintPRINT but produces no raster page and no IPP job | No workaround confirmed; MintPRINT does not yet support the alphanumeric `PRT:`/`CMD_WRITE` path used by this function |
 | **AmigaWriter** | ✅ Working | AmigaOS 3.2.3, Roadshow, Brother HL-L2350DW, MintPRINT 1.0.3 | A simple document printed correctly with `Scaling=auto` | No additional application-specific override reported |
 | **MintPrint Settings Test Print** | 🟡 Partial | Brother HL-L2350DW report | The centre of the test image remains enlarged and cropped with `Scaling=auto` | No working override confirmed yet |
 
@@ -329,6 +330,31 @@ attempt and note whether the crash happens immediately after selecting Print,
 during disk or network activity, or after a progress requester. A partial log is
 useful: its last completed callback will identify whether the remaining fault is
 in driver open, first render, spooling or close/submit teardown.
+
+### Directory Opus 4.16
+
+Directory Opus 4.16's Print button currently produces no output. The
+revision-15 trace shows MintPRINT loading successfully and repeating:
+
+```text
+Render pre-master special/maxX/maxY 256 4096 6144
+Config ...
+engine=pwg-raster
+Open
+Close
+Expunge
+```
+
+There is no `Render begin`, raster-row callback, document encoder start or IPP
+submission. `special=256` is the normal Density 1 flag, not an error. This means
+the button is not submitting a graphics dump to MintPRINT; its behaviour is
+consistent with the legacy alphanumeric `PRT:`/`CMD_WRITE` route.
+
+MintPRINT is currently graphics-focused: all entries in its text command table
+are marked unsupported and `DoSpecial()` emits no printer bytes. Supporting
+this DOpus function therefore requires a real text-printing path (most likely
+rendering incoming text to a page before passing it to the existing document
+engines), rather than a printer, IPP, PWG or application-settings fix.
 
 ## Baseline setup and troubleshooting
 

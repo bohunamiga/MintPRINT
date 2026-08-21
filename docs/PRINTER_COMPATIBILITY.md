@@ -169,6 +169,61 @@ MintPrint Settings checks for `bsdsocket.library` V4 and a usable socket before
 opening. Roadshow, AmiTCP and Miami are supported targets, but only Roadshow has
 a named community hardware result so far.
 
+## Application compatibility
+
+Application compatibility is tracked separately from printer compatibility.
+Older Amiga applications can exercise `printer.device` in very different ways:
+some submit a complete raster, while others use many `SPECIAL_NOFORMFEED`
+graphics dumps to assemble one physical page.
+
+| Application | Status | Confirmed environment | Result | Required application setup |
+|---|---|---|---|---|
+| **Wordworth 7** | ✅ Working | AmigaOS 3.2.3, Roadshow, Brother MFC-J6930DW, PWG Raster, driver revision 15 | A portrait document prints in the correct orientation as one physical page; the former trailing blank sheet is gone | Select `MintPRINT`, `Normal`, `Sheet Feeder`, Density `7`; borders Left `0.00 in`, Right `0.00 in`, Top `0.50 in`, Bottom `1.00 in` |
+| **ArtEffect 2** | ✅ Working | Same revision-15 PWG Raster environment | Confirmed still printing after the Wordworth page-geometry fix | No additional application-specific override reported |
+| **AmigaWriter** | ✅ Working | AmigaOS 3.2.3, Roadshow, Brother HL-L2350DW, MintPRINT 1.0.3 | A simple document printed correctly with `Scaling=auto` | No additional application-specific override reported |
+| **MintPrint Settings Test Print** | 🟡 Partial | Brother HL-L2350DW report | The centre of the test image remains enlarged and cropped with `Scaling=auto` | No working override confirmed yet |
+
+### Wordworth 7 Print Setup
+
+Use driver revision **15** or newer (included in the planned MintPRINT 1.0.4
+release). Revision 15 preserves Wordworth's strip printing as one media-sized
+PWG page and prevents its trailing blank four-pixel graphics dumps from becoming
+a second IPP job.
+
+Set Wordworth 7's **Print Setup** window to:
+
+These values were originally recorded in
+[issue #9](https://github.com/boingball/MintPRINT/issues/9) and confirmed again
+with the revision-15 physical print test.
+
+```text
+Printer Driver: MintPRINT
+Print Method:   Normal
+Paper Type:     Sheet Feeder
+Density:        7
+
+Print Borders:
+  Left:         0.00 in
+  Right:        0.00 in
+  Top:          0.50 in
+  Bottom:       1.00 in
+```
+
+The confirmed matching MintPRINT configuration was:
+
+```text
+Engine:         PWG Raster
+DPI:            300
+Media:          iso_a4_210x297mm
+Tray/source:    auto
+Scaling:        auto
+Quality:        high
+Print mode:     color
+```
+
+The physical revision-15 test produced one `2478x3505`, 300-DPI portrait PWG
+page. ArtEffect 2 was retested afterwards and continued to print correctly.
+
 ## Baseline setup and troubleshooting
 
 1. Install the correct package: the classic build for AmigaOS 3.1, or the
@@ -184,28 +239,10 @@ a named community hardware result so far.
 6. Select an engine the printer advertises, but treat JPEG without reported
    JPEG constraints as suspicious rather than proven.
 7. Test from MintPrint Settings or MultiView first. They provide a simpler
-   baseline than Wordworth, ArtEffect or other strip-printing applications.
+   baseline than Wordworth, ArtEffect or other strip-printing applications;
+   then check the application table above for any required setup.
 8. Enable Debug only while diagnosing. Attach `T:MintPRINT-driver.log` and the
    retained `T:MintPRINT-job.*` file to the report.
-
-### Wordworth 7 and ArtEffect
-
-Use MintPRINT 1.0.3 or newer so strip printing via
-`SPECIAL_NOFORMFEED` is assembled into one page. The confirmed Amiga Printer
-Preferences shown in [issue #9](https://github.com/boingball/MintPRINT/issues/9)
-use:
-
-```text
-Printer Driver: MintPRINT
-Print Method:   Normal
-Paper Type:     Sheet Feeder
-Density:        7
-Borders:        Left 0.00 in, Right 0.00 in, Top 0.50 in, Bottom 1.00 in
-```
-
-Application compatibility is separate from printer compatibility. A printer
-that works from MultiView can still expose an application-specific page-band
-or orientation bug.
 
 ## Add or update a printer report
 
@@ -229,6 +266,8 @@ Scaling:
 Quality:
 Colour/print mode:
 Application used for the test:
+Application version:
+Application Print Setup:
 Portrait/landscape:
 Physical result:
 ```

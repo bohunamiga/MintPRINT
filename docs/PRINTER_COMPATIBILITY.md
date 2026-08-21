@@ -201,28 +201,33 @@ delivered to MintPRINT. An application can override them by supplying its own
 are described in the
 [AmigaOS Workbench printer manual](https://wiki.amigaos.net/wiki/AmigaOS_Manual%3A_Workbench_Printers#PrinterGfx_Preferences_Editor).
 
-Recommended AmigaOS 3.2.3 baseline:
+Confirmed AmigaOS 3.2.3 test-machine baseline:
 
 ```text
 Dithering:       Ordered
 Scaling:         Fraction
 Image:           Positive
 Aspect:          Horizontal (portrait)
-Shade:           Color
+Shade:           Black & White
+Threshold:       7
 Density:         1
 Smoothing:       Off
 Center Picture:  Off
 Color correction: Off
+Colors:          4096
 Left Edge:       0
 Limits Type:     Ignore
 ```
 
-The important difference from the OS defaults shown in the current test is
-**Shade**: `Black & White` converts the graphics to black and white before
-MintPRINT receives it; use `Color` for colour output. Threshold only applies in
-Black & White mode. `Horizontal` means portrait and `Vertical` means landscape.
-`Limits=Ignore` leaves the requested print size under application control and
-avoids an additional hidden width/height constraint.
+These are the settings on the confirmed test machine and they still produce
+colour through MintPRINT. Although the AmigaOS manual describes `Shade` as the
+default colour-mode choice, applications can override PrinterGfx defaults in
+their graphics-dump request; do not require users to change `Black & White` to
+`Color` when colour output is already working. If one particular application
+unexpectedly prints monochrome, its own Print Setup and the PrinterGfx Shade
+setting are both worth checking. `Horizontal` means portrait and `Vertical`
+means landscape. `Limits=Ignore` leaves the requested print size under
+application control and avoids an additional hidden width/height constraint.
 
 PrinterGfx Density is not MintPRINT's IPP resolution selector. MintPRINT's DPI
 comes from MintPrint Settings; keep the OS density at `1` as the baseline and

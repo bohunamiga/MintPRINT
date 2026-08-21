@@ -181,6 +181,7 @@ graphics dumps to assemble one physical page.
 | **Wordworth 7** | ✅ Working | AmigaOS 3.2.3, Roadshow, Brother MFC-J6930DW, PWG Raster, driver revision 15 | A portrait document prints in the correct orientation as one physical page; the former trailing blank sheet is gone | Select `MintPRINT`, `Normal`, `Sheet Feeder`, Density `7`; borders Left `0.00 in`, Right `0.00 in`, Top `0.50 in`, Bottom `1.00 in` |
 | **ArtEffect 2** | ✅ Working | Same revision-15 PWG Raster environment | Confirmed still printing after the Wordworth page-geometry fix | Density `4`; Brightness, Contrast and Gamma `0`; working image size `188x176 mm`; both dimensions must remain smaller than the selected paper |
 | **DPaint V** | ❌ Not working | Same revision-15 test machine | Printing crashes DPaint with Software Failure `#8000000A` | No working setup confirmed; capture `T:MintPRINT-driver.log` from the failed attempt |
+| **MultiView** | ✅ Working | AmigaOS 3.2.3, same revision-15 test environment | Prints successfully using the active MintPRINT preferences | Select **Print**; MultiView provides no application-specific print settings |
 | **AmigaWriter** | ✅ Working | AmigaOS 3.2.3, Roadshow, Brother HL-L2350DW, MintPRINT 1.0.3 | A simple document printed correctly with `Scaling=auto` | No additional application-specific override reported |
 | **MintPrint Settings Test Print** | 🟡 Partial | Brother HL-L2350DW report | The centre of the test image remains enlarged and cropped with `Scaling=auto` | No working override confirmed yet |
 

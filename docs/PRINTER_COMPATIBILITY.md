@@ -180,6 +180,7 @@ graphics dumps to assemble one physical page.
 |---|---|---|---|---|
 | **Wordworth 7** | ✅ Working | AmigaOS 3.2.3, Roadshow, Brother MFC-J6930DW, PWG Raster, driver revision 15 | A portrait document prints in the correct orientation as one physical page; the former trailing blank sheet is gone | Select `MintPRINT`, `Normal`, `Sheet Feeder`, Density `7`; borders Left `0.00 in`, Right `0.00 in`, Top `0.50 in`, Bottom `1.00 in` |
 | **ArtEffect 2** | ✅ Working | Same revision-15 PWG Raster environment | Confirmed still printing after the Wordworth page-geometry fix | Density `4`; Brightness, Contrast and Gamma `0`; working image size `188x176 mm`; both dimensions must remain smaller than the selected paper |
+| **DPaint V** | ❌ Not working | Same revision-15 test machine | Printing crashes DPaint with Software Failure `#8000000A` | No working setup confirmed; capture `T:MintPRINT-driver.log` from the failed attempt |
 | **AmigaWriter** | ✅ Working | AmigaOS 3.2.3, Roadshow, Brother HL-L2350DW, MintPRINT 1.0.3 | A simple document printed correctly with `Scaling=auto` | No additional application-specific override reported |
 | **MintPrint Settings Test Print** | 🟡 Partial | Brother HL-L2350DW report | The centre of the test image remains enlarged and cropped with `Scaling=auto` | No working override confirmed yet |
 
@@ -242,6 +243,25 @@ Height:         176 mm
 Density `7` did not work in the reported test; Density `4` produced the
 confirmed print. Treat `188x176 mm` as a known-working A4 starting point rather
 than automatically expanding an image to `210x297 mm`.
+
+### DPaint V
+
+DPaint V currently crashes when printing through MintPRINT with AmigaOS
+Software Failure `#8000000A`. This is the same signature as the historical
+DPaint failure, not a newly identified Wordworth revision-15 regression.
+
+DPaint can invoke `printer.device` from an Exec Task rather than a normal DOS
+Process. MintPRINT already moves its DOS, file and network work into a spool
+Process, but the reproduced crash shows that the DPaint Task path is not yet
+fully isolated. Stock PostScript printing from DPaint worked in an earlier
+comparison, so this entry remains a MintPRINT driver compatibility defect rather
+than an application setting problem.
+
+The next report should include `T:MintPRINT-driver.log` from the exact failed
+attempt and note whether the crash happens immediately after selecting Print,
+during disk or network activity, or after a progress requester. A partial log is
+useful: its last completed callback will identify whether the remaining fault is
+in driver open, first render, spooling or close/submit teardown.
 
 ## Baseline setup and troubleshooting
 

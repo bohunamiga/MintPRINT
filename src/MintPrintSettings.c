@@ -4928,7 +4928,17 @@ int main(void) {
         apply_saved_option_state(window);
     }
 
-
+    /* check_and_offer_driver_install() above can pop an EasyRequest on top
+     * of this window before the event loop below has even started, so any
+     * IDCMP_REFRESHWINDOW that dialog's close generates sits unhandled
+     * until process_window_events() gets around to it - by which point
+     * the hand-drawn status box (see redraw_output_box()'s comment) may
+     * already have been damaged and repainted with nothing in it. One
+     * final synchronous repaint here, after all of the above startup
+     * activity has settled and immediately before the window is actually
+     * shown to the user, doesn't depend on that event ever arriving in
+     * time. */
+    redraw_output_box();
 
     // Process events
     process_window_events(window);

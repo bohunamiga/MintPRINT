@@ -23,8 +23,8 @@ multi-page PWG Raster document in one ordinary Print-Job.
 | MintPrint Settings | IPP value | Typical binding |
 | --- | --- | --- |
 | One-sided | `one-sided` | Print only on sheet fronts |
-| Duplex - long edge | `two-sided-long-edge` | Book-style portrait pages |
-| Duplex - short edge | `two-sided-short-edge` | Calendar/notepad-style portrait pages |
+| Long edge | `two-sided-long-edge` | Book-style portrait pages |
+| Short edge | `two-sided-short-edge` | Calendar/notepad-style portrait pages |
 
 ## Driver behaviour
 
@@ -61,11 +61,11 @@ the standard `normal` coordinate system.
 2. Open MintPrint Settings, select the printer and press **Query**.
 3. Select **PWG Raster** and confirm that **Sides** offers only the duplex
    modes reported by the printer.
-4. Save **Duplex - long edge** and print a four-page portrait document.
+4. Save **Long edge** and print a four-page portrait document.
    Expected: two sheets, with pages 1/2 and 3/4 paired.
 5. Repeat with **One-sided**. Expected: four one-sided sheets and no change to
    page size, orientation or application behaviour.
-6. If supported, test **Duplex - short edge** and confirm the reverse-side
+6. If supported, test **Short edge** and confirm the reverse-side
    orientation is correct.
 
 Enable **Debug** before a failed test and attach `T:MintPRINT-driver.log` and

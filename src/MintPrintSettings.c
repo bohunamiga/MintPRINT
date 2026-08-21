@@ -1743,13 +1743,13 @@ static void update_sides_dropdown(struct Window *win) {
 
     if (transport_ok && mp_supported_side("two-sided-long-edge")) {
         mp_sides_label_ptrs[count] = mp_sides_label_storage[count];
-        strcpy(mp_sides_label_storage[count], "Duplex - long edge");
+        strcpy(mp_sides_label_storage[count], "Long edge");
         strcpy(mp_sides_value_storage[count], "two-sided-long-edge");
         ++count;
     }
     if (transport_ok && mp_supported_side("two-sided-short-edge")) {
         mp_sides_label_ptrs[count] = mp_sides_label_storage[count];
-        strcpy(mp_sides_label_storage[count], "Duplex - short edge");
+        strcpy(mp_sides_label_storage[count], "Short edge");
         strcpy(mp_sides_value_storage[count], "two-sided-short-edge");
         ++count;
     }

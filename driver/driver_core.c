@@ -36,7 +36,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 8
+#define MP_DRIVER_REV 10
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -66,14 +66,24 @@ struct TagItem DriverTags[] = {
 
 /* Multiple Render(status=0 begin -> rows -> status=4 end) cycles inside one
  * Open()/Close() bracket is legitimate - that's how a real multi-page
- * document is printed, one physical page/IPP job per cycle. But an app
- * (observed: ArtEffect) can misbehave and present every source scanline as
- * its own one-row "page", turning one print into dozens of near-blank
- * physical sheets before anyone can react. No genuine single page is ever
- * this short at any realistic DPI, so a run of consecutive pages under
- * MP_TINY_PAGE_ROWS is the signal; MP_TINY_PAGE_STREAK_LIMIT requires
- * several in a row (not just one unusual small page) before refusing
- * further pages for the rest of this Open/Close bracket. */
+ * document is printed, one physical page/IPP job per cycle. It's also how
+ * real *strip* printing works (RKM "Printer Device": Strip Printing,
+ * confirmed for real against a WordWorth driver.log): an app splits
+ * content taller than one Render(0) call into several same-width bands,
+ * setting SPECIAL_NOFORMFEED (io_Special, read at case 5's pre-master call
+ * and re-checked at each case 4) on every band but the last so the driver
+ * knows not to eject/submit yet - RKM's own words for what the flag is
+ * for: "multiple graphics dump on a page oriented printer". This driver
+ * used to ignore that flag entirely and submit every band as its own
+ * complete IPP job; with scaling=auto that turned one page into several
+ * massive, blown-up strips. See case 4 below and mp_page_finalize().
+ *
+ * MP_TINY_PAGE_ROWS/STREAK_LIMIT remain as a separate safety net for
+ * genuinely pathological dumps that DON'T carry legitimate strip
+ * semantics (no SPECIAL_NOFORMFEED, just many tiny real pages in a row) -
+ * with NOFORMFEED now honoured, a legitimate strip-printed page is merged
+ * into one submission before this guard ever sees it, so it only fires on
+ * the pathological case it was built for. */
 #define MP_TINY_PAGE_ROWS 20
 #define MP_TINY_PAGE_STREAK_LIMIT 3
 
@@ -83,7 +93,18 @@ static ULONG g_page_width = 0;
 static ULONG g_page_height = 0;
 static ULONG g_rows_seen = 0;
 static ULONG g_tiny_page_streak = 0;
+static BOOL g_page_pending = FALSE;
+static ULONG g_accum_width = 0;
+static ULONG g_accum_height = 0;
 static BOOL g_runaway_tripped = FALSE;
+/* io_Special from the most recent case-5 pre-master call - the one place
+ * the RKM docs confirm carries it. Case 4 also receives io_Special as its
+ * own x parameter per the same docs; case 4 logs its own x purely to
+ * confirm that against real hardware, but decisions are made from this
+ * captured value rather than trusting case 4's x, since only case 5's has
+ * been directly verified in this codebase. */
+static ULONG g_current_special = 0;
+static BOOL g_sizing_pass = FALSE;
 
 static BOOL g_job_open = FALSE;
 static UBYTE *g_rgb_row = NULL;
@@ -416,9 +437,15 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
         }
     }
 
-    if (row_number != g_job_rows_written) {
+    /* g_rows_seen (not g_job_rows_written) is the right comparison here:
+     * it resets at the start of every Render(0), including a continuation
+     * band of an accumulating page, matching row_number's own per-band
+     * numbering (see the strip-printing accumulation in Render()'s case
+     * 0) - g_job_rows_written deliberately keeps counting across bands of
+     * the same page instead. */
+    if (row_number != g_rows_seen - 1) {
         mp_log_3("Non-sequential row got/expected/height",
-                 (LONG)row_number, (LONG)g_job_rows_written,
+                 (LONG)row_number, (LONG)(g_rows_seen - 1),
                  (LONG)g_page_height);
     }
 
@@ -456,12 +483,16 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
     return TRUE;
 }
 
-static BOOL mp_job_finish(void)
+/* expected_rows is the total row count this job's encoder should have
+ * received by now - g_page_height (this band's own height) for a normal
+ * single-band page, or g_accum_height (the true accumulated total) when
+ * finalizing a strip-printed page made of several bands. */
+static BOOL mp_job_finish(ULONG expected_rows)
 {
     BOOL ok = FALSE;
     const char *label;
 
-    if (!g_job_failed && g_job_open && g_job_rows_written == g_page_height) {
+    if (!g_job_failed && g_job_open && g_job_rows_written == expected_rows) {
         switch (g_engine) {
             case MP_ENGINE_PWG: ok = mp_pwg_finish(&g_pwg) ? TRUE : FALSE; break;
             case MP_ENGINE_PDF: ok = mp_pdf_finish(&g_pdf) ? TRUE : FALSE; break;
@@ -477,10 +508,109 @@ static BOOL mp_job_finish(void)
         case MP_ENGINE_PDF: label = "PDF end rows/expected/failed"; break;
         default:            label = "JPEG end rows/expected/failed"; break;
     }
-    mp_log_3(label, (LONG)g_job_rows_written, (LONG)g_page_height,
+    mp_log_3(label, (LONG)g_job_rows_written, (LONG)expected_rows,
              g_job_failed ? 1 : 0);
     mp_job_cleanup();
     return ok;
+}
+
+/* Continues the currently-open PWG job with another band of extra_rows
+ * more rows, without closing the file, resetting buffers, or writing a
+ * new header - the caller (Render()'s case 0) only takes this path when
+ * the new band's width matches the page already being accumulated, so
+ * g_rgb_row/g_pwg_scratch (sized from that width) are still correct. */
+static BOOL mp_job_extend_pwg(ULONG extra_rows)
+{
+    if (!g_job_open || g_job_failed) return FALSE;
+    if (!mp_pwg_grow(&g_pwg, extra_rows)) {
+        mp_log_text("PWG grow failed (accumulated page too tall)");
+        g_job_failed = TRUE;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/* Submits the just-finished job file and applies the same runaway-storm
+ * bookkeeping and keep_job cleanup either page-submission path needs.
+ * rows_for_streak is the height the tiny-page-storm guard should judge
+ * this submission by - the real total for a strip-accumulated page, not
+ * any one band's own height. Returns mp_spool_ipp_submit()'s result. */
+static LONG mp_page_submit_and_track(ULONG rows_for_streak)
+{
+    struct MPIPPResult result;
+    LONG ipp_rc;
+    CONST_STRPTR fname = mp_job_filename();
+    CONST_STRPTR fmt;
+
+    switch (g_engine) {
+        case MP_ENGINE_PWG: fmt = (CONST_STRPTR)"image/pwg-raster"; break;
+        case MP_ENGINE_PDF: fmt = (CONST_STRPTR)"application/pdf"; break;
+        default:            fmt = (CONST_STRPTR)"image/jpeg"; break;
+    }
+
+    ipp_rc = mp_spool_ipp_submit(&g_config, fname, fmt, &result);
+    mp_log_3("IPP result error/http/status",
+             result.error, result.http_status, (LONG)result.ipp_status);
+
+    if (ipp_rc == 0) {
+        if (rows_for_streak < MP_TINY_PAGE_ROWS) {
+            ++g_tiny_page_streak;
+            if (g_tiny_page_streak >= MP_TINY_PAGE_STREAK_LIMIT) {
+                g_runaway_tripped = TRUE;
+                mp_log_3("Runaway tiny-page storm detected, refusing further pages this print - height/limit/streak",
+                         (LONG)rows_for_streak, (LONG)MP_TINY_PAGE_ROWS,
+                         (LONG)g_tiny_page_streak);
+            }
+        } else {
+            g_tiny_page_streak = 0;
+        }
+        if (!g_config.keep_job) mp_spool_job_delete(fname);
+    }
+    return ipp_rc;
+}
+
+/* Ends the page currently open - which may be a single band (the common
+ * case: SPECIAL_NOFORMFEED was never set, so case 4 finalizes on its very
+ * first call) or the last of several bands accumulated across multiple
+ * Render(0)/.../Render(4) cycles while SPECIAL_NOFORMFEED held it open
+ * (see case 0/4 below). For a multi-band PWG page, patches the header's
+ * declared height from the first band's (what mp_pwg_begin saw) to the
+ * true accumulated total before finishing, so the file matches what was
+ * actually written; JPEG/PDF are always single-band (they can't support
+ * this kind of post-hoc header patch), so nothing needs patching there.
+ *
+ * Returns TRUE if there was nothing to finalize, or finalizing succeeded;
+ * FALSE only if a page was actually finalized here and failed - in the
+ * common single-band case this runs synchronously inside the same
+ * Render(4) call that's about to return to printer.device, so that
+ * caller can still turn a real failure into PDERR_CANCEL. Only the
+ * earlier, NOFORMFEED-held-open bands of a multi-band page lose that
+ * synchronous signal (they already returned PDERR_NOERR before this
+ * could be known); the outcome is still fully visible in the driver
+ * log. */
+static BOOL mp_page_finalize(void)
+{
+    BOOL job_ok;
+
+    if (!g_page_pending) return TRUE;
+    g_page_pending = FALSE;
+
+    if (g_engine == MP_ENGINE_PWG && !g_job_failed) {
+        UBYTE be[4];
+        be[0] = (UBYTE)(g_accum_height >> 24);
+        be[1] = (UBYTE)(g_accum_height >> 16);
+        be[2] = (UBYTE)(g_accum_height >> 8);
+        be[3] = (UBYTE)g_accum_height;
+        if (!mp_spool_job_patch(MP_PWG_HEIGHT_FIELD_OFFSET, be, 4) ||
+            !mp_spool_job_patch(MP_PWG_ROWCOUNT_FIELD_OFFSET, be, 4)) {
+            mp_log_text("Failed to patch accumulated PWG page height");
+            g_job_failed = TRUE;
+        }
+    }
+
+    job_ok = mp_job_finish(g_accum_height);
+    if (!job_ok) return FALSE;
+    return mp_page_submit_and_track(g_accum_height) == 0;
 }
 
 static void mp_log_row(struct PrtInfo *pi, ULONG row)
@@ -562,6 +692,9 @@ int PRT_STDARGS DriverOpen(struct IORequest *ior)
     (void)ior;
     g_tiny_page_streak = 0;
     g_runaway_tripped = FALSE;
+    g_page_pending = FALSE;
+    g_sizing_pass = FALSE;
+    g_current_special = 0;
     mp_log_text("Open");
     return 0;
 }
@@ -569,6 +702,10 @@ int PRT_STDARGS DriverOpen(struct IORequest *ior)
 VOID PRT_STDARGS DriverClose(struct IORequest *ior)
 {
     (void)ior;
+    /* A strip-printed page can still be mid-accumulation when the whole
+     * print request ends normally - finalize and submit it rather than
+     * silently discarding its last (possibly only) bands. */
+    if (g_page_pending) mp_page_finalize();
     mp_job_cleanup();
     mp_log_text("Close");
 }
@@ -593,6 +730,7 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
 {
     switch (status) {
         case 5: /* Pre-master initialisation. x = io_Special density flags. */
+            g_current_special = (ULONG)x;
             if (PED) {
                 PED->ped_MaxXDots = 4096;
                 PED->ped_MaxYDots = 6144;
@@ -603,9 +741,8 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             mp_log_3("Render pre-master special/maxX/maxY", x, 4096, 6144);
             return PDERR_NOERR;
 
-        case 0: /* Master initialisation: x/y are final output dimensions. */
-            g_page_width = (ULONG)x;
-            g_page_height = (ULONG)y;
+        case 0: { /* Master initialisation: x/y are final output dimensions. */
+            BOOL continuation;
             g_rows_seen = 0;
             g_config_source = mp_spool_config_load(&g_config);
             /* ct's meaning here is undocumented in this codebase - logging
@@ -616,19 +753,68 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             mp_log_3("Render begin width/height/ct", x, y, ct);
             mp_log_config(&g_config, g_config_source);
 
+            /* SPECIAL_NOPRINT: a sizing-only pass (RKM) - the app is
+             * asking how big its dump would be, not asking for output.
+             * Take no action and produce nothing; case 1/4 below check
+             * g_sizing_pass and stay inert too. */
+            if (g_current_special & SPECIAL_NOPRINT) {
+                g_sizing_pass = TRUE;
+                mp_log_text("Sizing-only pass (SPECIAL_NOPRINT) - no output");
+                return PDERR_NOERR;
+            }
+            g_sizing_pass = FALSE;
+
             if (g_runaway_tripped) {
                 mp_log_text("Refusing page: runaway tiny-page storm already tripped this print");
                 return PDERR_CANCEL;
             }
 
+            /* Same width as the page currently being accumulated -> this
+             * is another band of it, not a new page - matches whatever
+             * case 4 decided last time it saw SPECIAL_NOFORMFEED (below). */
+            continuation = g_page_pending && g_engine == MP_ENGINE_PWG &&
+                           (ULONG)x == g_accum_width;
+
+            if (g_page_pending && !continuation) {
+                /* A page was left pending without ever getting a
+                 * matching-width continuation - width changed (or the
+                 * engine did) without a NOFORMFEED-suppressed close.
+                 * Finish it as-is rather than losing it. */
+                mp_page_finalize();
+            }
+
+            if (continuation) {
+                g_page_width = (ULONG)x;
+                g_page_height = (ULONG)y;
+                if (!mp_job_extend_pwg((ULONG)y)) return PDERR_BUFFERMEMORY;
+                g_accum_height += (ULONG)y;
+                mp_log_3("PWG band appended width/thisHeight/accumHeight",
+                         x, y, (LONG)g_accum_height);
+                return PDERR_NOERR;
+            }
+
+            g_page_width = (ULONG)x;
+            g_page_height = (ULONG)y;
             if (!mp_job_begin(g_page_width, g_page_height))
                 return PDERR_BUFFERMEMORY;
 
+            /* Every page tentatively starts pending; case 4 is the only
+             * place that decides whether to finish now or wait for more
+             * bands (SPECIAL_NOFORMFEED), so a normal single-band page
+             * (the overwhelming majority) finalizes synchronously inside
+             * its own case 4 call exactly as before this change. */
+            g_page_pending = TRUE;
+            g_accum_width = g_page_width;
+            g_accum_height = g_page_height;
+
             return PDERR_NOERR;
+        }
 
         case 1: { /* Raster row: ct -> PrtInfo, y = output row number. */
             struct PrtInfo *pi = (struct PrtInfo *)ct;
             ++g_rows_seen;
+
+            if (g_sizing_pass) return PDERR_NOERR; /* SPECIAL_NOPRINT - discard */
 
             if ((ULONG)y == 0 ||
                 (g_page_height && (ULONG)y == (g_page_height / 2)) ||
@@ -648,46 +834,37 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
         case 3: /* Printer buffer would normally be cleared here. */
             return PDERR_NOERR;
 
-        case 4: /* Close down. ct = final error code. */
-            mp_log_3("Render end status/rows/expected", ct,
-                     (LONG)g_rows_seen, (LONG)g_page_height);
-            {
-                BOOL job_ok = mp_job_finish();
-                if (ct == 0 && job_ok) {
-                    struct MPIPPResult result;
-                    LONG ipp_rc;
-                    CONST_STRPTR fname = mp_job_filename();
-                    CONST_STRPTR fmt;
-                    switch (g_engine) {
-                        case MP_ENGINE_PWG: fmt = (CONST_STRPTR)"image/pwg-raster"; break;
-                        case MP_ENGINE_PDF: fmt = (CONST_STRPTR)"application/pdf"; break;
-                        default:            fmt = (CONST_STRPTR)"image/jpeg"; break;
-                    }
-                    ipp_rc = mp_spool_ipp_submit(&g_config, fname, fmt, &result);
-                    mp_log_3("IPP result error/http/status",
-                             result.error, result.http_status,
-                             (LONG)result.ipp_status);
+        case 4: /* Close down. ct = final error code. x = io_Special per
+                 * the same RKM convention as case 5 - logged raw here
+                 * (not just used) to confirm that against real hardware,
+                 * since only case 5's x has actually been verified so
+                 * far; decisions below use g_current_special (captured at
+                 * the case-5 call that preceded this cycle) rather than
+                 * trusting this x, until that's confirmed. */
+            mp_log_3("Render end ct/special/rows", ct, x, (LONG)g_rows_seen);
 
-                    if (ipp_rc == 0) {
-                        if (g_page_height < MP_TINY_PAGE_ROWS) {
-                            ++g_tiny_page_streak;
-                            if (g_tiny_page_streak >= MP_TINY_PAGE_STREAK_LIMIT) {
-                                g_runaway_tripped = TRUE;
-                                mp_log_3("Runaway tiny-page storm detected, refusing further pages this print - height/limit/streak",
-                                         (LONG)g_page_height, (LONG)MP_TINY_PAGE_ROWS,
-                                         (LONG)g_tiny_page_streak);
-                            }
-                        } else {
-                            g_tiny_page_streak = 0;
-                        }
-                    }
-
-                    if (ipp_rc != 0) return PDERR_CANCEL;
-                    if (!g_config.keep_job)
-                        mp_spool_job_delete(fname);
-                }
+            if (g_sizing_pass) {
+                g_sizing_pass = FALSE;
+                return PDERR_NOERR;
             }
-            return PDERR_NOERR;
+
+            if (ct != 0 || g_job_failed ||
+                g_job_rows_written != g_accum_height) {
+                g_job_failed = TRUE;
+            }
+
+            /* SPECIAL_NOFORMFEED: "here's another band of the same page,
+             * don't eject/submit yet" (RKM: "multiple graphics dump on a
+             * page oriented printer"). Only PWG can stay pending across
+             * bands (see mp_job_extend_pwg/mp_page_finalize) - JPEG/PDF
+             * always finalize below exactly as before this change. */
+            if (g_engine == MP_ENGINE_PWG &&
+                (g_current_special & SPECIAL_NOFORMFEED)) {
+                mp_log_text("SPECIAL_NOFORMFEED set - deferring, more bands expected");
+                return PDERR_NOERR;
+            }
+
+            return mp_page_finalize() ? PDERR_NOERR : PDERR_CANCEL;
 
         case 6: /* Multi-pass colour change; not used by PCC_YMCB. */
             return PDERR_NOERR;

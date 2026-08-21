@@ -37,6 +37,18 @@ typedef struct MPPwgEncoder {
     int failed;
 } MPPwgEncoder;
 
+/* Byte offsets (from the very start of the page - i.e. including the
+ * 4-byte "RaS2" sync) of the two 4-byte big-endian fields in the page
+ * header that declare its height: cupsHeight and cupsRowCount. Both are
+ * written by mp_pwg_begin() using whatever height it was given at that
+ * time. A caller that grows the page afterwards via mp_pwg_grow() (see
+ * strip-printing accumulation in driver_core.c) must patch both of these
+ * in the already-written stream to the true final height once it's known
+ * - mp_pwg_grow() only raises the encoder's in-memory row-count cap, it
+ * cannot rewrite bytes already handed to write_fn. */
+#define MP_PWG_HEIGHT_FIELD_OFFSET   380UL
+#define MP_PWG_ROWCOUNT_FIELD_OFFSET 412UL
+
 unsigned long mp_pwg_scratch_size(unsigned long width);
 /* page_pts_x/y is the PHYSICAL page size (in 1/72in points) declared in
  * the header's PageSize field - independent of width/height, which are
@@ -52,5 +64,14 @@ int mp_pwg_begin(MPPwgEncoder *enc, unsigned long width, unsigned long height,
                  MPPwgWriteFn write_fn, void *write_ctx);
 int mp_pwg_write_scanline(MPPwgEncoder *enc, const unsigned char *rgb);
 int mp_pwg_finish(MPPwgEncoder *enc);
+
+/* Raises the row-count cap mp_pwg_write_scanline() enforces by extra_rows,
+ * without touching anything already written (no new header, no reset).
+ * For accumulating several strip-printed bands of the same page into one
+ * PWG document: the header's cupsHeight/cupsRowCount fields still say
+ * whatever the first band's height was and must be patched separately
+ * (see MP_PWG_HEIGHT_FIELD_OFFSET/MP_PWG_ROWCOUNT_FIELD_OFFSET) once the
+ * true total is known. Fails if the new total would exceed 65535 rows. */
+int mp_pwg_grow(MPPwgEncoder *enc, unsigned long extra_rows);
 
 #endif

@@ -31,6 +31,7 @@ enum {
     MP_SPOOL_CMD_LOG = 1,
     MP_SPOOL_CMD_JOB_OPEN,
     MP_SPOOL_CMD_JOB_WRITE,
+    MP_SPOOL_CMD_JOB_PATCH,
     MP_SPOOL_CMD_JOB_CLOSE,
     MP_SPOOL_CMD_JOB_DELETE,
     MP_SPOOL_CMD_IPP_SUBMIT,
@@ -44,6 +45,7 @@ struct MPSpoolMsg {
     CONST_STRPTR filename;
     const UBYTE *data;
     ULONG length;
+    ULONG offset;
     const char *text;
     const struct MPConfig *cfg;
     struct MPConfig *cfg_io;
@@ -142,6 +144,17 @@ static LONG mp_spool_entry(void)
                             if (n <= 0) { m->result = -1; break; }
                             done += (ULONG)n;
                         }
+                    } else {
+                        m->result = -1;
+                    }
+                    break;
+
+                case MP_SPOOL_CMD_JOB_PATCH:
+                    if (job_fh && m->data && m->length &&
+                        Seek(job_fh, (LONG)m->offset, OFFSET_BEGINNING) != -1) {
+                        LONG n = Write(job_fh, (APTR)m->data, (LONG)m->length);
+                        m->result = (n == (LONG)m->length) ? 0 : -1;
+                        Seek(job_fh, 0, OFFSET_END);
                     } else {
                         m->result = -1;
                     }
@@ -324,6 +337,16 @@ BOOL mp_spool_job_write(const UBYTE *data, ULONG length)
 {
     struct MPSpoolMsg m;
     m.cmd = MP_SPOOL_CMD_JOB_WRITE;
+    m.data = data;
+    m.length = length;
+    return mp_spool_send(&m);
+}
+
+BOOL mp_spool_job_patch(ULONG offset, const UBYTE *data, ULONG length)
+{
+    struct MPSpoolMsg m;
+    m.cmd = MP_SPOOL_CMD_JOB_PATCH;
+    m.offset = offset;
     m.data = data;
     m.length = length;
     return mp_spool_send(&m);

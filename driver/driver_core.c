@@ -29,6 +29,7 @@
 #include "pwg_writer.h"
 #include "pdf_writer.h"
 #include "ipp_client.h"
+#include "media_size.h"
 #include "spool.h"
 
 /* Keep in sync with the MPDRVREV: marker in printertag.s and
@@ -36,7 +37,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 13
+#define MP_DRIVER_REV 15
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -68,8 +69,9 @@ struct TagItem DriverTags[] = {
  * Open()/Close() bracket is legitimate - that's how a real multi-page
  * document is printed, one physical page/IPP job per cycle. It's also how
  * real *strip* printing works (RKM "Printer Device": Strip Printing,
- * confirmed for real against a WordWorth driver.log): an app splits
- * content taller than one Render(0) call into several same-width bands,
+ * confirmed for real against Wordworth driver logs): an app splits
+ * content taller than one Render(0) call into several same-width bands
+ * and can add tiny auxiliary graphics dumps to the same physical page,
  * setting SPECIAL_NOFORMFEED (io_Special, read at case 5's pre-master call
  * and re-checked at each case 4) on every band but the last so the driver
  * knows not to eject/submit yet - RKM's own words for what the flag is
@@ -97,6 +99,9 @@ static BOOL g_page_pending = FALSE;
 static ULONG g_accum_width = 0;
 static ULONG g_accum_height = 0;
 static BOOL g_runaway_tripped = FALSE;
+static BOOL g_page_had_noformfeed = FALSE;
+static BOOL g_discard_aux_band = FALSE;
+static BOOL g_discard_aux_band_has_ink = FALSE;
 /* io_Special from the most recent case-5 pre-master call - the one place
  * the RKM docs confirm carries it. Case 4 also receives io_Special as its
  * own x parameter per the same docs; case 4 logs its own x purely to
@@ -518,20 +523,54 @@ static BOOL mp_job_finish(ULONG expected_rows)
     return ok;
 }
 
-/* Continues the currently-open PWG job with another band of extra_rows
- * more rows, without closing the file, resetting buffers, or writing a
- * new header - the caller (Render()'s case 0) only takes this path when
- * the new band's width matches the page already being accumulated, so
- * g_rgb_row/g_pwg_scratch (sized from that width) are still correct. */
-static BOOL mp_job_extend_pwg(ULONG extra_rows)
+/* Ensures the currently-open PWG encoder can accept total_rows. A
+ * media-sized strip job usually has the full row cap from its first band;
+ * unknown media can still grow safely as more same-width bands arrive. */
+static BOOL mp_job_reserve_pwg(ULONG total_rows)
 {
     if (!g_job_open || g_job_failed) return FALSE;
-    if (!mp_pwg_grow(&g_pwg, extra_rows)) {
+    if (total_rows <= g_pwg.height) return TRUE;
+    if (!mp_pwg_grow(&g_pwg, total_rows - g_pwg.height)) {
         mp_log_text("PWG grow failed (accumulated page too tall)");
         g_job_failed = TRUE;
         return FALSE;
     }
     return TRUE;
+}
+
+static BOOL mp_job_pad_pwg(ULONG target_rows)
+{
+    ULONG i;
+
+    if (!g_job_open || g_job_failed || !g_rgb_row) return FALSE;
+    if (!mp_job_reserve_pwg(target_rows)) return FALSE;
+
+    for (i = 0; i < g_rgb_row_bytes; ++i) g_rgb_row[i] = 255;
+    while (g_job_rows_written < target_rows) {
+        if (!mp_pwg_write_scanline(&g_pwg, g_rgb_row)) {
+            mp_log_text("PWG blank page padding failed");
+            g_job_failed = TRUE;
+            return FALSE;
+        }
+        ++g_job_rows_written;
+    }
+    return TRUE;
+}
+
+static BOOL mp_row_has_ink(struct PrtInfo *pi)
+{
+    ULONG i;
+
+    if (!pi || !pi->pi_ColorInt) return FALSE;
+    for (i = 0; i < (ULONG)pi->pi_width; ++i) {
+        union colorEntry *pixel = &pi->pi_ColorInt[i];
+        if (pixel->colorByte[PCMYELLOW] ||
+            pixel->colorByte[PCMMAGENTA] ||
+            pixel->colorByte[PCMCYAN] ||
+            pixel->colorByte[PCMBLACK])
+            return TRUE;
+    }
+    return FALSE;
 }
 
 /* Submits the just-finished job file and applies the same runaway-storm
@@ -577,11 +616,11 @@ static LONG mp_page_submit_and_track(ULONG rows_for_streak)
  * case: SPECIAL_NOFORMFEED was never set, so case 4 finalizes on its very
  * first call) or the last of several bands accumulated across multiple
  * Render(0)/.../Render(4) cycles while SPECIAL_NOFORMFEED held it open
- * (see case 0/4 below). For a multi-band PWG page, patches the header's
- * declared height from the first band's (what mp_pwg_begin saw) to the
- * true accumulated total before finishing, so the file matches what was
- * actually written; JPEG/PDF are always single-band (they can't support
- * this kind of post-hoc header patch), so nothing needs patching there.
+ * (see case 0/4 below). A media-sized multi-band PWG page is padded with
+ * white rows before finishing; an unknown-media page is grown as bands
+ * arrive. The final header geometry is patched to match the rows actually
+ * written. JPEG/PDF remain single-band because they cannot support this
+ * kind of post-hoc streaming adjustment.
  *
  * Returns TRUE if there was nothing to finalize, or finalizing succeeded;
  * FALSE only if a page was actually finalized here and failed - in the
@@ -601,6 +640,25 @@ static BOOL mp_page_finalize(void)
 
     if (g_engine == MP_ENGINE_PWG && !g_job_failed) {
         UBYTE be[4];
+        ULONG page_points_y;
+
+        /* A NOFORMFEED strip dump describes content placed on a physical
+         * page, not a page whose height ends at the final ink row. Pad the
+         * streamed raster to the complete media-derived height selected at
+         * the first band. Without this, a short portrait document such as
+         * 2478x2100 is advertised as landscape and printers auto-rotate it. */
+        if (g_page_had_noformfeed && g_pwg.height > g_accum_height) {
+            ULONG before = g_accum_height;
+            if (!mp_job_pad_pwg(g_pwg.height)) {
+                g_job_failed = TRUE;
+            } else {
+                g_accum_height = g_pwg.height;
+                mp_log_3("PWG padded strip page rows/from/to",
+                         (LONG)(g_accum_height - before),
+                         (LONG)before, (LONG)g_accum_height);
+            }
+        }
+
         be[0] = (UBYTE)(g_accum_height >> 24);
         be[1] = (UBYTE)(g_accum_height >> 16);
         be[2] = (UBYTE)(g_accum_height >> 8);
@@ -608,6 +666,20 @@ static BOOL mp_page_finalize(void)
         if (!mp_spool_job_patch(MP_PWG_HEIGHT_FIELD_OFFSET, be, 4) ||
             !mp_spool_job_patch(MP_PWG_ROWCOUNT_FIELD_OFFSET, be, 4)) {
             mp_log_text("Failed to patch accumulated PWG page height");
+            g_job_failed = TRUE;
+        }
+
+        /* mp_pwg_begin used the first band's height in older builds. Keep
+         * PageSizeY consistent with the final cupsHeight even when media
+         * parsing failed and the encoder had to grow as bands arrived. */
+        page_points_y = (g_accum_height * 72UL) /
+                        (g_config.resolution ? g_config.resolution : 300UL);
+        be[0] = (UBYTE)(page_points_y >> 24);
+        be[1] = (UBYTE)(page_points_y >> 16);
+        be[2] = (UBYTE)(page_points_y >> 8);
+        be[3] = (UBYTE)page_points_y;
+        if (!mp_spool_job_patch(MP_PWG_PAGESIZE_Y_FIELD_OFFSET, be, 4)) {
+            mp_log_text("Failed to patch accumulated PWG PageSizeY");
             g_job_failed = TRUE;
         }
     }
@@ -710,6 +782,9 @@ int PRT_STDARGS DriverOpen(struct IORequest *ior)
     g_page_pending = FALSE;
     g_sizing_pass = FALSE;
     g_current_special = 0;
+    g_page_had_noformfeed = FALSE;
+    g_discard_aux_band = FALSE;
+    g_discard_aux_band_has_ink = FALSE;
     /* Loaded once per Open() bracket (i.e. once per print job) rather than
      * per-page inside Render() case 0: case 5, which sets the PED
      * resolution/MaxDots fields below, fires BEFORE case 0 on every job's
@@ -773,7 +848,10 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
 
         case 0: { /* Master initialisation: x/y are final output dimensions. */
             BOOL continuation;
+            ULONG encoder_height;
             g_rows_seen = 0;
+            g_discard_aux_band = FALSE;
+            g_discard_aux_band_has_ink = FALSE;
             /* g_config was already loaded once for this job in DriverOpen()
              * - case 5 (which fires before this on the job's first page)
              * needs it that early for the PED resolution fields below. */
@@ -800,6 +878,22 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                 return PDERR_CANCEL;
             }
 
+            /* Wordworth can issue a final four-pixel-wide graphics dump
+             * under the same SPECIAL_NOFORMFEED page. It is an auxiliary
+             * placement, not a new sheet and not a same-width horizontal
+             * band that can be appended to our streaming raster. Ignore it
+             * while preserving the real full-width page for finalisation. */
+            if (g_page_pending && g_engine == MP_ENGINE_PWG &&
+                (g_current_special & SPECIAL_NOFORMFEED) &&
+                mp_is_tiny_auxiliary_band(g_accum_width, (ULONG)x)) {
+                g_discard_aux_band = TRUE;
+                g_page_height = (ULONG)y;
+                g_page_had_noformfeed = TRUE;
+                mp_log_3("Ignoring tiny NOFORMFEED auxiliary band width/height/pageWidth",
+                         x, y, (LONG)g_accum_width);
+                return PDERR_NOERR;
+            }
+
             /* Same width as the page currently being accumulated -> this
              * is another band of it, not a new page - matches whatever
              * case 4 decided last time it saw SPECIAL_NOFORMFEED (below). */
@@ -817,7 +911,8 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             if (continuation) {
                 g_page_width = (ULONG)x;
                 g_page_height = (ULONG)y;
-                if (!mp_job_extend_pwg((ULONG)y)) return PDERR_BUFFERMEMORY;
+                if (!mp_job_reserve_pwg(g_accum_height + (ULONG)y))
+                    return PDERR_BUFFERMEMORY;
                 g_accum_height += (ULONG)y;
                 mp_log_3("PWG band appended width/thisHeight/accumHeight",
                          x, y, (LONG)g_accum_height);
@@ -826,7 +921,19 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
 
             g_page_width = (ULONG)x;
             g_page_height = (ULONG)y;
-            if (!mp_job_begin(g_page_width, g_page_height))
+            encoder_height = g_page_height;
+            if (mp_detect_engine(&g_config) == MP_ENGINE_PWG &&
+                (g_current_special & SPECIAL_NOFORMFEED)) {
+                ULONG media_height = mp_media_target_height(
+                    g_config.media, g_page_width, g_config.resolution);
+                if (media_height > encoder_height) {
+                    encoder_height = media_height;
+                    mp_log_3("PWG strip target width/bandHeight/pageHeight",
+                             (LONG)g_page_width, (LONG)g_page_height,
+                             (LONG)encoder_height);
+                }
+            }
+            if (!mp_job_begin(g_page_width, encoder_height))
                 return PDERR_BUFFERMEMORY;
 
             /* Every page tentatively starts pending; case 4 is the only
@@ -837,6 +944,8 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             g_page_pending = TRUE;
             g_accum_width = g_page_width;
             g_accum_height = g_page_height;
+            g_page_had_noformfeed =
+                (g_current_special & SPECIAL_NOFORMFEED) ? TRUE : FALSE;
 
             return PDERR_NOERR;
         }
@@ -851,6 +960,11 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                 (g_page_height && (ULONG)y == (g_page_height / 2)) ||
                 (g_page_height && ((ULONG)y + 1) == g_page_height)) {
                 mp_log_row(pi, (ULONG)y);
+            }
+
+            if (g_discard_aux_band) {
+                if (mp_row_has_ink(pi)) g_discard_aux_band_has_ink = TRUE;
+                return PDERR_NOERR;
             }
 
             if (!g_job_failed && !mp_job_write_row(pi, (ULONG)y))
@@ -879,6 +993,16 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                 return PDERR_NOERR;
             }
 
+            if (g_discard_aux_band) {
+                if (ct != 0) g_job_failed = TRUE;
+                mp_log_text(g_discard_aux_band_has_ink
+                    ? "Discarded nonblank tiny NOFORMFEED auxiliary band"
+                    : "Discarded blank tiny NOFORMFEED auxiliary band");
+                g_discard_aux_band = FALSE;
+                g_discard_aux_band_has_ink = FALSE;
+                return PDERR_NOERR;
+            }
+
             if (ct != 0 || g_job_failed ||
                 g_job_rows_written != g_accum_height) {
                 g_job_failed = TRUE;
@@ -887,10 +1011,11 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             /* SPECIAL_NOFORMFEED: "here's another band of the same page,
              * don't eject/submit yet" (RKM: "multiple graphics dump on a
              * page oriented printer"). Only PWG can stay pending across
-             * bands (see mp_job_extend_pwg/mp_page_finalize) - JPEG/PDF
+             * bands (see mp_job_reserve_pwg/mp_page_finalize) - JPEG/PDF
              * always finalize below exactly as before this change. */
             if (g_engine == MP_ENGINE_PWG &&
                 (g_current_special & SPECIAL_NOFORMFEED)) {
+                g_page_had_noformfeed = TRUE;
                 mp_log_text("SPECIAL_NOFORMFEED set - deferring, more bands expected");
                 return PDERR_NOERR;
             }

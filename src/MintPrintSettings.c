@@ -51,7 +51,12 @@ extern struct GfxBase *GfxBase;
 #define MAX_VALUES 32
 #define MAX_ATTR_LEN 64
 #define MAX_BUFFER 256000
-#define MAX_OUTPUT_LINES 10
+/* 8, not 10: the box's font is Topaz80 (see redraw_output_box()), giving
+ * a line height of tf_YSize(8)+2=10px. The window's fixed WA_InnerHeight
+ * only leaves room below OUTPUT_TOP for 8 lines at that height (8*10=80px)
+ * - 10 lines would push the box's bottom border past the window's own
+ * bottom edge. */
+#define MAX_OUTPUT_LINES 8
 /* The debug output box is OUTPUT_LEFT..OUTPUT_RIGHT wide - at the main
  * window's 520px width that's ~490px, or ~61 chars of Topaz80 (8px/char).
  * 47 left several real messages (e.g. "Unit%d has no saved settings yet -
@@ -102,9 +107,6 @@ struct DiscoveredPrinter {
 
 #define OUTPUT_TOP     265 // Below Test Print / Save / Exit row
 #define OUTPUT_LEFT    10
-#define OUTPUT_LINE_H  8
-#define OUTPUT_LINES   MAX_OUTPUT_LINES
-#define OUTPUT_BOTTOM  (OUTPUT_TOP + (OUTPUT_LINE_H * OUTPUT_LINES) - 1)
 #define OUTPUT_RIGHT   (window->Width - 20)
 
 // Define the USED macro for GCC
@@ -405,13 +407,6 @@ BOOL operation_in_progress = FALSE;
 struct TextAttr Topaz80 = {
     "topaz.font",
     8,
-    0,
-    0
-};
-
-struct TextAttr Topaz60 = {
-    "topaz.font",
-    6,
     0,
     0
 };
@@ -4809,10 +4804,16 @@ int main(void) {
         return 1;
     }
 
-    // Open Topaz font
-    font = OpenFont(&Topaz60);
+    /* Same topaz.font size (8) GadTools already opens for every gadget in
+     * this window via ng_TextAttr - not the separate size-6 variant this
+     * used to request, which a real-hardware report tied to WordWorth
+     * having been run: RectFill (the status box's border/background)
+     * kept drawing fine, only Text() using this font produced nothing,
+     * consistent with that specific font variant's glyph data being the
+     * one thing broken rather than this window/RastPort in general. */
+    font = OpenFont(&Topaz80);
     if (!font) {
-        printf("Failed to open Topaz 6 font\n");
+        printf("Failed to open Topaz font\n");
         CloseLibrary(SocketBase);
         CloseLibrary(GadToolsBase);
         CloseLibrary((struct Library *)GfxBase);

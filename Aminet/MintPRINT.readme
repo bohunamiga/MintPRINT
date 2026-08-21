@@ -2,7 +2,7 @@ Short:        IPP/AirPrint driver and setup tool
 Author:       Darren Banfi (boingball)
 Uploader:     boingball gmail com (Darren Banfi)
 Type:         driver/print
-Version:      1.0.3
+Version:      1.0.3b
 Requires:     68000+; AmigaOS 3.1+; TCP/IP stack providing bsdsocket.library
 Architecture: m68k-amigaos >= 3.1.0
 Distribution: MIT License - see LICENSE in the source repository
@@ -181,6 +181,20 @@ Claude.
 
 History
 -------
+
+1.0.3b Page-boundary fixes and clearer setup options.
+
+       - Fixed multi-page PWG jobs being combined into one oversized
+         raster when applications left SPECIAL_NOFORMFEED set; complete
+         media-sized pages and narrow end-of-page auxiliary dumps now
+         provide safe physical-page boundaries
+       - Preserved media-height padding for genuine WordWorth strip
+         printing, preventing short portrait documents being rotated or
+         expanded while allowing multi-page documents to print every page
+       - Added a printer-capability-backed DPI selector and renamed it DPI
+       - Replaced the debug JPEG option with a simple Debug on/off setting
+       - Added an early TCP-stack check so the driver fails safely when no
+         bsdsocket.library-compatible stack is available
 
 1.0.3  WordWorth support and more reliable printer connections.
 

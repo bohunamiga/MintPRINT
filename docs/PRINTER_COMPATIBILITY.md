@@ -243,8 +243,8 @@ graphics dumps to assemble one physical page.
 
 | Application | Status | Confirmed environment | Result | Required application setup |
 |---|---|---|---|---|
-| **Wordworth 7** | ✅ Working | AmigaOS 3.2.3, Roadshow, Brother MFC-J6930DW, PWG Raster, driver revision 15 | A portrait document prints in the correct orientation as one physical page; the former trailing blank sheet is gone | Select `MintPRINT`, `Normal`, `Sheet Feeder`, Density `7`; borders Left `0.00 in`, Right `0.00 in`, Top `0.50 in`, Bottom `1.00 in` |
-| **ArtEffect 2** | ✅ Working | Same revision-15 PWG Raster environment | Confirmed still printing after the Wordworth page-geometry fix | Density `4`; Brightness, Contrast and Gamma `0`; working image size `188x176 mm`; both dimensions must remain smaller than the selected paper |
+| **Wordworth 7** | ✅ Working | AmigaOS 3.2.3, Roadshow, Brother MFC-J6930DW, PWG Raster, driver revision 16 | Portrait and three-page documents print with the correct orientation and page boundaries; the former trailing blank sheet is gone | Select `MintPRINT`, `Normal`, `Sheet Feeder`, Density `7`; borders Left `0.00 in`, Right `0.00 in`, Top `0.50 in`, Bottom `1.00 in` |
+| **ArtEffect 2** | ✅ Working | Same revision-16 PWG Raster environment | Confirmed still printing after the Wordworth and multi-page boundary fixes | Density `4`; Brightness, Contrast and Gamma `0`; working image size `188x176 mm`; both dimensions must remain smaller than the selected paper |
 | **DPaint V** | ❌ Not working | Same revision-15 test machine | Printing crashes DPaint with Software Failure `#8000000A` | No working setup confirmed; capture `T:MintPRINT-driver.log` from the failed attempt |
 | **MultiView** | ✅ Working | AmigaOS 3.2.3, same revision-15 test environment; OS Printer Preferences left at defaults apart from selecting MintPRINT | Prints successfully using the active MintPRINT preferences | Select **Print**; MultiView provides no application-specific print settings |
 | **GfxDump** | ✅ Working | AmigaOS 3.2.3, same revision-15 test environment | The OS tool sends its graphics dump directly through `printer.device` to MintPRINT and prints successfully | Select MintPRINT in OS Printer Preferences; no application-specific setup |
@@ -254,16 +254,16 @@ graphics dumps to assemble one physical page.
 
 ### Wordworth 7 Print Setup
 
-Use driver revision **15** or newer (included in the planned MintPRINT 1.0.4
-release). Revision 15 preserves Wordworth's strip printing as one media-sized
-PWG page and prevents its trailing blank four-pixel graphics dumps from becoming
-a second IPP job.
+Use driver revision **16** or newer (included in MintPRINT 1.0.3b). Revision 16
+preserves Wordworth's strip printing as one media-sized PWG page, separates
+complete multi-page output correctly, and prevents trailing narrow graphics
+dumps from becoming a second IPP job.
 
 Set Wordworth 7's **Print Setup** window to:
 
 These values were originally recorded in
 [issue #9](https://github.com/boingball/MintPRINT/issues/9) and confirmed again
-with the revision-15 physical print test.
+with the revision-16 physical print tests.
 
 ```text
 Printer Driver: MintPRINT

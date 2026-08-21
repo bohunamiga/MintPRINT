@@ -36,6 +36,11 @@ typedef long ssize_t;
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h> // for O_NONBLOCK
+#include <sys/ioctl.h> // for FIONBIO (mp_connect_with_timeout)
+#include <errno.h> // for ETIMEDOUT (mp_connect_with_timeout) - EINPROGRESS
+                   // already resolved via bsdsocket.h before this include
+                   // existed, so ETIMEDOUT should too, but unconfirmed on
+                   // this specific NDK without a real build
 #include "iff-loader.h"
 
 /* All status/progress output goes to the on-screen status box, never a
@@ -2910,6 +2915,95 @@ static BOOL run_discovery_selection(struct Window *parent,
     return picked;
 }
 
+/* Bounded, GUI-responsive connect(): socket -> IoctlSocket(FIONBIO on) ->
+ * connect() -> if EINPROGRESS, WaitSelect() on the write+exception sets in
+ * short chunks (pumping GUI events between them) until connected, refused,
+ * or timeout_secs is up -> getsockopt(SO_ERROR) to find out which ->
+ * IoctlSocket(FIONBIO off).
+ *
+ * connect() alone is a plain blocking call with no timeout - SO_RCVTIMEO
+ * only ever covered recv() - so an unreachable host that doesn't actively
+ * refuse the connection (dropped SYNs, asleep, etc.) could block far
+ * longer than any UI expects, with nothing pumping GUI events while
+ * stuck. This uses the same WaitSelect()-with-a-bounded-timeval shape
+ * already proven working in this file for SSDP/mDNS discovery - a
+ * previous attempt at non-blocking sockets elsewhere in this file
+ * referenced a constant called "FNONBIO", which is not a real BSD ioctl
+ * name (the real one, used here, is FIONBIO) and is the more likely
+ * explanation for that attempt not working, rather than non-blocking
+ * mode being unavailable on this NDK/stack.
+ *
+ * Returns 0 on success, -1 on failure (errno set: from SO_ERROR when the
+ * stack reported one, or ETIMEDOUT for this function's own timeout). The
+ * socket is always left blocking again before returning, whatever the
+ * outcome, so callers don't need to know this happened. */
+static int mp_connect_with_timeout(int sockfd, struct sockaddr_in *addr, int timeout_secs) {
+    long nonblock = 1;
+    long block = 0;
+    int rc;
+
+    if (IoctlSocket(sockfd, FIONBIO, (char *)&nonblock) < 0) {
+        /* Non-blocking mode unavailable on this stack for some reason -
+         * fall back to a plain blocking connect (still covered by the
+         * SO_SNDTIMEO best-effort set by the caller) rather than failing
+         * outright. */
+        return connect(sockfd, (struct sockaddr *)addr, sizeof(*addr));
+    }
+
+    rc = connect(sockfd, (struct sockaddr *)addr, sizeof(*addr));
+    if (rc < 0 && errno == EINPROGRESS) {
+        int elapsed_ms = 0;
+        const int chunk_ms = 250;
+        int outcome = -2; /* -2 = still waiting, -1 = failed, 0 = connected */
+
+        while (outcome == -2 && elapsed_ms < timeout_secs * 1000) {
+            fd_set wfds, efds;
+            struct timeval tv;
+            long ready;
+
+            if (window) {
+                struct IntuiMessage *imsg;
+                while ((imsg = GT_GetIMsg(window->UserPort))) {
+                    GT_ReplyIMsg(imsg);
+                }
+            }
+
+            FD_ZERO(&wfds);
+            FD_SET(sockfd, &wfds);
+            FD_ZERO(&efds);
+            FD_SET(sockfd, &efds);
+            tv.tv_sec = 0;
+            tv.tv_usec = chunk_ms * 1000;
+
+            ready = WaitSelect(sockfd + 1, NULL, &wfds, &efds, &tv, NULL);
+            if (ready > 0 && (FD_ISSET(sockfd, &wfds) || FD_ISSET(sockfd, &efds))) {
+                int so_err = 0;
+                int optlen = sizeof(so_err);
+                if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, (char *)&so_err, &optlen) == 0) {
+                    if (so_err == 0) {
+                        outcome = 0;
+                    } else {
+                        errno = so_err;
+                        outcome = -1;
+                    }
+                } else {
+                    outcome = -1;
+                }
+            }
+            elapsed_ms += chunk_ms;
+        }
+
+        if (outcome == -2) {
+            errno = ETIMEDOUT;
+            outcome = -1;
+        }
+        rc = outcome;
+    }
+
+    IoctlSocket(sockfd, FIONBIO, (char *)&block);
+    return rc;
+}
+
 // Updated query_printer_attributes with fixed mapping logic and tray name parsing
 int query_printer_attributes(const char *ip, int port, char *response, int maxlen) {
     custom_printf("CLEAR");
@@ -3067,17 +3161,11 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
         operation_in_progress = FALSE;
         return -1;
     }
-    /* connect() below is otherwise a plain blocking call with no bound at
-     * all - SO_RCVTIMEO only covers recv(). If the host doesn't actively
-     * refuse the connection (silently dropped SYNs, a printer that's
-     * asleep/unreachable on this specific port, etc.) connect() can block
-     * far longer than any UI timeout, which reads as "the whole program
-     * has frozen" since nothing pumps GUI events while it's blocked. Best
-     * effort: SO_SNDTIMEO is only formally specified for send(), but this
-     * bsdsocket.library stack already honours SO_RCVTIMEO reliably, and
-     * several BSD-derived stacks apply SO_SNDTIMEO to connect() too since
-     * both share the same underlying blocking-I/O path - worth setting
-     * regardless of whether this particular stack does. */
+    /* connect() itself is bounded by mp_connect_with_timeout() below, not
+     * by this - SO_SNDTIMEO is only formally specified for send(), and is
+     * set here purely as a secondary safety net for the rare case where
+     * that helper's non-blocking-mode setup fails and it falls back to a
+     * plain blocking connect(). */
     setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout, sizeof(timeout));
 
     struct sockaddr_in serv_addr = {0};
@@ -3096,17 +3184,20 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     }
 
     printf("Connecting to printer...\n");
-    if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-        if (errno != EINPROGRESS) {
-            snprintf(response, maxlen, "Failed to connect to printer");
-            CloseSocket(sockfd);
-            free(http_header);
-            free(ipp_payload);
-            free(name);
-            free(value);
-            operation_in_progress = FALSE;
-            return -1;
-        }
+    if (mp_connect_with_timeout(sockfd, &serv_addr, 5) < 0) {
+        snprintf(response, maxlen, "Failed to connect to printer");
+        CloseSocket(sockfd);
+        free(http_header);
+        free(ipp_payload);
+        free(name);
+        free(value);
+        operation_in_progress = FALSE;
+        /* Distinct from -1 (data/parsing failures worth retrying, e.g. a
+         * genuinely transient truncated response) so perform_query_flow()
+         * can tell "this endpoint doesn't answer at all" apart from "that
+         * attempt was flaky" and skip straight to the next port instead
+         * of repeating a now-deterministically-bounded connect failure. */
+        return -2;
     }
 
     // Process GUI events
@@ -3605,8 +3696,10 @@ static void perform_query_flow(struct Window *win, const char *ip_only, int port
     // flaky attempt as "the printer has no capabilities".
     for (i = 0; i < 2 && !ok; i++) {
         for (attempt = 0; attempt < 3 && !ok; attempt++) {
+            int qrc;
             printf("Trying %s:%d (attempt %d/3)...\n", ip_only, ports_to_try[i], attempt + 1);
-            if (query_printer_attributes(ip_only, ports_to_try[i], response, MAX_BUFFER) == 0) {
+            qrc = query_printer_attributes(ip_only, ports_to_try[i], response, MAX_BUFFER);
+            if (qrc == 0) {
                 struct Gadget *ip_gadget;
 
                 snprintf(ip_buffer, sizeof(ip_buffer), "%s:%d", ip_only, ports_to_try[i]);
@@ -3631,6 +3724,15 @@ static void perform_query_flow(struct Window *win, const char *ip_only, int port
                 ok = TRUE;
             } else {
                 printf("Query attempt %d/3 on %s:%d failed\n", attempt + 1, ip_only, ports_to_try[i]);
+                /* -2 = connect() itself couldn't be established at all
+                 * (now a deterministic, bounded failure - see
+                 * mp_connect_with_timeout) - retrying the exact same
+                 * connect against the exact same dead endpoint 2 more
+                 * times just delays reaching the other port for no
+                 * benefit. Retries stay worthwhile for -1 (the connection
+                 * succeeded but something after that was flaky, e.g. a
+                 * truncated response - see query_printer_attributes). */
+                if (qrc == -2) break;
             }
         }
     }

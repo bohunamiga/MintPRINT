@@ -42,6 +42,7 @@ typedef long ssize_t;
                    // existed, so ETIMEDOUT should too, but unconfirmed on
                    // this specific NDK without a real build
 #include "iff-loader.h"
+#include "http_response.h"
 
 /* All status/progress output goes to the on-screen status box, never a
  * console - the end user may have launched this from Workbench, where
@@ -391,33 +392,6 @@ int safe_send(int sockfd, const void *vbuf, int len) {
 
     printf("[✓] Finished sending %d bytes successfully\n", total_sent);
     return total_sent;
-}
-
-// Locates the byte offset just past the next "\r\n\r\n" header terminator at
-// or after `start`, or -1 if the buffer doesn't contain one (yet). Some IPP
-// printers (observed: a Canon TS8300) send an interim
-// "HTTP/1.1 100 Continue\r\n\r\n" ahead of the real response; callers
-// re-invoke this with `start` advanced past that block (see mp_http_status)
-// to skip it rather than mistake it for the real header/body boundary.
-static int mp_http_find_body(const char *buf, int len, int start) {
-    int i;
-    if (len < 4 || start < 0 || start + 4 > len) return -1;
-    for (i = start; i + 3 < len; i++) {
-        if (buf[i] == '\r' && buf[i + 1] == '\n' && buf[i + 2] == '\r' && buf[i + 3] == '\n')
-            return i + 4;
-    }
-    return -1;
-}
-
-// Parses the 3-digit status code from the "HTTP/1.x NNN ..." status line
-// starting at `start`. Returns 0 if it can't be parsed.
-static int mp_http_status(const char *buf, int len, int start) {
-    int i = start;
-    while (i < len && buf[i] != ' ') i++;
-    if (i + 4 > len) return 0;
-    if (buf[i + 1] < '0' || buf[i + 1] > '9' || buf[i + 2] < '0' || buf[i + 2] > '9' ||
-        buf[i + 3] < '0' || buf[i + 3] > '9') return 0;
-    return (buf[i + 1] - '0') * 100 + (buf[i + 2] - '0') * 10 + (buf[i + 3] - '0');
 }
 
 // Global variables for GUI
@@ -3443,60 +3417,114 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
         }
     }
 
-    // Receive response in chunks to avoid blocking. Keeps reading past the
-    // header separator until the declared Content-Length worth of body has
-    // actually arrived (or the printer closes the connection, which is how
-    // completion is confirmed when no Content-Length was given) - a response
-    // that merely contains "\r\n\r\n" is not necessarily a *complete* one,
-    // and treating it as complete produced an intermittent (network-timing
-    // dependent) bug where a short first recv() was silently accepted and
-    // parsed as if the printer had reported no capabilities at all.
+    // Receive response in bounded, GUI-responsive chunks. HTTP permits three
+    // body framing modes here: Content-Length, Transfer-Encoding: chunked, or
+    // connection close. Canon firmware has now exercised all the awkward
+    // parts at once: an interim 100 response followed by a final response
+    // whose header spelling/framing cannot be assumed.
     printf("Waiting for response...\n");
     int total_received = 0;
-    int max_attempts = 40; // 40 attempts at 100ms each = 4 seconds max
-    int attempt = 0;
+    int max_idle_attempts = 40; // 40 idle waits at 100ms = 4 seconds
+    int idle_attempts = 0;
     int header_start = 0; // advanced past any interim "1xx" response below
     int body_off = -1;
     int content_len = -1; // -1 = not yet known
+    int chunked = FALSE;
+    int connection_closed = FALSE;
 
-    while (total_received < maxlen - 1 && attempt < max_attempts) {
-        ssize_t received = recv(sockfd, response + total_received, maxlen - 1 - total_received, 0);
+    while (total_received < maxlen - 1 && idle_attempts < max_idle_attempts) {
+        fd_set rfds;
+        struct timeval wait_tv;
+        long ready;
+        ssize_t received;
+
+        FD_ZERO(&rfds);
+        FD_SET(sockfd, &rfds);
+        wait_tv.tv_sec = 0;
+        wait_tv.tv_usec = 100000;
+        ready = WaitSelect(sockfd + 1, &rfds, NULL, NULL, &wait_tv, NULL);
+        if (ready == 0) {
+            ++idle_attempts;
+            goto query_receive_pump_gui;
+        }
+        if (ready < 0) {
+            int recv_err = Errno();
+            if (recv_err == EAGAIN || recv_err == EWOULDBLOCK) {
+                ++idle_attempts;
+                goto query_receive_pump_gui;
+            }
+            printf("WaitSelect receive error: %d\n", recv_err);
+            snprintf(response, maxlen, "Receive wait error");
+            CloseSocket(sockfd);
+            free(name);
+            free(value);
+            operation_in_progress = FALSE;
+            return -1;
+        }
+
+        received = recv(sockfd, response + total_received,
+                        maxlen - 1 - total_received, 0);
         if (received > 0) {
             total_received += received;
             response[total_received] = '\0';
+            idle_attempts = 0;
 
-            if (body_off < 0) {
+            while (body_off < 0) {
                 int off = mp_http_find_body(response, total_received, header_start);
-                if (off >= 0) {
-                    int status = mp_http_status(response, total_received, header_start);
-                    if (status >= 100 && status < 200) {
-                        // Interim response (e.g. "100 Continue") - skip it
-                        // and keep waiting for the response that actually
-                        // carries the IPP payload.
-                        printf("Skipping interim HTTP %d response\n", status);
-                        header_start = off;
-                    } else {
-                        char *cp;
-                        body_off = off;
-                        cp = strstr(response + header_start, "Content-Length:");
-                        if (cp) {
-                            sscanf(cp, "Content-Length: %d", &content_len);
-                            printf("Content-Length: %d\n", content_len);
-                        } else {
-                            printf("No Content-Length header found\n");
-                        }
-                    }
+                int status;
+                if (off < 0) break;
+                status = mp_http_status(response, total_received, header_start);
+                if (status >= 100 && status < 200) {
+                    // Parse again immediately: the final response may already
+                    // be in this same recv() buffer after the interim header.
+                    printf("Skipping interim HTTP %d response\n", status);
+                    header_start = off;
+                    continue;
+                }
+
+                body_off = off;
+                chunked = mp_http_header_has_token(response, header_start,
+                                                   body_off,
+                                                   "Transfer-Encoding",
+                                                   "chunked");
+                if (chunked) {
+                    printf("HTTP response uses chunked transfer encoding\n");
+                } else {
+                    content_len = mp_http_content_length(response, header_start,
+                                                         body_off);
+                    if (content_len >= 0)
+                        printf("Content-Length: %d\n", content_len);
+                    else
+                        printf("HTTP response has no length; reading until close\n");
                 }
             }
 
-            if (body_off >= 0 && content_len >= 0 &&
-                (total_received - body_off) >= content_len) {
-                break; // Got the full header and the declared IPP payload
+            if (body_off >= 0) {
+                if (chunked) {
+                    int complete = mp_http_chunked_complete(response + body_off,
+                                                            total_received - body_off);
+                    if (complete < 0) {
+                        printf("Malformed chunked HTTP response\n");
+                        snprintf(response, maxlen, "Malformed chunked response");
+                        CloseSocket(sockfd);
+                        free(name);
+                        free(value);
+                        operation_in_progress = FALSE;
+                        return -1;
+                    }
+                    if (complete > 0) break;
+                } else if (content_len >= 0 &&
+                           (total_received - body_off) >= content_len) {
+                    break; // Got the full declared IPP payload
+                }
             }
         } else if (received == 0) {
-            break; // Connection closed - the printer is done sending
+            connection_closed = TRUE;
+            break;
         } else {
-            if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            int recv_err = Errno();
+            if (recv_err != EAGAIN && recv_err != EWOULDBLOCK) {
+                printf("Receive error: %d\n", recv_err);
                 snprintf(response, maxlen, "Receive error");
                 CloseSocket(sockfd);
                 free(name);
@@ -3504,8 +3532,10 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
                 operation_in_progress = FALSE;
                 return -1;
             }
+            ++idle_attempts;
         }
 
+query_receive_pump_gui:
         // Process GUI events to keep the mouse responsive
         if (window) {
             struct IntuiMessage *imsg;
@@ -3513,10 +3543,6 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
                 GT_ReplyIMsg(imsg);
             }
         }
-
-        // Wait a bit before retrying
-        Delay(5); // 100ms delay (50 ticks per second on Amiga)
-        attempt++;
     }
 
     if (total_received == 0) {
@@ -3543,6 +3569,28 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     }
     char *ipp_start = response + body_off;
     int ipp_len = total_received - body_off;
+
+    if (chunked) {
+        int decoded_len = mp_http_decode_chunked(ipp_start, ipp_len);
+        if (decoded_len < 0) {
+            printf("Incomplete chunked IPP response\n");
+            CloseSocket(sockfd);
+            free(name);
+            free(value);
+            operation_in_progress = FALSE;
+            return -1;
+        }
+        ipp_len = decoded_len;
+        response[body_off + ipp_len] = '\0';
+    } else if (content_len < 0 && !connection_closed &&
+               idle_attempts >= max_idle_attempts) {
+        printf("Timed out waiting for close-delimited IPP response\n");
+        CloseSocket(sockfd);
+        free(name);
+        free(value);
+        operation_in_progress = FALSE;
+        return -1;
+    }
 
     // Don't parse a response we know is short: if the printer told us how
     // many body bytes to expect and we didn't get that many (timed out or

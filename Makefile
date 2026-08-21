@@ -1,5 +1,6 @@
 CROSS   ?= m68k-amigaos-
 CC       = $(CROSS)gcc
+HOSTCC  ?= cc
 NM       = $(CROSS)nm
 CFLAGS  ?= -Os -m68000 -Wall -Wextra -fomit-frame-pointer -fno-builtin
 
@@ -9,16 +10,18 @@ DRIVER_BUILD := build/driver
 DRIVER_OUT := $(DRIVER_BUILD)/MintPRINT
 DRIVER31_BUILD := build/driver31
 DRIVER31_OUT := $(DRIVER31_BUILD)/MintPRINT
+TEST_BUILD := build/tests
 RELEASE_DIR := release/MintPRINT
 RELEASE31_DIR := release/MintPRINT-OS31
 
-.PHONY: all gui driver driver31 driver-symbols driver-symbols31 release release31 release-all clean help
+.PHONY: all gui test-http driver driver31 driver-symbols driver-symbols31 release release31 release-all clean help
 
 all: gui
 
 help:
 	@echo "MintPRINT targets:"
 	@echo "  make gui      - build MintPrint Settings (setup/test GUI)"
+	@echo "  make test-http - run host-side HTTP response parser tests"
 	@echo "  make driver   - build the experimental DEVS:Printers/MintPRINT driver"
 	@echo "  make driver31 - build the AmigaOS 3.1-compatible classic printer driver"
 	@echo "  make driver-symbols - show ABI symbols used by the driver"
@@ -30,8 +33,16 @@ help:
 
 gui: MintPrintSettings
 
-MintPrintSettings: src/MintPrintSettings.c $(IFF_DIR_ESC)/iff-loader.c $(IFF_DIR_ESC)/iff-loader.h
-	$(CC) -O2 -g -I"$(IFF_DIR)" -o $@ src/MintPrintSettings.c "$(IFF_DIR)/iff-loader.c" -lamiga -lm
+MintPrintSettings: src/MintPrintSettings.c src/http_response.c src/http_response.h $(IFF_DIR_ESC)/iff-loader.c $(IFF_DIR_ESC)/iff-loader.h
+	$(CC) -O2 -g -I"$(IFF_DIR)" -o $@ src/MintPrintSettings.c src/http_response.c "$(IFF_DIR)/iff-loader.c" -lamiga -lm
+
+$(TEST_BUILD):
+	mkdir -p $@
+
+test-http: | $(TEST_BUILD)
+	$(HOSTCC) -std=c89 -Wall -Wextra -pedantic -Isrc \
+		tests/test_http_response.c src/http_response.c -o $(TEST_BUILD)/test_http_response
+	$(TEST_BUILD)/test_http_response
 
 $(DRIVER_BUILD):
 	mkdir -p $@

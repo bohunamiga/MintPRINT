@@ -664,18 +664,16 @@ LONG PRT_STDARGS Init(struct PrinterData *pd)
         return -1;
     }
 
-    /* Fail before printer.device starts sending raster rows. Previously a
-     * missing/inactive TCP stack was only discovered after a complete page
-     * had been rendered to disk, which could leave callers in a much less
-     * predictable failure path. */
-    if (!mp_ipp_socket_available()) {
+    mp_config_defaults(&g_config);
+    /* mp_spool_ensure_running() performs the functional socket probe inside
+     * its dedicated Process. That matters because printer.device callbacks
+     * can originate from a bare Task, where calling bsdsocket directly is
+     * not a safe assumption. Fail before any raster rows are accepted. */
+    if (!mp_spool_ensure_running()) {
         CloseLibrary((struct Library *)DOSBase);
         DOSBase = NULL;
         return -1;
     }
-
-    mp_config_defaults(&g_config);
-    mp_spool_ensure_running();
     mp_log_text("Init");
     mp_log_reset();
     mp_log_append("MintPRINT: Driver revision ");

@@ -12,8 +12,8 @@ struct MPIPPResult {
 };
 
 /* Opens bsdsocket.library V4 and creates a harmless unconnected socket.
- * Used by driver Init() to reject printing before any raster work begins
- * when no functional TCP/IP stack is available. */
+ * The dedicated spool Process calls this during driver startup so socket
+ * functions never run from an arbitrary printer.device caller Task. */
 BOOL mp_ipp_socket_available(void);
 
 LONG mp_ipp_print_document(const struct MPConfig *cfg, CONST_STRPTR filename,

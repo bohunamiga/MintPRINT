@@ -2979,14 +2979,12 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     ipp_payload[offset++] = (requested_len >> 8) & 0xFF;
     ipp_payload[offset++] = requested_len & 0xFF;
     memcpy(&ipp_payload[offset], requested, requested_len); offset += requested_len;
-    //Scaling
-    int scaling_len = strlen(selected_scaling);
-    ipp_payload[offset++] = 0x44; // keyword
-    ipp_payload[offset++] = 0x00; ipp_payload[offset++] = 0x0d;
-    memcpy(&ipp_payload[offset], "print-scaling", 13); offset += 13;
-    ipp_payload[offset++] = (scaling_len >> 8) & 0xFF;
-    ipp_payload[offset++] = scaling_len & 0xFF;
-    memcpy(&ipp_payload[offset], selected_scaling, scaling_len); offset += scaling_len;
+    /* No print-scaling (or any other Job Template attribute) belongs here -
+     * this is a capability query, not a job. A stray "print-scaling"
+     * keyword used to get appended to this request's operation-attributes
+     * group; at least one real printer (Canon TS8300) responded to that
+     * with an empty printer-attributes group instead of an error, which
+     * looked like "query succeeded, printer reported nothing supported". */
     ipp_payload[offset++] = 0x03; // End of attributes
 
     // Build HTTP header

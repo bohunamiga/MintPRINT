@@ -2,13 +2,15 @@
  * MintPRINT printer.device integration working driver path.
  *
  * Converts printer.device raster rows into a low-memory streaming document
- * (JPEG, PWG Raster, or PDF per Unit0's ENGINE= setting) and submits it to
+ * (JPEG, PWG Raster, PDF, or PostScript per Unit0's ENGINE= setting) and
+ * submits it to
  * the configured IPP Print-Job endpoint.
  *
  * Trace output: T:MintPRINT-driver.log
  * Debug JPEG:       T:MintPRINT-job.jpg
  * Debug PWG Raster: T:MintPRINT-job.pwg
  * Debug PDF:        T:MintPRINT-job.pdf
+ * Debug PostScript: T:MintPRINT-job.ps
  */
 
 #include <exec/types.h>
@@ -28,6 +30,7 @@
 #include "jpeg_writer.h"
 #include "pwg_writer.h"
 #include "pdf_writer.h"
+#include "postscript_writer.h"
 #include "ipp_client.h"
 #include "spool.h"
 
@@ -36,7 +39,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 13
+#define MP_DRIVER_REV 14
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -63,6 +66,7 @@ struct TagItem DriverTags[] = {
 #define MP_JOB_FILE_JPEG ((CONST_STRPTR)"T:MintPRINT-job.jpg")
 #define MP_JOB_FILE_PWG  ((CONST_STRPTR)"T:MintPRINT-job.pwg")
 #define MP_JOB_FILE_PDF  ((CONST_STRPTR)"T:MintPRINT-job.pdf")
+#define MP_JOB_FILE_PS   ((CONST_STRPTR)"T:MintPRINT-job.ps")
 
 /* Multiple Render(status=0 begin -> rows -> status=4 end) cycles inside one
  * Open()/Close() bracket is legitimate - that's how a real multi-page
@@ -87,7 +91,12 @@ struct TagItem DriverTags[] = {
 #define MP_TINY_PAGE_ROWS 20
 #define MP_TINY_PAGE_STREAK_LIMIT 3
 
-enum { MP_ENGINE_JPEG = 0, MP_ENGINE_PWG = 1, MP_ENGINE_PDF = 2 };
+enum {
+    MP_ENGINE_JPEG = 0,
+    MP_ENGINE_PWG = 1,
+    MP_ENGINE_PDF = 2,
+    MP_ENGINE_POSTSCRIPT = 3
+};
 
 static ULONG g_page_width = 0;
 static ULONG g_page_height = 0;
@@ -115,23 +124,24 @@ static UBYTE *g_pwg_scratch = NULL;
 static ULONG g_pwg_scratch_bytes = 0;
 static UBYTE *g_pdf_scratch = NULL;
 static ULONG g_pdf_scratch_bytes = 0;
+static UBYTE *g_postscript_scratch = NULL;
+static ULONG g_postscript_scratch_bytes = 0;
 static ULONG g_job_rows_written = 0;
 static BOOL g_job_failed = FALSE;
 static int g_engine = MP_ENGINE_JPEG;
 static MPJpegEncoder g_jpeg;
 static MPPwgEncoder g_pwg;
 static MPPdfEncoder g_pdf;
+static MPPostScriptEncoder g_postscript;
 static struct MPConfig g_config;
 static LONG g_config_source = MP_CONFIG_SOURCE_DEFAULTS;
 
-/* cfg->engine is always exactly "jpeg", "pwg-raster", or "pdf" - config.c
- * only ever writes one of those three literal strings - so checking the
- * first two characters is enough to tell them apart (unlike checking just
- * the first character, which "pwg-raster" and "pdf" both start with). */
+/* config.c only writes one of the four known engine literal strings. */
 static int mp_detect_engine(const struct MPConfig *cfg)
 {
     if (cfg->engine[0] == 'p' && cfg->engine[1] == 'w') return MP_ENGINE_PWG;
     if (cfg->engine[0] == 'p' && cfg->engine[1] == 'd') return MP_ENGINE_PDF;
+    if (cfg->engine[0] == 'p' && cfg->engine[1] == 'o') return MP_ENGINE_POSTSCRIPT;
     return MP_ENGINE_JPEG;
 }
 
@@ -140,6 +150,7 @@ static CONST_STRPTR mp_job_filename(void)
     switch (g_engine) {
         case MP_ENGINE_PWG: return MP_JOB_FILE_PWG;
         case MP_ENGINE_PDF: return MP_JOB_FILE_PDF;
+        case MP_ENGINE_POSTSCRIPT: return MP_JOB_FILE_PS;
         default:            return MP_JOB_FILE_JPEG;
     }
 }
@@ -284,10 +295,15 @@ static void mp_job_cleanup(void)
         FreeMem(g_pdf_scratch, g_pdf_scratch_bytes);
         g_pdf_scratch = NULL;
     }
+    if (g_postscript_scratch) {
+        FreeMem(g_postscript_scratch, g_postscript_scratch_bytes);
+        g_postscript_scratch = NULL;
+    }
     g_rgb_row_bytes = 0;
     g_jpeg_scratch_bytes = 0;
     g_pwg_scratch_bytes = 0;
     g_pdf_scratch_bytes = 0;
+    g_postscript_scratch_bytes = 0;
 }
 
 static BOOL mp_job_begin(ULONG width, ULONG height)
@@ -315,6 +331,7 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
     switch (g_engine) {
         case MP_ENGINE_PWG: need = mp_pwg_scratch_size(width); break;
         case MP_ENGINE_PDF: need = mp_pdf_scratch_size(width); break;
+        case MP_ENGINE_POSTSCRIPT: need = mp_postscript_scratch_size(width); break;
         default:            need = mp_jpeg_scratch_size(width); break;
     }
     if (!need) {
@@ -338,6 +355,15 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
             g_pdf_scratch = (UBYTE *)AllocMem(need, MEMF_PUBLIC);
             if (!g_pdf_scratch) {
                 mp_log_text("PDF scratch allocation failed");
+                mp_job_cleanup();
+                return FALSE;
+            }
+            break;
+        case MP_ENGINE_POSTSCRIPT:
+            g_postscript_scratch_bytes = need;
+            g_postscript_scratch = (UBYTE *)AllocMem(need, MEMF_PUBLIC);
+            if (!g_postscript_scratch) {
+                mp_log_text("PostScript scratch allocation failed");
                 mp_job_cleanup();
                 return FALSE;
             }
@@ -397,6 +423,21 @@ static BOOL mp_job_begin(ULONG width, ULONG height)
             }
             mp_log_3("PDF begin width/height/scratch",
                      (LONG)width, (LONG)height, (LONG)g_pdf_scratch_bytes);
+            break;
+        case MP_ENGINE_POSTSCRIPT:
+            if (!mp_postscript_begin(&g_postscript, width, height,
+                                     g_config.resolution,
+                                     g_postscript_scratch,
+                                     g_postscript_scratch_bytes,
+                                     mp_job_file_write, NULL)) {
+                mp_log_text("PostScript encoder begin failed");
+                g_job_failed = TRUE;
+                mp_job_cleanup();
+                return FALSE;
+            }
+            mp_log_3("PostScript begin width/height/scratch",
+                     (LONG)width, (LONG)height,
+                     (LONG)g_postscript_scratch_bytes);
             break;
         default:
             if (!mp_jpeg_begin(&g_jpeg, width, height, g_jpeg_scratch,
@@ -472,6 +513,15 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
                 return FALSE;
             }
             break;
+        case MP_ENGINE_POSTSCRIPT:
+            if (!mp_postscript_write_scanline(&g_postscript, g_rgb_row)) {
+                mp_log_3("PostScript scanline failed row/written/expected",
+                         (LONG)row_number, (LONG)g_job_rows_written,
+                         (LONG)g_page_height);
+                g_job_failed = TRUE;
+                return FALSE;
+            }
+            break;
         default:
             if (!mp_jpeg_write_scanline(&g_jpeg, g_rgb_row)) {
                 mp_log_3("JPEG scanline failed row/written/expected",
@@ -500,6 +550,9 @@ static BOOL mp_job_finish(ULONG expected_rows)
         switch (g_engine) {
             case MP_ENGINE_PWG: ok = mp_pwg_finish(&g_pwg) ? TRUE : FALSE; break;
             case MP_ENGINE_PDF: ok = mp_pdf_finish(&g_pdf) ? TRUE : FALSE; break;
+            case MP_ENGINE_POSTSCRIPT:
+                ok = mp_postscript_finish(&g_postscript) ? TRUE : FALSE;
+                break;
             default:            ok = mp_jpeg_finish(&g_jpeg) ? TRUE : FALSE; break;
         }
         if (!ok) g_job_failed = TRUE;
@@ -510,6 +563,9 @@ static BOOL mp_job_finish(ULONG expected_rows)
     switch (g_engine) {
         case MP_ENGINE_PWG: label = "PWG end rows/expected/failed"; break;
         case MP_ENGINE_PDF: label = "PDF end rows/expected/failed"; break;
+        case MP_ENGINE_POSTSCRIPT:
+            label = "PostScript end rows/expected/failed";
+            break;
         default:            label = "JPEG end rows/expected/failed"; break;
     }
     mp_log_3(label, (LONG)g_job_rows_written, (LONG)expected_rows,
@@ -549,6 +605,9 @@ static LONG mp_page_submit_and_track(ULONG rows_for_streak)
     switch (g_engine) {
         case MP_ENGINE_PWG: fmt = (CONST_STRPTR)"image/pwg-raster"; break;
         case MP_ENGINE_PDF: fmt = (CONST_STRPTR)"application/pdf"; break;
+        case MP_ENGINE_POSTSCRIPT:
+            fmt = (CONST_STRPTR)"application/postscript";
+            break;
         default:            fmt = (CONST_STRPTR)"image/jpeg"; break;
     }
 
@@ -580,7 +639,7 @@ static LONG mp_page_submit_and_track(ULONG rows_for_streak)
  * (see case 0/4 below). For a multi-band PWG page, patches the header's
  * declared height from the first band's (what mp_pwg_begin saw) to the
  * true accumulated total before finishing, so the file matches what was
- * actually written; JPEG/PDF are always single-band (they can't support
+ * actually written; JPEG/PDF/PostScript are always single-band (they can't support
  * this kind of post-hoc header patch), so nothing needs patching there.
  *
  * Returns TRUE if there was nothing to finalize, or finalizing succeeded;
@@ -887,7 +946,7 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             /* SPECIAL_NOFORMFEED: "here's another band of the same page,
              * don't eject/submit yet" (RKM: "multiple graphics dump on a
              * page oriented printer"). Only PWG can stay pending across
-             * bands (see mp_job_extend_pwg/mp_page_finalize) - JPEG/PDF
+             * bands (see mp_job_extend_pwg/mp_page_finalize) - JPEG/PDF/PostScript
              * always finalize below exactly as before this change. */
             if (g_engine == MP_ENGINE_PWG &&
                 (g_current_special & SPECIAL_NOFORMFEED)) {

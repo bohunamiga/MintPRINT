@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 52304)
+Total output lines: 5506
+
 /* MintPrint Settings (formerly IPP-Test16.c / "MintPRINT Preferences").
    Setup/test GUI for the DEVS:Printers/MintPRINT driver: LAN printer
    discovery, IPP capability query, driver install/select helper, and
@@ -6,7 +9,7 @@
 /* MintPRINT prefs #9: compact address row and status-box fit. */
 /* MintPRINT prefs #8: capability cache and output-area layout polish. */
 /* Amiga IPP Print-Job Prototype with GUI
-   Sends a JPEG file to an IPP printer (AirPrint-compatible)
+   Configures and tests MintPRINT's IPP document engines
    Compile with: m68k-amigaos-gcc -g -o IPP-test11 ipp-test11.c -lamiga -lsocket -lm
  PATCH INCOMING: Adds IFF -> RGB -> PWG -> IPP printing support to IPP-test15 */
 
@@ -149,6 +152,10 @@ struct MediaTrayMap {
 // Globals for parsed capabilities
 char supported_formats[MAX_VALUES][MAX_ATTR_LEN];
 int num_supported_formats = 0;
+BOOL jpeg_constraints_queried = FALSE;
+BOOL jpeg_k_octets_reported = FALSE;
+BOOL jpeg_x_dimension_reported = FALSE;
+BOOL jpeg_y_dimension_reported = FALSE;
 
 char supported_media[MAX_VALUES][MAX_ATTR_LEN];
 int num_supported_media = 0;
@@ -438,26 +445,26 @@ STRPTR *resolution_labels = mp_dpi_label_ptrs;
 static char initial_dpi_value[16] = "300 dpi";
 int driver_resolution = 300;
 char driver_engine_buffer[32] = "jpeg";
-#define MP_ENGINE_MAX 3
+#define MP_ENGINE_MAX 4
 
 static const char *mp_engine_all_labels[MP_ENGINE_MAX] = {
-    "JPEG", "PWG Raster", "PDF"
+    "JPEG", "PostScript", "PWG Raster", "PDF"
 };
 static const char *mp_engine_all_values[MP_ENGINE_MAX] = {
-    "jpeg", "pwg-raster", "pdf"
+    "jpeg", "postscript", "pwg-raster", "pdf"
 };
 static const char *mp_engine_all_mimes[MP_ENGINE_MAX] = {
-    "image/jpeg", "image/pwg-raster", "application/pdf"
+    "image/jpeg", "application/postscript", "image/pwg-raster", "application/pdf"
 };
 
 /* This array address stays fixed for the lifetime of the GadTools Cycle. */
 static STRPTR engine_labels[MP_ENGINE_MAX + 1] = {
-    "JPEG", "PWG Raster", "PDF", NULL
+    "JPEG", "PostScript", "PWG Raster", "PDF", NULL
 };
 
 /* Maps the currently-visible Cycle index to MintPRINT's internal value. */
 static const char *mp_engine_value_map[MP_ENGINE_MAX] = {
-    "jpeg", "pwg-raster", "pdf"
+    "jpeg", "postscript", "pwg-raster", "pdf"
 };
 static int mp_engine_count = MP_ENGINE_MAX;
 char driver_media_buffer[MAX_ATTR_LEN] = "";
@@ -660,12 +667,13 @@ static void refresh_unit_dropdown(struct Window *win) {
 }
 
 static const char *engine_mime_type(const char *engine) {
+    if (strcmp(engine, "postscript") == 0) return "application/postscript";
     if (strcmp(engine, "pwg-raster") == 0) return "image/pwg-raster";
     if (strcmp(engine, "pdf") == 0) return "application/pdf";
     return "image/jpeg";
 }
 
-/* engine_labels[] order: 0=JPEG, 1=PWG Raster, 2=PDF. */
+/* The visible order may be filtered by a printer capability query. */
 static ULONG mp_engine_active_index(void) {
     int i;
 
@@ -680,7 +688,7 @@ static ULONG mp_engine_active_index(void) {
 /* Every document-format this driver's engines can actually produce. Kept
  * in sync with engine_mime_type()'s cases. */
 static const char *mp_supported_engine_mimes[] = {
-    "image/jpeg", "image/pwg-raster", "application/pdf"
+    "image/jpeg", "application/postscript", "image/pwg-raster", "application/pdf"
 };
 #define MP_SUPPORTED_ENGINE_MIME_COUNT \
     (sizeof(mp_supported_engine_mimes) / sizeof(mp_supported_engine_mimes[0]))
@@ -715,7 +723,7 @@ static void mp_check_any_engine_supported(struct Window *win) {
     es.es_Title = (UBYTE *)"MintPrint Settings";
     es.es_TextFormat = (UBYTE *)
         "This printer did not advertise any document format\n"
-        "MintPRINT can produce (JPEG, PWG Raster, or PDF).\n\n"
+        "MintPRINT can produce JPEG, PostScript, PWG Raster, or PDF.\n\n"
         "It is likely not supported yet. To help add support,\n"
         "please log an issue at github.com/boingball/MintPRINT -\n"
         "run windows_ipp_probe.py (from a Windows PC on the same\n"
@@ -1026,6 +1034,8 @@ static BOOL load_driver_config(void) {
                 strcpy(driver_engine_buffer, "pwg-raster");
             else if (strcmp(line + 7, "pdf") == 0)
                 strcpy(driver_engine_buffer, "pdf");
+            else if (strcmp(line + 7, "postscript") == 0)
+                strcpy(driver_engine_buffer, "postscript");
             else
                 strcpy(driver_engine_buffer, "jpeg");
         } else if (strncmp(line, "DEBUG=", 6) == 0) {
@@ -1650,12 +1660,32 @@ static BOOL mp_printer_advertises_format(const char *mime) {
     return FALSE;
 }
 
+/* Some printers, including a Samsung C480W seen in the field, advertise
+ * image/jpeg and accept the IPP job while silently discarding its contents.
+ * PWG 5100.13's JPEG size/dimension attributes are not mandatory proof of a
+ * working decoder, so their absence is only a warning and JPEG stays
+ * selectable.  jpeg_constraints_queried distinguishes a fresh negative
+ * answer from an old cache created before MintPRINT requested these fields. */
+static void mp_warn_if_jpeg_nominal(void) {
+    if (!jpeg_constraints_queried ||
+        !mp_printer_advertises_format("image/jpeg") ||
+        jpeg_k_octets_reported || jpeg_x_dimension_reported ||
+        jpeg_y_dimension_reported)
+        return;
+
+    printf("Warning: JPEG is advertised without JPEG limits.\n");
+    if (mp_printer_advertises_format("application/postscript"))
+        printf("JPEG may be unreliable; prefer PostScript if it fails.\n");
+    else
+        printf("JPEG may be unreliable and can silently discard jobs.\n");
+}
+
 /*
  * Rebuild the Engine Cycle from document-format-supported.
  *
  * With no Query/cache yet, all MintPRINT engines remain visible.
  * After a Query, only engines the printer actually advertised are shown.
- * If it advertised none of MintPRINT's formats, leave all three visible;
+ * If it advertised none of MintPRINT's formats, leave all four visible;
  * the existing unsupported-printer requester handles that exceptional case
  * and an empty GadTools Cycle would be undesirable.
  */
@@ -1760,6 +1790,10 @@ static void mp_cache_clear_capabilities(void) {
     num_supported_dpi = 0;
     num_media_tray_mappings = 0;
     has_media_ready = FALSE;
+    jpeg_constraints_queried = FALSE;
+    jpeg_k_octets_reported = FALSE;
+    jpeg_x_dimension_reported = FALSE;
+    jpeg_y_dimension_reported = FALSE;
 }
 
 static BOOL mp_cache_write_file(CONST_STRPTR filename,
@@ -1787,6 +1821,15 @@ static BOOL mp_cache_write_file(CONST_STRPTR filename,
         snprintf(line, sizeof(line), "FORMAT=%s\n", supported_formats[i]);
         FPuts(fh, line);
     }
+
+    if (jpeg_constraints_queried)
+        FPuts(fh, "JPEG_CONSTRAINTS_QUERIED=1\n");
+    if (jpeg_k_octets_reported)
+        FPuts(fh, "JPEG_K_OCTETS_REPORTED=1\n");
+    if (jpeg_x_dimension_reported)
+        FPuts(fh, "JPEG_X_DIMENSION_REPORTED=1\n");
+    if (jpeg_y_dimension_reported)
+        FPuts(fh, "JPEG_Y_DIMENSION_REPORTED=1\n");
 
     for (i = 0; i < num_supported_media; ++i) {
         snprintf(line, sizeof(line), "MEDIA_SUPPORTED=%s\n", supported_media[i]);
@@ -1955,6 +1998,14 @@ static BOOL mp_cache_load_file(CONST_STRPTR filename) {
         if (strncmp(mp_cap_cache_line, "FORMAT=", 7) == 0) {
             store_value(supported_formats, &num_supported_formats,
                         mp_cap_cache_line + 7);
+        } else if (strcmp(mp_cap_cache_line, "JPEG_CONSTRAINTS_QUERIED=1") == 0) {
+            jpeg_constraints_queried = TRUE;
+        } else if (strcmp(mp_cap_cache_line, "JPEG_K_OCTETS_REPORTED=1") == 0) {
+            jpeg_k_octets_reported = TRUE;
+        } else if (strcmp(mp_cap_cache_line, "JPEG_X_DIMENSION_REPORTED=1") == 0) {
+            jpeg_x_dimension_reported = TRUE;
+        } else if (strcmp(mp_cap_cache_line, "JPEG_Y_DIMENSION_REPORTED=1") == 0) {
+            jpeg_y_dimension_reported = TRUE;
         } else if (strncmp(mp_cap_cache_line, "MEDIA_SUPPORTED=", 16) == 0) {
             store_value(supported_media, &num_supported_media,
                         mp_cap_cache_line + 16);
@@ -2031,6 +2082,7 @@ static void apply_cached_capabilities(struct Window *win) {
 
     /* Put the user's saved Unit0 choices back on top of the available lists. */
     apply_job_defaults_to_gadgets(win);
+    mp_warn_if_jpeg_nominal();
 }
 
 /* Reloads everything for current_unit_index: saved Unit%d config, its
@@ -2712,283 +2764,7 @@ static int ssdp_discover_printers(struct DiscoveredPrinter *results, int max_res
 
             if (ipstr[0] && !discovery_ip_seen(results, count, ipstr)) {
                 char server_info[64];
-                ssdp_extract_server(buf, server_info, sizeof(server_info));
-
-                strncpy(results[count].ip, ipstr, sizeof(results[count].ip) - 1);
-                results[count].ip[sizeof(results[count].ip) - 1] = '\0';
-
-                if (server_info[0]) {
-                    snprintf(results[count].label, sizeof(results[count].label),
-                             "%s (%s)", ipstr, server_info);
-                } else {
-                    snprintf(results[count].label, sizeof(results[count].label),
-                             "%s", ipstr);
-                }
-
-                printf("Discovery: found %s\n", results[count].label);
-                count++;
-            }
-        }
-    }
-
-    free(buf);
-    CloseSocket(sockfd);
-    return count;
-}
-
-/* ---------------------------------------------------------------------
- * LAN printer discovery (mDNS / Bonjour / AirPrint)
- *
- * Most current printers advertise IPP over mDNS-SD (_ipp._tcp.local),
- * not SSDP, so this is the discovery path that actually matters for
- * AirPrint-style printers. Builds a minimal DNS PTR query by hand (no
- * name compression in the query - only ever one question) with the "QU"
- * unicast-response bit set, so responders reply directly to our source
- * port instead of over multicast. That means this never needs to join
- * the 224.0.0.251 multicast group to receive replies, keeping it on the
- * same plain send/WaitSelect/recvfrom shape already proven for SSDP.
- *
- * Deliberately does not decode the DNS response payload (PTR/SRV/TXT
- * records, name-compression pointers, ...): that is real parsing work
- * with real edge cases, and getting it wrong risks the same kind of
- * lock-up/crash this file has already hit twice on this NDK. All that is
- * used from a reply is which address it came from - good enough to
- * populate the picker; the follow-up IPP query after selection is what
- * actually pulls in the printer's real details.
- * ------------------------------------------------------------------- */
-static int build_mdns_ptr_query(unsigned char *buf, int buf_size) {
-    static const unsigned char header[12] = {
-        0x00, 0x00, /* ID - unused, mDNS clients don't need to match it */
-        0x00, 0x00, /* Flags - standard query */
-        0x00, 0x01, /* QDCOUNT = 1 */
-        0x00, 0x00, /* ANCOUNT */
-        0x00, 0x00, /* NSCOUNT */
-        0x00, 0x00  /* ARCOUNT */
-    };
-    static const char *labels[] = { "_ipp", "_tcp", "local", NULL };
-    int off;
-    int i;
-
-    if (buf_size < 33) return 0;
-
-    memcpy(buf, header, sizeof(header));
-    off = sizeof(header);
-
-    for (i = 0; labels[i]; i++) {
-        int len = (int)strlen(labels[i]);
-        buf[off++] = (unsigned char)len;
-        memcpy(buf + off, labels[i], len);
-        off += len;
-    }
-    buf[off++] = 0x00; /* root label terminator */
-
-    buf[off++] = 0x00; buf[off++] = 0x0C; /* QTYPE = PTR (12) */
-    buf[off++] = 0x80; buf[off++] = 0x01; /* QCLASS = IN, QU bit set */
-
-    return off;
-}
-
-/* Appends newly-found, distinct, non-loopback responders to results[],
- * starting at index *count_io, up to max_results. Returns the new count. */
-static int mdns_discover_printers(struct DiscoveredPrinter *results, int count_io, int max_results) {
-    int sockfd;
-    struct sockaddr_in dest;
-    unsigned char query[64];
-    int query_len;
-    char *buf;
-    int count = count_io;
-    int poll_num;
-    const int max_polls = 10; /* ~500ms per poll => ~5s total scan time */
-
-    if (count >= max_results) return count;
-
-    query_len = build_mdns_ptr_query(query, sizeof(query));
-    if (query_len <= 0) {
-        printf("Discovery: could not build mDNS query\n");
-        return count;
-    }
-
-    sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sockfd < 0) {
-        printf("Discovery: could not create mDNS socket\n");
-        return count;
-    }
-
-    memset(&dest, 0, sizeof(dest));
-    dest.sin_family = AF_INET;
-    dest.sin_port = htons(5353);
-    dest.sin_addr.s_addr = inet_addr((STRPTR)"224.0.0.251");
-
-    if (sendto(sockfd, (char *)query, query_len, 0,
-               (struct sockaddr *)&dest, sizeof(dest)) < 0) {
-        printf("Discovery: mDNS send failed (no route to 224.0.0.251?)\n");
-        CloseSocket(sockfd);
-        return count;
-    }
-
-    buf = malloc(1024);
-    if (!buf) {
-        CloseSocket(sockfd);
-        return count;
-    }
-
-    for (poll_num = 0; poll_num < max_polls && count < max_results; poll_num++) {
-        fd_set readfds;
-        struct timeval tv;
-        long ready;
-        struct sockaddr_in from;
-        socklen_t fromlen;
-        ssize_t received;
-
-        if (window) {
-            struct IntuiMessage *imsg;
-            while ((imsg = GT_GetIMsg(window->UserPort))) {
-                GT_ReplyIMsg(imsg);
-            }
-        }
-
-        FD_ZERO(&readfds);
-        FD_SET(sockfd, &readfds);
-        tv.tv_sec = 0;
-        tv.tv_usec = 500000;
-        ready = WaitSelect(sockfd + 1, &readfds, NULL, NULL, &tv, NULL);
-        if (ready <= 0) {
-            continue;
-        }
-
-        fromlen = sizeof(from);
-        memset(&from, 0, sizeof(from));
-        received = recvfrom(sockfd, buf, 1023, 0, (struct sockaddr *)&from, &fromlen);
-        /* A real DNS response needs at least a 12-byte header with a
-         * non-zero answer count, and a unicast QU reply comes from the
-         * responder's own port 5353. Cheap enough sanity checks to reject
-         * unrelated UDP traffic without decoding the message itself. */
-        if (received < 12 || from.sin_port != htons(5353)) {
-            continue;
-        }
-        if (buf[6] == 0 && buf[7] == 0) {
-            continue; /* ANCOUNT == 0: not actually answering anything */
-        }
-
-        {
-            char ipstr[16];
-            const unsigned char *addr_bytes = (const unsigned char *)&from.sin_addr;
-
-            snprintf(ipstr, sizeof(ipstr), "%u.%u.%u.%u",
-                     addr_bytes[0], addr_bytes[1], addr_bytes[2], addr_bytes[3]);
-
-            if (addr_bytes[0] == 127) {
-                continue;
-            }
-
-            if (!discovery_ip_seen(results, count, ipstr)) {
-                strncpy(results[count].ip, ipstr, sizeof(results[count].ip) - 1);
-                results[count].ip[sizeof(results[count].ip) - 1] = '\0';
-                snprintf(results[count].label, sizeof(results[count].label),
-                         "%s (mDNS/IPP)", ipstr);
-
-                printf("Discovery: found %s\n", results[count].label);
-                count++;
-            }
-        }
-    }
-
-    free(buf);
-    CloseSocket(sockfd);
-    return count;
-}
-
-/* Runs both discovery mechanisms and merges the results: SSDP catches
- * printers/print servers that answer UPnP discovery, mDNS catches the
- * more common AirPrint/Bonjour-style IPP advertisement. */
-static int discover_printers_on_lan(struct DiscoveredPrinter *results, int max_results) {
-    int count;
-
-    printf("Searching LAN for printers (SSDP)...\n");
-    count = ssdp_discover_printers(results, max_results);
-
-    printf("Searching LAN for printers (mDNS)...\n");
-    count = mdns_discover_printers(results, count, max_results);
-
-    return count;
-}
-
-/* Small GadTools dialog listing discovered candidates as a cycle gadget.
- * Mirrors the main window's CreateContext/CreateGadget/OpenWindowTags
- * pattern so it reuses the same, already-proven idioms. */
-static BOOL run_discovery_selection(struct Window *parent,
-                                     struct DiscoveredPrinter *results,
-                                     int count,
-                                     char *chosen_ip,
-                                     int chosen_ip_size) {
-    struct Screen *dscreen;
-    APTR dvi;
-    struct Gadget *dglist = NULL;
-    struct Gadget *gad;
-    struct NewGadget ng;
-    struct Window *dwin;
-    STRPTR *labels;
-    BOOL picked = FALSE;
-    BOOL terminated = FALSE;
-    UWORD topborder;
-    int i;
-
-    (void)parent;
-
-    if (count <= 0) return FALSE;
-
-    dscreen = LockPubScreen(NULL);
-    if (!dscreen) return FALSE;
-
-    dvi = GetVisualInfo(dscreen, TAG_DONE);
-    if (!dvi) {
-        UnlockPubScreen(NULL, dscreen);
-        return FALSE;
-    }
-
-    labels = AllocVec((count + 1) * sizeof(STRPTR), MEMF_CLEAR);
-    if (!labels) {
-        FreeVisualInfo(dvi);
-        UnlockPubScreen(NULL, dscreen);
-        return FALSE;
-    }
-    for (i = 0; i < count; i++) {
-        labels[i] = (STRPTR)results[i].label;
-    }
-    labels[count] = NULL;
-
-    topborder = dscreen->WBorTop + (dscreen->Font->ta_YSize + 1);
-
-    gad = CreateContext(&dglist);
-    if (!gad) {
-        FreeVec(labels);
-        FreeVisualInfo(dvi);
-        UnlockPubScreen(NULL, dscreen);
-        return FALSE;
-    }
-
-    ng.ng_TextAttr = &Topaz80;
-    ng.ng_VisualInfo = dvi;
-    ng.ng_Flags = 0;
-    ng.ng_LeftEdge = 10;
-    ng.ng_TopEdge = 10 + topborder;
-    ng.ng_Width = 410;
-    ng.ng_Height = 14;
-    ng.ng_GadgetText = (STRPTR)"Found:";
-    ng.ng_GadgetID = GAD_DISC_CYCLE;
-    gad = CreateGadget(CYCLE_KIND, gad, &ng,
-        GTCY_Labels, (ULONG)labels,
-        GTCY_Active, 0,
-        TAG_DONE);
-    if (!gad) {
-        FreeGadgets(dglist);
-        FreeVec(labels);
-        FreeVisualInfo(dvi);
-        UnlockPubScreen(NULL, dscreen);
-        return FALSE;
-    }
-
-    ng.ng_TopEdge += 26;
+                ssdp_extract_server(bu…2304 tokens truncated…Edge += 26;
     ng.ng_LeftEdge = 10;
     ng.ng_Width = 120;
     ng.ng_Height = 14;
@@ -3233,6 +3009,10 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     num_supported_dpi = 0;
     num_media_tray_mappings = 0;
     has_media_ready = FALSE;
+    jpeg_constraints_queried = TRUE;
+    jpeg_k_octets_reported = FALSE;
+    jpeg_x_dimension_reported = FALSE;
+    jpeg_y_dimension_reported = FALSE;
     printer_make_model[0] = '\0';
 
     // Allocate buffers for parsing
@@ -3308,7 +3088,9 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
             "print-scaling-supported", "print-quality-supported",
             "printer-resolution-default", "printer-resolution-supported",
             "pwg-raster-document-resolution-supported",
-            "document-format-supported", "printer-make-and-model", NULL
+            "document-format-supported", "printer-make-and-model",
+            "jpeg-k-octets-supported", "jpeg-x-dimension-supported",
+            "jpeg-y-dimension-supported", NULL
         };
         int i;
         for (i = 0; mp_requested_attrs[i]; i++) {
@@ -3723,6 +3505,12 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
                         }
                     } else if (strcmp(name, "document-format-supported") == 0 && value_tag == 0x49) {
                         store_value(supported_formats, &num_supported_formats, value);
+                    } else if (strcmp(name, "jpeg-k-octets-supported") == 0) {
+                        jpeg_k_octets_reported = TRUE;
+                    } else if (strcmp(name, "jpeg-x-dimension-supported") == 0) {
+                        jpeg_x_dimension_reported = TRUE;
+                    } else if (strcmp(name, "jpeg-y-dimension-supported") == 0) {
+                        jpeg_y_dimension_reported = TRUE;
                     } else if (strcmp(name, "printer-make-and-model") == 0 &&
                                (value_tag == 0x41 || value_tag == 0x42)) {
                         strncpy(printer_make_model, value, sizeof(printer_make_model) - 1);
@@ -3878,6 +3666,8 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     } else {
         printf("Printer did not report document-format-supported\n");
     }
+
+    mp_warn_if_jpeg_nominal();
 
     printf("query_printer_attributes completed\n");
     return 0;
@@ -4650,7 +4440,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
         ng.ng_TopEdge = row2_top;
     }
 
-    // Printer document engine: JPEG, PWG Raster, or PDF.
+    // Printer document engine: JPEG, PostScript, PWG Raster, or PDF.
     // LeftEdge is nudged right of the other rows' shared 130 - this is the
     // longest label at this column ("Printer Engine:", 15 chars) and at 130
     // it renders with no left margin at all, clipping against the window

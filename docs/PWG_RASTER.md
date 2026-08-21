@@ -1,13 +1,17 @@
 # MintPRINT PWG Raster backend
 
-`DEVS:Printers/MintPRINT` has two document backends, selected by Unit0's
+`DEVS:Printers/MintPRINT` has four document backends, selected by Unit0's
 `ENGINE=` (set from MintPrint Settings' **Printer Engine** control):
 
 - `ENGINE=jpeg` (default) - the original, already-proven JPEG path.
+- `ENGINE=postscript` - PostScript Level 2 (`application/postscript`), see
+  `docs/POSTSCRIPT_ENGINE.md`.
 - `ENGINE=pwg-raster` - streams a PWG Raster (`image/pwg-raster`) document
   instead, via `driver/pwg_writer.c`.
+- `ENGINE=pdf` - a minimal single-page PDF (`application/pdf`), see
+  `docs/PDF_ENGINE.md`.
 
-Both paths share the same row source (`mp_job_write_row` in
+All paths share the same row source (`mp_job_write_row` in
 `driver/driver_core.c`, unchanged) and the same low-memory, one-row-at-a-time
 streaming shape - only the encoder and the IPP `document-format` differ.
 

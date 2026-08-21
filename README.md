@@ -1,15 +1,15 @@
 # MintPRINT
 
 IPP/AirPrint printing for classic AmigaOS - print to modern network
-printers (JPEG or PWG Raster, no driver-specific software on the printer
-side) straight from Amiga applications, via a real `DEVS:Printers/`
+printers (JPEG, PostScript, PWG Raster, or PDF; no driver-specific software
+on the printer side) straight from Amiga applications, via a real `DEVS:Printers/`
 printer.device driver plus a GUI setup tool.
 
 ## What's here
 
 - **`driver/`** - `DEVS:Printers/MintPRINT`, the printer.device driver.
-  Converts printer.device raster callbacks into a streamed JPEG or PWG
-  Raster document and submits it to the printer's IPP `Print-Job`
+  Converts printer.device raster callbacks into a streamed JPEG, PostScript,
+  PWG Raster, or PDF document and submits it to the printer's IPP `Print-Job`
   endpoint. See `docs/PRINTER_DEVICE_SPIKE.md` (and its follow-ups) for how
   it was built, and `docs/PWG_RASTER.md`/`docs/DRIVER_SPOOL_PROCESS.md` for
   the two most significant pieces of its design.
@@ -53,12 +53,13 @@ printer's IP/host, IPP path, and document format in MintPrint Settings.
 
 ## Supported document formats
 
-`image/jpeg`, `image/pwg-raster`, and `application/pdf`. Any IPP Everywhere
+`image/jpeg`, `application/postscript`, `image/pwg-raster`, and
+`application/pdf`. Any IPP Everywhere
 or AirPrint-certified printer (most network printers from roughly the last
 decade) is required to accept PWG Raster, so most printers should already
-work with that alone - PDF is there for older or partially-compliant IPP
-printers (often office/business multifunction devices) that only advertise
-`application/pdf` and reject raster formats entirely.
+work with that alone. PostScript and PDF cover older or partially-compliant
+IPP printers whose network support fronts an existing office-printer
+interpreter and which reject raster formats.
 
 ## Reporting a problem
 

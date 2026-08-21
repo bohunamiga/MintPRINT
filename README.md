@@ -23,7 +23,9 @@ printer.device driver plus a GUI setup tool.
   Amiga-specific tooling. Useful when reporting a printer MintPRINT
   doesn't work with (see Reporting a problem below).
 - **`docs/`** - design notes and build logs for the driver and GUI,
-  written as the project went rather than after the fact.
+  written as the project went rather than after the fact. The
+  **[printer compatibility page](docs/PRINTER_COMPATIBILITY.md)** records
+  confirmed hardware, AmigaOS/TCP stack combinations and required settings.
 - **`Archive/`, `Binarys/`, `Tools/`** - earlier test programs and
   experiments kept for reference; not part of the current driver/GUI.
 
@@ -70,6 +72,10 @@ the output of `windows_ipp_probe.py` run against your printer from a
 Windows PC on the same network:
 
     python windows_ipp_probe.py http://<printer-ip>:631/ipp/print
+
+Use the report template on the
+[printer compatibility page](docs/PRINTER_COMPATIBILITY.md) so the result can
+be added with its AmigaOS version, TCP/IP stack, engine and exact print options.
 
 ## Status
 

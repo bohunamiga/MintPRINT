@@ -14,6 +14,7 @@ typedef long ssize_t;
 #include <proto/bsdsocket.h>
 
 #include "ipp_client.h"
+#include "media_size.h"
 
 extern struct ExecBase *SysBase;
 extern struct DosLibrary *DOSBase;
@@ -198,67 +199,6 @@ static int mp_collection_end(UBYTE *p, ULONG cap, ULONG *off)
            mp_put16(p, cap, off, 0);
 }
 
-/* Parse the self-describing dimensions at the end of a PWG media name,
- * e.g. iso_a4_210x297mm or na_letter_8.5x11in.  IPP media-size uses
- * hundredths of a millimetre. */
-static int mp_decimal_1000(const char *s, ULONG len, ULONG *value)
-{
-    ULONG whole = 0, frac = 0, frac_digits = 0, i;
-    int dot = 0, any = 0;
-
-    if (!s || !len || !value) return 0;
-    for (i = 0; i < len; ++i) {
-        char c = s[i];
-        if (c == '.' && !dot) { dot = 1; continue; }
-        if (c < '0' || c > '9') return 0;
-        any = 1;
-        if (!dot) {
-            if (whole > 100000UL) return 0;
-            whole = whole * 10UL + (ULONG)(c - '0');
-        } else if (frac_digits < 3) {
-            frac = frac * 10UL + (ULONG)(c - '0');
-            ++frac_digits;
-        }
-    }
-    if (!any) return 0;
-    while (frac_digits < 3) { frac *= 10UL; ++frac_digits; }
-    *value = whole * 1000UL + frac;
-    return 1;
-}
-
-static int mp_media_dimensions(const char *media, ULONG *x, ULONG *y)
-{
-    ULONG len, i, start = 0, sep = 0, sx, sy;
-    ULONG factor;
-
-    if (!media || !x || !y) return 0;
-    len = mp_len(media);
-    if (len < 6) return 0;
-
-    for (i = 0; i < len; ++i) {
-        if (media[i] == '_') start = i + 1;
-    }
-    for (i = start; i < len; ++i) {
-        if (media[i] == 'x') { sep = i; break; }
-    }
-    if (!sep || sep <= start) return 0;
-
-    if (len >= 2 && media[len - 2] == 'm' && media[len - 1] == 'm')
-        factor = 100UL;       /* mm -> 1/100 mm */
-    else if (len >= 2 && media[len - 2] == 'i' && media[len - 1] == 'n')
-        factor = 2540UL;      /* inch -> 1/100 mm */
-    else
-        return 0;
-
-    if (!mp_decimal_1000(media + start, sep - start, &sx) ||
-        !mp_decimal_1000(media + sep + 1, (len - 2) - (sep + 1), &sy))
-        return 0;
-
-    *x = (sx * factor + 500UL) / 1000UL;
-    *y = (sy * factor + 500UL) / 1000UL;
-    return (*x && *y) ? 1 : 0;
-}
-
 static int mp_media_col_attr(UBYTE *p, ULONG cap, ULONG *off,
                              ULONG x, ULONG y, const char *source)
 {
@@ -403,7 +343,8 @@ LONG mp_ipp_print_document(const struct MPConfig *cfg, CONST_STRPTR filename,
         ULONG quality_enum = mp_quality_enum(cfg->quality);
         ULONG media_x = 0, media_y = 0;
         int use_media_col = cfg->media[0] && cfg->source[0] &&
-                            mp_media_dimensions(cfg->media, &media_x, &media_y);
+                            mp_media_dimensions_100mm(cfg->media,
+                                                      &media_x, &media_y);
 
         if (!mp_put8(ipp, sizeof(ipp), &io, 0x02)) { rc = -5; goto done; }
         if (use_media_col) {

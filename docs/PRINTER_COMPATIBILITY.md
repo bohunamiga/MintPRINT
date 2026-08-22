@@ -26,10 +26,10 @@ accepts a job and silently discards it.
 |---|---|---|---|---|---|
 | **Brother MFC-J6930DW** | ✅ Working | 3.2.3 | Roadshow | PWG Raster | Port `631`; path `/ipp/print`; `300 dpi`; A4; tray `auto`; scaling `auto`; quality `draft`; colour |
 | **Brother HL-L2350DW** on A500 PiStorm, Wi-Fi | ✅ Working | 3.2.3 | Roadshow | Original Aminet release reported as working perfectly; exact engine was not recorded | No printer-specific override reported |
-| **Brother HL-L2350DW** on A4000, CSMkII 060/50 and Ariadne-II, wired | 🟡 Partial | 3.2.3 | Roadshow | A one-page AmigaWriter document prints, but multi-page output is broken in both 1.0.3 and the 1.0.3a/main revision-15 test build | 1.0.3 adds a Brother error sheet after each page and enlarges/crops page 3; revision 15 removes the error sheets but prints only page 2 |
+| **Brother HL-L2350DW** on A4000, CSMkII 060/50 and Ariadne-II, wired | ✅ Working | 3.2.3 | Roadshow | Multi-page printing fully fixed - confirmed in issue #8 after a beta build, and fully in released 1.1.0 | 1.1.0; scaling `auto` |
 | **Canon TS8360** (IPP identifies it as **TS8300 series**) | ✅ Working | 3.2.3 | Not reported | PWG Raster text and colour pictures physically confirmed; JPEG pictures also work | Port `631`; path `/ipp/print`; PWG Raster; **`300* dpi` compatibility mode**; A4; source `auto`; scaling as required. Printer advertises only 600 DPI but accepts 300 DPI |
-| **HP OfficeJet 8014e** on A4000, 68060, Wi-Fi | 🧪 Testing | 3.2.3 | Not reported | Detection/Query confirmed fixed by the driver's Wi-Fi connect retry; Test Print not yet reconfirmed after the oversized-page-width and JPEG-speed fixes | Port `631`; path `/ipp/print`; advertises both JPEG and PWG Raster - a fresh add now defaults to PWG Raster |
-| **Samsung C480W / C48x Series** | ❌ Current release / 🧪 PostScript build | 3.9 Boing Bag 2; Kickstart 3.1 | Not reported | JPEG is silently discarded; PWG Raster and PDF are rejected. External one-shot PostScript printed; MintPRINT PostScript PR #17 awaits confirmation | Port `631`; path `/ipp/print`; `300 dpi`; A4; tray `tray-1`; normal quality; scaling `auto`; allow 3–4 minutes for PostScript |
+| **HP OfficeJet 8014e** on A4000, 68060, Wi-Fi | ✅ Working | 3.2.3 | Not reported | Detection/Query and Test Print fully fixed - confirmed in issue #30 after a beta build, and fully in released 1.1.0 | Port `631`; path `/ipp/print`; advertises both JPEG and PWG Raster - a fresh add now defaults to PWG Raster |
+| **Samsung C480W / C48x Series** | 🟡 Partial (PostScript only) | 3.9 Boing Bag 2; Kickstart 3.1 | Not reported | JPEG is silently discarded; PWG Raster and PDF are rejected. PostScript engine confirmed physically printing, but is slow since this printer only accepts PostScript | Port `631`; path `/ipp/print`; `300 dpi`; A4; tray `tray-1`; normal quality; scaling `auto`; allow 3–4 minutes for PostScript |
 
 “Not recorded” is intentional. Do not assume Roadshow, AmiTCP or Miami from
 the presence of `bsdsocket.library`; reports should name the actual stack and
@@ -67,8 +67,8 @@ Two systems were reported against the same printer in
   The exact engine and MintPRINT job settings were not included in the report.
 - **A4000, CSMkII 060/50, Ariadne-II wired, AmigaOS 3.2.3, Roadshow:**
   A simple one-page AmigaWriter document printed correctly with MintPRINT
-  1.0.3 and scaling `auto`, but a later three-page document exposed unresolved
-  page handling:
+  1.0.3 and scaling `auto`, but a later three-page document exposed page
+  handling problems:
   - with 1.0.3, all three document pages printed, but each was followed by a
     Brother-generated error sheet containing the Swedish text
     `-data som inte stöds för direktutskrift: 3000` (“-data not supported for
@@ -76,21 +76,16 @@ Two systems were reported against the same printer in
     and only its central text printed;
   - with the 1.0.3a/main-line revision-15 test build, the extra error sheets
     disappeared, but only document page 2 printed and its page break moved two
-    rows earlier; and
-  - MintPrint Settings' Test Print still prints only the middle portion of an
-    enlarged image filling the sheet.
+    rows earlier.
 
-  The revision-15 result indicates a likely page-boundary regression in the
-  new multi-band accumulator; the log is needed to confirm exactly where it
-  occurs. It is not a confirmed AmigaWriter fix. The complete driver log is
-  still required to compare every `Render begin/end`, `SPECIAL_NOFORMFEED`,
-  accumulated height and page-finalisation event across the three pages.
-  `fit` and `auto-fit` had previously corrected text size but split the document
-  over multiple vertically-centred pages, so `auto` remains the best known
-  setting while the page handling is investigated.
+  These were page-boundary regressions in the multi-band accumulator. A beta
+  build fixing the page-boundary handling was sent for testing and confirmed
+  working in [issue #8](https://github.com/boingball/MintPRINT/issues/8); the
+  fix shipped fully in the 1.1.0 release, and multi-page wired printing on
+  this machine is now confirmed working end to end.
 
-The Roadshow result confirms the TCP stack is viable; the A4000 problem is in
-rendering/page handling rather than basic IP connectivity.
+The Roadshow result confirms the TCP stack is viable, and the A4000
+rendering/page-handling problem is now resolved as of 1.1.0.
 
 ### Canon TS8360 / TS8300 series
 
@@ -160,9 +155,9 @@ media. Two problems specific to this report, both since fixed:
   making PWG Raster - unaffected by the JPEG-specific slowness in the first
   place - the default engine whenever a printer advertises it.
 
-None of the Test Print fixes have been reconfirmed against this printer's
-actual hardware yet; this entry should move to ✅ Working once a physical
-print is confirmed, or be updated with whatever is still wrong if not.
+A beta build with these fixes was sent for testing and confirmed working
+against this printer's actual hardware in issue #30; Detection/Query and
+Test Print are now fully fixed in the released 1.1.0.
 
 ### Samsung C480W / C48x Series
 
@@ -176,7 +171,7 @@ reported.
 | JPEG / `image/jpeg` | Printer advertises it, Validate-Job accepts it and the job completes, but no page is produced and the billing counter does not increment. |
 | PWG Raster / `image/pwg-raster` | Rejected with `client-error-document-format-not-supported`. |
 | PDF / `application/pdf` | Rejected with `client-error-document-format-not-supported`. |
-| PostScript / `application/postscript` | A one-shot external IPP Print-Job physically printed and incremented the page counter. MintPRINT's PostScript engine in [PR #17](https://github.com/boingball/MintPRINT/pull/17) is awaiting hardware confirmation. |
+| PostScript / `application/postscript` | Confirmed physically printing and incrementing the page counter with MintPRINT's PostScript engine ([PR #17](https://github.com/boingball/MintPRINT/pull/17)). This printer is PostScript-only, so printing through it is slow. |
 
 Reported/default settings:
 
@@ -202,7 +197,7 @@ or actual paper is the reliable test.
 | Environment | Status |
 |---|---|
 | AmigaOS 3.2.3 + Roadshow, A500 PiStorm Wi-Fi | ✅ Confirmed end-to-end with Brother HL-L2350DW |
-| AmigaOS 3.2.3 + Roadshow, A4000/Ariadne-II wired | 🟡 Single-page AmigaWriter output works with scaling `auto`; multi-page output, Brother error sheets and the oversized Test Print remain unresolved |
+| AmigaOS 3.2.3 + Roadshow, A4000/Ariadne-II wired | ✅ Confirmed end-to-end, including multi-page output, with Brother HL-L2350DW as of 1.1.0 |
 | AmigaOS 3.9 BB2, TCP stack not reported | 🟡 IPP transport reaches Samsung C480W; no released MintPRINT engine currently prints on it |
 | AmigaOS 3.1 classic driver | 🧪 Structurally implemented but no physical OS3.1 print is recorded yet |
 | AmiTCP | 🧪 Expected through compatible `bsdsocket.library`; no named hardware report yet |
@@ -293,7 +288,7 @@ graphics dumps to assemble one physical page.
 | **MultiView** | ✅ Working | AmigaOS 3.2.3, same revision-15 test environment; OS Printer Preferences left at defaults apart from selecting MintPRINT | Prints successfully using the active MintPRINT preferences | Select **Print**; MultiView provides no application-specific print settings |
 | **GfxDump** | ✅ Working | AmigaOS 3.2.3, same revision-15 test environment | The OS tool sends its graphics dump directly through `printer.device` to MintPRINT and prints successfully | Select MintPRINT in OS Printer Preferences; no application-specific setup |
 | **Directory Opus 4.16** | ❌ Not supported yet | AmigaOS 3.2.3, same revision-15 test environment | The Print button opens and closes MintPRINT but produces no raster page and no IPP job | Requires a future Amiga text-line renderer fed by `ped_ConvFunc()` characters from the `CMD_WRITE` path |
-| **AmigaWriter** | 🟡 Partial | AmigaOS 3.2.3, Roadshow, Brother HL-L2350DW | A one-page document works with `Scaling=auto`. A three-page job on 1.0.3 printed all pages but added an error sheet after each and enlarged/cropped page 3; the 1.0.3a/main revision-15 build removed the extra sheets but printed only page 2 with the break two rows early | Tested with the defaults after adding the printer (`Scaling=auto`); multi-page revision-15 driver log awaited |
+| **AmigaWriter** | ✅ Working | AmigaOS 3.2.3, Roadshow, Brother HL-L2350DW, 1.1.0 | Multi-page documents print correctly with the page-boundary fix confirmed via a beta build in issue #8 and shipped fully in 1.1.0 | Tested with the defaults after adding the printer (`Scaling=auto`) |
 | **MintPrint Settings Test Print** | 🟡 Partial | Brother HL-L2350DW report | The centre of the test image remains enlarged and cropped with `Scaling=auto` | No working override confirmed yet |
 
 ### Wordworth 7 Print Setup

@@ -72,7 +72,10 @@ format MintPRINT can produce, or printing otherwise fails, please
 the output of `windows_ipp_probe.py` run against your printer from a
 Windows PC on the same network:
 
-    python windows_ipp_probe.py http://<printer-ip>:631/ipp/print
+    python windows_ipp_probe.py http://<printer-ip>:631/ipp/print --all
+
+`--all` requests every printer attribute and includes a full parsed
+attribute dump, which gives much better debugging detail for the issue.
 
 Use the report template on the
 [printer compatibility page](docs/PRINTER_COMPATIBILITY.md) so the result can
@@ -80,8 +83,11 @@ be added with its AmigaOS version, TCP/IP stack, engine and exact print options.
 
 ## Status
 
-Working driver + GUI, actively developed. Not a polished, general-release
-product yet - see `docs/` for open issues and design history.
+MintPRINT is now a real, working app: version 1.1.0 driver + GUI, with
+multiple printers confirmed fully working over IPP/AirPrint from real Amiga
+hardware. It's still actively developed and not every printer is confirmed
+yet, so check the [printer compatibility page](docs/PRINTER_COMPATIBILITY.md)
+for your specific model - see `docs/` for open issues and design history.
 
 ## License
 

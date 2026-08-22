@@ -47,6 +47,7 @@ typedef long ssize_t;
 #include "http_response.h"
 #include "dpi_options.h"
 #include "media_size.h"
+#include "ipp_enum.h"
 
 /* All status/progress output goes to the on-screen status box, never a
  * console - the end user may have launched this from Workbench, where
@@ -4108,6 +4109,7 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     int content_len = -1; // -1 = not yet known
     int chunked = FALSE;
     int connection_closed = FALSE;
+    int final_http_status = -1; // set once the final (non-1xx) header is seen
 
     while (total_received < maxlen - 1 && idle_attempts < max_idle_attempts) {
         fd_set rfds;
@@ -4160,6 +4162,7 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
                 }
 
                 body_off = off;
+                final_http_status = status;
                 chunked = mp_http_header_has_token(response, header_start,
                                                    body_off,
                                                    "Transfer-Encoding",
@@ -4235,7 +4238,11 @@ query_receive_pump_gui:
 
     // Find the start of the IPP payload (past any interim response already
     // skipped above)
-    if (body_off < 0) body_off = mp_http_find_body(response, total_received, header_start);
+    if (body_off < 0) {
+        body_off = mp_http_find_body(response, total_received, header_start);
+        if (body_off >= 0 && final_http_status < 0)
+            final_http_status = mp_http_status(response, total_received, header_start);
+    }
     if (body_off < 0) {
         printf("Failed to find IPP payload (no \\r\\n\\r\\n separator)\n");
         CloseSocket(sockfd);
@@ -4295,6 +4302,32 @@ query_receive_pump_gui:
     printf("IPP Version: 0x%02x%02x\n", (unsigned char)ipp_start[0], (unsigned char)ipp_start[1]);
     printf("IPP Status: 0x%02x%02x\n", (unsigned char)ipp_start[2], (unsigned char)ipp_start[3]);
     printf("Request ID: 0x%02x%02x%02x%02x\n", (unsigned char)ipp_start[4], (unsigned char)ipp_start[5], (unsigned char)ipp_start[6], (unsigned char)ipp_start[7]);
+
+    // Reject a failed Get-Printer-Attributes response outright, before any
+    // capability attributes are parsed/cached: a non-200 HTTP status or an
+    // IPP status outside the 0x0000 (successful) class means the printer
+    // did not actually answer the query, and whatever bytes follow must not
+    // be read as capabilities.
+    if (final_http_status != 200) {
+        printf("Get-Printer-Attributes failed: HTTP status %d\n", final_http_status);
+        CloseSocket(sockfd);
+        free(name);
+        free(value);
+        operation_in_progress = FALSE;
+        return -1;
+    }
+    {
+        unsigned int ipp_status = ((unsigned char)ipp_start[2] << 8) |
+                                   (unsigned char)ipp_start[3];
+        if (ipp_status >= 0x0100) {
+            printf("Get-Printer-Attributes failed: IPP status 0x%04x\n", ipp_status);
+            CloseSocket(sockfd);
+            free(name);
+            free(value);
+            operation_in_progress = FALSE;
+            return -1;
+        }
+    }
 
     int pos = 8; // Skip header
     int attributes_processed = 0;
@@ -4417,12 +4450,14 @@ query_receive_pump_gui:
                             strncpy(media_tray_map[num_media_tray_mappings].medianame, medianame, MAX_ATTR_LEN - 1);
                             num_media_tray_mappings++;
                         }
-                    } else if (strcmp(name, "printer-state") == 0 && value_tag == 0x21 && value_len == 4) {
-                        int state = (ipp_start[pos - value_len] << 24) |
-                                    (ipp_start[pos - value_len + 1] << 16) |
-                                    (ipp_start[pos - value_len + 2] << 8) |
-                                    (ipp_start[pos - value_len + 3]);
-                        printf("Printer state: %d\n", state);
+                    } else if (strcmp(name, "printer-state") == 0 &&
+                               value_tag == 0x23 && value_len == 4) {
+                        /* printer-state is an IPP enum (RFC 8011 5.4.11),
+                         * not the 0x21 'integer' tag - diagnostic only, does
+                         * not affect GUI behaviour. */
+                        unsigned long state = mp_ipp_decode_be32(
+                            (const UBYTE *)ipp_start + pos - value_len);
+                        printf("Printer state: %lu\n", state);
                     } else if (strcmp(name, "print-color-mode-supported") == 0 && value_tag == 0x44) {
                         store_value(supported_print_modes, &num_supported_print_modes, value);
                         printf("Added print-color-mode-supported: %s\n", value); }
@@ -4479,16 +4514,37 @@ query_receive_pump_gui:
                                value_tag == 0x32 && value_len == 9) {
                         mp_add_ipp_resolution((const UBYTE *)ipp_start + pos - value_len,
                                               value_len);
-                    } else if (strcmp(name, "print-quality-supported") == 0 && value_tag == 0x21) {
-                        int quality = atoi(value);
-                        if (num_supported_quality < MAX_QUALITIES) {
-                            switch (quality) {
-                                case 3: strcpy(supported_quality[num_supported_quality], "draft"); break;
-                                case 4: strcpy(supported_quality[num_supported_quality], "normal"); break;
-                                case 5: strcpy(supported_quality[num_supported_quality], "high"); break;
-                                default: sprintf(supported_quality[num_supported_quality], "q%d", quality); break;
+                    } else if (strcmp(name, "print-quality-supported") == 0 &&
+                               value_tag == 0x23 && value_len == 4) {
+                        /* print-quality-supported is an IPP enum (RFC 8011
+                         * 5.4.13, value tag 0x23), not the 0x21 'integer'
+                         * tag - and its value is a 4-byte big-endian binary
+                         * integer, not decimal text, so atoi() on it was
+                         * always wrong. */
+                        unsigned long quality = mp_ipp_decode_be32(
+                            (const UBYTE *)ipp_start + pos - value_len);
+                        const char *quality_name = NULL;
+
+                        switch (quality) {
+                            case 3: quality_name = "draft"; break;
+                            case 4: quality_name = "normal"; break;
+                            case 5: quality_name = "high"; break;
+                            default: break; /* ignore unknown enum values */
+                        }
+
+                        if (quality_name) {
+                            BOOL already_have = FALSE;
+                            int qi;
+                            for (qi = 0; qi < num_supported_quality; qi++) {
+                                if (strcmp(supported_quality[qi], quality_name) == 0) {
+                                    already_have = TRUE;
+                                    break;
+                                }
                             }
-                            num_supported_quality++;
+                            if (!already_have && num_supported_quality < MAX_QUALITIES) {
+                                strcpy(supported_quality[num_supported_quality++], quality_name);
+                                printf("Added print-quality-supported: %s\n", quality_name);
+                            }
                         }
                     } else if (strcmp(name, "document-format-supported") == 0 && value_tag == 0x49) {
                         store_value(supported_formats, &num_supported_formats, value);

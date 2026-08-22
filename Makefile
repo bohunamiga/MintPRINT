@@ -14,7 +14,7 @@ TEST_BUILD := build/tests
 RELEASE_DIR := release/MintPRINT
 RELEASE31_DIR := release/MintPRINT-OS31
 
-.PHONY: all gui test test-http test-dpi test-jpeg test-postscript driver driver31 driver-symbols driver-symbols31 release release31 release-all clean help
+.PHONY: all gui test test-http test-dpi test-jpeg test-ipp-enum test-postscript driver driver31 driver-symbols driver-symbols31 release release31 release-all clean help
 
 all: gui
 
@@ -24,6 +24,7 @@ help:
 	@echo "  make test-http - run host-side HTTP response parser tests"
 	@echo "  make test-dpi  - run host-side DPI option tests"
 	@echo "  make test-jpeg - run host-side JPEG AAN forward-DCT tests"
+	@echo "  make test-ipp-enum - run host-side IPP enum decode tests"
 	@echo "  make driver   - build the experimental DEVS:Printers/MintPRINT driver"
 	@echo "  make driver31 - build the AmigaOS 3.1-compatible classic printer driver"
 	@echo "  make driver-symbols - show ABI symbols used by the driver"
@@ -37,8 +38,8 @@ help:
 
 gui: MintPrintSettings
 
-MintPrintSettings: src/MintPrintSettings.c src/http_response.c src/http_response.h src/dpi_options.c src/dpi_options.h driver/media_size.c driver/media_size.h $(IFF_DIR_ESC)/iff-loader.c $(IFF_DIR_ESC)/iff-loader.h
-	$(CC) -O2 -g -I"$(IFF_DIR)" -Isrc -Idriver -o $@ src/MintPrintSettings.c src/http_response.c src/dpi_options.c driver/media_size.c "$(IFF_DIR)/iff-loader.c" -lamiga -lm
+MintPrintSettings: src/MintPrintSettings.c src/http_response.c src/http_response.h src/dpi_options.c src/dpi_options.h src/ipp_enum.c src/ipp_enum.h driver/media_size.c driver/media_size.h $(IFF_DIR_ESC)/iff-loader.c $(IFF_DIR_ESC)/iff-loader.h
+	$(CC) -O2 -g -I"$(IFF_DIR)" -Isrc -Idriver -o $@ src/MintPrintSettings.c src/http_response.c src/dpi_options.c src/ipp_enum.c driver/media_size.c "$(IFF_DIR)/iff-loader.c" -lamiga -lm
 
 $(TEST_BUILD):
 	mkdir -p $@
@@ -57,6 +58,11 @@ test-jpeg: | $(TEST_BUILD)
 	$(HOSTCC) -std=c89 -Wall -Wextra -Werror -Idriver \
 		tests/test_jpeg_writer.c driver/jpeg_writer.c -o $(TEST_BUILD)/test_jpeg_writer
 	$(TEST_BUILD)/test_jpeg_writer
+
+test-ipp-enum: | $(TEST_BUILD)
+	$(HOSTCC) -std=c89 -Wall -Wextra -Werror -Isrc \
+		tests/test_ipp_enum.c src/ipp_enum.c -o $(TEST_BUILD)/test_ipp_enum
+	$(TEST_BUILD)/test_ipp_enum
 
 $(DRIVER_BUILD):
 	mkdir -p $@

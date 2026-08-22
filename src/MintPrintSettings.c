@@ -524,6 +524,17 @@ char driver_engine_buffer[32] = "jpeg";
  * that gap directly: it advertises both formats, defaulted to JPEG anyway,
  * and Test Print was slow enough to look hung. */
 static BOOL driver_engine_explicit = FALSE;
+/* An explicitly-pinned engine (see above) is deliberately never silently
+ * overridden - but staying on JPEG once a printer is confirmed to support
+ * PWG Raster is still very likely a mistake nobody meant to make (an old
+ * saved config from before PWG Raster became the default, or a stray
+ * click on the Engine cycle gadget), not a deliberate choice to keep
+ * paying JPEG's per-pixel DCT cost. Ask once per printer per session,
+ * right after a live Query confirms PWG Raster support, rather than
+ * either nagging on every Query click or silently switching out from
+ * under someone who really did mean to pick JPEG. Reset alongside
+ * driver_engine_explicit whenever a Unit's config is (re)loaded. */
+static BOOL driver_engine_pwg_offer_shown = FALSE;
 #define MP_ENGINE_MAX 4
 
 static const char *mp_engine_all_labels[MP_ENGINE_MAX] = {
@@ -1087,6 +1098,7 @@ static BOOL load_driver_config(void) {
     strcpy(driver_path_buffer, "/ipp/print");
     strcpy(driver_engine_buffer, "jpeg");
     driver_engine_explicit = FALSE;
+    driver_engine_pwg_offer_shown = FALSE;
     driver_debug = FALSE;
     driver_resolution = 300;
     driver_resolution_explicit = FALSE;
@@ -2202,7 +2214,63 @@ static void mp_rebuild_engine_options_from_query(void) {
     }
 }
 
-static void update_engine_dropdown(struct Window *win) {
+/* Forward declaration: mp_offer_pwg_raster_switch() calls back into
+ * update_engine_dropdown() (defined right after it) to refresh the Engine
+ * gadget and dependent dropdowns once it applies a switch. */
+static void update_engine_dropdown(struct Window *win, BOOL live_query);
+
+/* Offers to switch away from an explicitly-pinned (see
+ * driver_engine_explicit) non-PWG-Raster engine when PWG Raster is
+ * available - the auto-preference in mp_rebuild_engine_options_from_query()
+ * deliberately leaves a pinned choice alone, so this is the active nudge
+ * for the case that logic can't fix silently: an old saved config, or a
+ * stray gadget click, that predates PWG Raster being worth preferring.
+ * Only called for a live Query (see call sites) and only once per printer
+ * per session (driver_engine_pwg_offer_shown). */
+static void mp_offer_pwg_raster_switch(struct Window *win) {
+    struct EasyStruct es;
+    int i;
+    BOOL pwg_available = FALSE;
+
+    if (!win || driver_engine_pwg_offer_shown) return;
+    if (!driver_engine_explicit) return; /* already auto-preferred if unpinned */
+    /* Only JPEG/PDF - not PostScript, which may have been deliberately
+     * selected as a compatibility workaround (e.g. a printer that accepts
+     * IPP JPEG but silently discards the job - see PostScript issue #15)
+     * rather than left on by accident the way JPEG/PDF usually are. */
+    if (strcmp(driver_engine_buffer, "jpeg") != 0 &&
+        strcmp(driver_engine_buffer, "pdf") != 0) return;
+
+    for (i = 0; i < mp_engine_count; ++i) {
+        if (mp_engine_value_map[i] &&
+            strcmp(mp_engine_value_map[i], "pwg-raster") == 0) {
+            pwg_available = TRUE;
+            break;
+        }
+    }
+    if (!pwg_available) return;
+
+    driver_engine_pwg_offer_shown = TRUE;
+
+    es.es_StructSize = sizeof(struct EasyStruct);
+    es.es_Flags = 0;
+    es.es_Title = (UBYTE *)"MintPrint Settings";
+    es.es_TextFormat = (UBYTE *)
+        "This printer supports PWG Raster, which usually uses much less\n"
+        "CPU than JPEG or PDF and is recommended for faster printing on\n"
+        "classic Amigas. Switch this printer to PWG Raster now?";
+    es.es_GadgetFormat = (UBYTE *)"Use PWG Raster|Keep current engine";
+    if (!EasyRequest(win, &es, NULL)) return;
+
+    printf("Switched to PWG Raster at the user's request (was %s).\n",
+           mp_test_print_engine_name());
+    strcpy(driver_engine_buffer, "pwg-raster");
+    update_engine_dropdown(win, FALSE);
+    update_sides_dropdown(win);
+    update_dpi_dropdown(win);
+}
+
+static void update_engine_dropdown(struct Window *win, BOOL live_query) {
     struct Gadget *g;
     char previous[sizeof(driver_engine_buffer)];
 
@@ -2231,6 +2299,8 @@ static void update_engine_dropdown(struct Window *win) {
             printf("Selected %s because the previous engine was not advertised by this printer.\n",
                    engine_labels[mp_engine_active_index()]);
     }
+
+    if (live_query) mp_offer_pwg_raster_switch(win);
 }
 
 void cleanup_dropdown_labels() {
@@ -2587,7 +2657,7 @@ static BOOL load_capability_cache_for_current_endpoint(void) {
 static void apply_cached_capabilities(struct Window *win) {
     if (!win) return;
 
-    update_engine_dropdown(win);
+    update_engine_dropdown(win, FALSE);
     update_media_dropdown(win);
     update_print_mode_dropdown(win);
     update_scaling_dropdown(win);
@@ -4566,7 +4636,7 @@ query_receive_pump_gui:
     ensure_quality_defaults();
     if (window) update_quality_dropdown(window);
     if (window) update_dpi_dropdown(window);
-    if (window) update_engine_dropdown(window);
+    if (window) update_engine_dropdown(window, TRUE);
     if (window) update_sides_dropdown(window);
 
     if (printer_make_model[0]) {

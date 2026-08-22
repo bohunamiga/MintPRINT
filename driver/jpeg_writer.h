@@ -29,4 +29,14 @@ int mp_jpeg_begin(MPJpegEncoder *enc, unsigned long width, unsigned long height,
 int mp_jpeg_write_scanline(MPJpegEncoder *enc, const unsigned char *rgb);
 int mp_jpeg_finish(MPJpegEncoder *enc);
 
+/* Below this line: otherwise-internal AAN forward-DCT/quantiser pieces,
+ * exposed only so tests/test_jpeg_writer.c can drive them directly and
+ * verify the DCT math (encode -> dequantise -> reference IDCT -> compare
+ * against the original block) without needing a full JPEG bitstream
+ * decoder on the host. Not meant for use outside the encoder and its
+ * test. */
+void mp_fdct(const short *block, long *out);
+int mp_quantize_aan(long raw, int q, long aan_scale);
+extern const long mp_fdct_aan_scale[64];
+
 #endif

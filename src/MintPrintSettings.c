@@ -3735,7 +3735,18 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     }
 
     printf("Connecting to printer...\n");
-    if (mp_connect_with_timeout(sockfd, &serv_addr, 5) < 0) {
+    /* Some AirPrint-capable inkjets (HP OfficeJet/Envy series confirmed -
+     * see issue #30) let their Wi-Fi radio drop into a power-save state
+     * between jobs. UDP discovery (SSDP/mDNS) still gets a reply because
+     * the radio wakes for broadcast/multicast traffic, but the printer's
+     * first real TCP SYN after that can take noticeably longer than 5
+     * seconds to answer while the radio comes back up - a wired printer,
+     * or the same printer once its radio is already awake, answers almost
+     * immediately. 8 seconds gives that wake-up room without making a
+     * genuinely dead endpoint (refused/unreachable) noticeably slower to
+     * give up on, since those fail via ECONNREFUSED/host-unreachable long
+     * before the timeout regardless of its length. */
+    if (mp_connect_with_timeout(sockfd, &serv_addr, 8) < 0) {
         snprintf(response, maxlen, "Failed to connect to printer");
         CloseSocket(sockfd);
         free(http_header);
@@ -4401,15 +4412,27 @@ static void perform_query_flow(struct Window *win, const char *ip_only, int port
                 ok = TRUE;
             } else {
                 printf("Query attempt %d/3 on %s:%d failed\n", attempt + 1, ip_only, ports_to_try[i]);
-                /* -2 = connect() itself couldn't be established at all
-                 * (now a deterministic, bounded failure - see
-                 * mp_connect_with_timeout) - retrying the exact same
-                 * connect against the exact same dead endpoint 2 more
-                 * times just delays reaching the other port for no
-                 * benefit. Retries stay worthwhile for -1 (the connection
-                 * succeeded but something after that was flaky, e.g. a
-                 * truncated response - see query_printer_attributes). */
-                if (qrc == -2) break;
+                /* -2 = connect() itself couldn't be established (see
+                 * mp_connect_with_timeout). A genuinely dead endpoint
+                 * (nothing listening, no route) fails fast via
+                 * ECONNREFUSED/host-unreachable well before the timeout,
+                 * so it costs little to give it a second try - but some
+                 * Wi-Fi printers (HP OfficeJet/Envy confirmed - issue #30)
+                 * let their radio drop into power-save between jobs, and
+                 * the first real TCP SYN after that can be slow enough to
+                 * hit the connect timeout even though the printer is very
+                 * much there and answers promptly once its radio is
+                 * awake. Bailing to the next port after just one -2 used
+                 * to mean that single slow wake-up permanently cost this
+                 * port its shot, even though a second attempt right after
+                 * would very likely have connected. Two attempts before
+                 * moving on covers that case; a third would only slow
+                 * down reaching the fallback port for endpoints that are
+                 * actually dead. Retries stay worthwhile for -1 (the
+                 * connection succeeded but something after that was
+                 * flaky, e.g. a truncated response - see
+                 * query_printer_attributes). */
+                if (qrc == -2 && attempt > 0) break;
             }
         }
     }

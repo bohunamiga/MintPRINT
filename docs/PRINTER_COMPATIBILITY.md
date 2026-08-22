@@ -5,7 +5,7 @@ version, TCP/IP stack, document engine and the settings needed to reproduce a
 working print. It deliberately distinguishes physical output from an IPP job
 that merely reports success.
 
-Last reviewed: **21 August 2026**
+Last reviewed: **22 August 2026**
 
 ## Status key
 
@@ -27,7 +27,7 @@ accepts a job and silently discards it.
 | **Brother MFC-J6930DW** | ✅ Working | 3.2.3 | Roadshow | PWG Raster | Port `631`; path `/ipp/print`; `300 dpi`; A4; tray `auto`; scaling `auto`; quality `draft`; colour |
 | **Brother HL-L2350DW** on A500 PiStorm, Wi-Fi | ✅ Working | 3.2.3 | Roadshow | Original Aminet release reported as working perfectly; exact engine was not recorded | No printer-specific override reported |
 | **Brother HL-L2350DW** on A4000, CSMkII 060/50 and Ariadne-II, wired | 🟡 Partial | 3.2.3 | Roadshow | A one-page AmigaWriter document prints, but multi-page output is broken in both 1.0.3 and the 1.0.3a/main revision-15 test build | 1.0.3 adds a Brother error sheet after each page and enlarges/crops page 3; revision 15 removes the error sheets but prints only page 2 |
-| **Canon TS8360** (IPP identifies it as **TS8300 series**) | 🟡 Partial | 3.2.3 | Not reported | PWG Raster and JPEG print colour pictures correctly in portrait and landscape; text/application cases remain incomplete | Port `631`; path `/ipp/print`; printer reports `600 dpi`, A4, source `auto`, quality `draft`, scaling `auto`; Query fix in PR #16 awaits confirmation |
+| **Canon TS8360** (IPP identifies it as **TS8300 series**) | ✅ Working | 3.2.3 | Not reported | PWG Raster text and colour pictures physically confirmed; JPEG pictures also work | Port `631`; path `/ipp/print`; PWG Raster; **`300* dpi` compatibility mode**; A4; source `auto`; scaling as required. Printer advertises only 600 DPI but accepts 300 DPI |
 | **Samsung C480W / C48x Series** | ❌ Current release / 🧪 PostScript build | 3.9 Boing Bag 2; Kickstart 3.1 | Not reported | JPEG is silently discarded; PWG Raster and PDF are rejected. External one-shot PostScript printed; MintPRINT PostScript PR #17 awaits confirmation | Port `631`; path `/ipp/print`; `300 dpi`; A4; tray `tray-1`; normal quality; scaling `auto`; allow 3–4 minutes for PostScript |
 
 “Not recorded” is intentional. Do not assume Roadshow, AmiTCP or Miami from
@@ -111,22 +111,20 @@ Scaling default: auto
 Colour default:  color
 ```
 
-Confirmed with MintPRINT 1.0.3:
+Confirmed after the Canon fixes merged in PR #26:
 
 - A JPG picture prints in colour using either PWG Raster or JPEG.
 - The picture prints correctly in both portrait and landscape.
-- PWG Raster portrait text fills the page, but was monochrome.
+- PWG Raster text prints as laid out, including the application's top margin.
+- Query completes through the Canon's interim/chunked HTTP response.
+- Tiny `NOFORMFEED` bands no longer become separate jobs, and their vertical
+  extent is retained as page whitespace.
 
-Still failing or awaiting retest:
-
-- PWG Raster landscape text produced a blank page.
-- JPEG text produced a blank page in both orientations.
-- Query could hang and leave Media, Scaling, Quality and Print Mode disabled.
-  [PR #16](https://github.com/boingball/MintPRINT/pull/16) contains the current
-  Canon response-parser fix and needs confirmation on this printer.
-
-Do not describe the Canon as fully working yet. It is usable for colour-image
-printing, but the application/text and Query paths are not confirmed fixed.
+The printer advertises only 600 DPI through IPP, but its 600-DPI AmigaWriter
+raster has poor font rendering. Manually setting `RESOLUTION=300` produced a
+fully correct physical page. Settings therefore offers **`300* dpi`** for PWG
+Raster; `*` identifies an unreported compatibility resolution rather than a
+capability claimed by the printer.
 
 ### Samsung C480W / C48x Series
 

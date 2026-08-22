@@ -1224,6 +1224,36 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
 
             g_page_width = (ULONG)x;
             g_page_height = (ULONG)y;
+
+            /* printer.device's own page width for a DUMPRPORT source (no
+             * SPECIAL_NOFORMFEED - a single-shot page, e.g. MintPrint
+             * Settings' test page) has been observed not to match the
+             * configured media at all: requesting a 2480px-wide (A4) target
+             * via IODRPReq produced a 3287px page here, wide enough that
+             * the printer split the job across two physical sheets. Clamp
+             * back down to the configured media's own width whenever it's
+             * both known and substantially (>10%) narrower than what
+             * printer.device reported - a real page that's already close to
+             * the configured media (the common case) is left untouched. */
+            if (mp_detect_engine(&g_config) == MP_ENGINE_PWG &&
+                !(g_current_special & SPECIAL_NOFORMFEED)) {
+                unsigned long media_w_100mm, media_h_100mm;
+                if (mp_media_dimensions_100mm(g_config.media,
+                                              &media_w_100mm, &media_h_100mm)) {
+                    ULONG dpi = g_config.resolution ? g_config.resolution : 300UL;
+                    ULONG media_width_px =
+                        (ULONG)((media_w_100mm * dpi + 1270UL) / 2540UL);
+                    if (media_width_px &&
+                        media_width_px < g_page_width &&
+                        (g_page_width - media_width_px) * 10UL > g_page_width) {
+                        mp_log_3("Clamping oversized PWG page width raw/media/dpi",
+                                 (LONG)g_page_width, (LONG)media_width_px,
+                                 (LONG)dpi);
+                        g_page_width = media_width_px;
+                    }
+                }
+            }
+
             leading_height = g_leading_aux_height;
             if (leading_height > 0xffffffffUL - g_page_height) {
                 mp_log_text("Leading PWG whitespace height overflow");

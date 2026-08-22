@@ -75,6 +75,22 @@ It also caches `pwg-raster-document-sheet-back` so reverse-side pixels and PWG
 header transforms match the printer's native coordinate system. Other engines
 remain safely one-sided. See `docs/DUPLEX_PRINTING.md`.
 
+## DPI compatibility option
+
+Query normally fills the **DPI** cycle from the printer's reported
+`printer-resolution-supported` and PWG Raster resolution attributes. Some
+printers under-report this list: the Canon TS8300 series advertises only 600
+DPI but has been physically confirmed to accept and correctly print 300-DPI
+PWG Raster jobs.
+
+When PWG Raster is selected and a printer reports resolutions but omits 300
+DPI, Settings adds **`300* dpi`** to the cycle. The asterisk means
+"compatibility option not reported by the printer". It is deliberately not
+written into the capability cache and is not automatically selected for a new
+unsaved profile. A saved `RESOLUTION=300` remains selected, allowing a known
+working compatibility choice to survive Query and restart. Other document
+engines continue to show only their reported resolution choices.
+
 ## LAN printer discovery
 
 Clicking **Discover** runs two passes, each taking about 5 seconds:

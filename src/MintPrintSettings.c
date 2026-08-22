@@ -43,6 +43,7 @@ typedef long ssize_t;
                    // this specific NDK without a real build
 #include "iff-loader.h"
 #include "http_response.h"
+#include "dpi_options.h"
 
 /* All status/progress output goes to the on-screen status box, never a
  * console - the end user may have launched this from Workbench, where
@@ -181,9 +182,12 @@ int num_supported_orientations = 0;
 char supported_print_modes[MAX_VALUES][MAX_ATTR_LEN];
 int num_supported_print_modes = 0;
 
-#define MP_MAX_DPI_OPTIONS 2
+#define MP_MAX_DPI_OPTIONS MP_DPI_MAX_OPTIONS
 int supported_dpi[MP_MAX_DPI_OPTIONS];
 int num_supported_dpi = 0;
+static struct MPDpiOptions mp_dpi_options = {
+    { 300, 0 }, { 0, 0 }, 1, 0, 300
+};
 
 char *print_mode_options[MAX_PRINT_MODES];
 int num_print_modes = 0;
@@ -334,8 +338,8 @@ static void mp_add_ipp_resolution(const UBYTE *raw, int value_len) {
 static int mp_dpi_active_index(int dpi) {
     int i;
 
-    for (i = 0; i < num_supported_dpi; ++i) {
-        if (supported_dpi[i] == dpi) return i;
+    for (i = 0; i < mp_dpi_options.count; ++i) {
+        if (mp_dpi_options.values[i] == dpi) return i;
     }
     return 0;
 }
@@ -467,6 +471,10 @@ static STRPTR debug_labels[] = { "Off", "On", NULL };
 STRPTR *resolution_labels = mp_dpi_label_ptrs;
 static char initial_dpi_value[16] = "300 dpi";
 int driver_resolution = 300;
+/* Distinguishes a saved/user-selected 300 DPI value from the unsaved default.
+ * An explicit value may select the marked compatibility entry; a fresh Query
+ * otherwise keeps an actually reported resolution as the default. */
+static BOOL driver_resolution_explicit = FALSE;
 char driver_engine_buffer[32] = "jpeg";
 #define MP_ENGINE_MAX 3
 
@@ -831,8 +839,10 @@ static void capture_driver_settings(struct Window *win) {
         GT_GetGadgetAttrs(g, win, NULL,
                           GTCY_Active, (ULONG)&res_active,
                           TAG_DONE);
-        if (res_active < (ULONG)num_supported_dpi)
-            driver_resolution = supported_dpi[res_active];
+        if (res_active < (ULONG)mp_dpi_options.count) {
+            driver_resolution = mp_dpi_options.values[res_active];
+            driver_resolution_explicit = TRUE;
+        }
     }
 
     /* Persist the capability-backed choices currently visible in the GUI. */
@@ -1029,6 +1039,7 @@ static BOOL load_driver_config(void) {
     strcpy(driver_engine_buffer, "jpeg");
     driver_debug = FALSE;
     driver_resolution = 300;
+    driver_resolution_explicit = FALSE;
     driver_media_buffer[0] = '\0';
     driver_source_buffer[0] = '\0';
     driver_color_buffer[0] = '\0';
@@ -1086,6 +1097,7 @@ static BOOL load_driver_config(void) {
             driver_debug = (line[8] == '0') ? FALSE : TRUE;
         } else if (strncmp(line, "RESOLUTION=", 11) == 0) {
             driver_resolution = (atoi(line + 11) == 600) ? 600 : 300;
+            driver_resolution_explicit = TRUE;
         } else if (strncmp(line, "MEDIA=", 6) == 0) {
             strncpy(driver_media_buffer, line + 6, sizeof(driver_media_buffer) - 1);
             driver_media_buffer[sizeof(driver_media_buffer) - 1] = '\0';
@@ -1163,6 +1175,11 @@ static void seed_saved_option_labels(void) {
 
     snprintf(initial_dpi_value, sizeof(initial_dpi_value), "%d dpi",
              driver_resolution);
+    mp_dpi_options.values[0] = driver_resolution;
+    mp_dpi_options.compatibility[0] = 0;
+    mp_dpi_options.count = 1;
+    mp_dpi_options.active = 0;
+    mp_dpi_options.selected = driver_resolution;
 
     mp_media_label_ptrs[0] = mp_media_label_storage[0];
     strncpy(mp_media_label_storage[0], initial_media_value,
@@ -1650,45 +1667,42 @@ void update_print_mode_dropdown(struct Window *win) {
 void update_dpi_dropdown(struct Window *win) {
     struct Gadget *g;
     int i;
-    int active = 0;
-    int count = num_supported_dpi;
+    int count;
+    BOOL has_compat = FALSE;
 
-    if (count <= 0) {
-        /* Do not invent 600dpi support when the printer reports no
-         * resolution capability. Keep the historical safe default visible
-         * but disable the selector until a Query returns real values. */
-        driver_resolution = 300;
-        count = 1;
-        mp_dpi_label_ptrs[0] = mp_dpi_label_storage[0];
-        strcpy(mp_dpi_label_storage[0], "300 dpi");
-    } else {
-        for (i = 0; i < count; ++i) {
-            mp_dpi_label_ptrs[i] = mp_dpi_label_storage[i];
+    mp_dpi_build_options(supported_dpi, num_supported_dpi,
+                         strcmp(driver_engine_buffer, "pwg-raster") == 0,
+                         driver_resolution,
+                         driver_resolution_explicit ? 1 : 0,
+                         &mp_dpi_options);
+    count = mp_dpi_options.count;
+    driver_resolution = mp_dpi_options.selected;
+
+    for (i = 0; i < count; ++i) {
+        mp_dpi_label_ptrs[i] = mp_dpi_label_storage[i];
+        if (mp_dpi_options.compatibility[i]) {
             snprintf(mp_dpi_label_storage[i],
                      sizeof(mp_dpi_label_storage[i]),
-                     "%d dpi", supported_dpi[i]);
-            if (supported_dpi[i] == driver_resolution) active = i;
-        }
-
-        if (supported_dpi[active] != driver_resolution) {
-            for (i = 0; i < count; ++i) {
-                if (supported_dpi[i] == 300) {
-                    active = i;
-                    break;
-                }
-            }
-            driver_resolution = supported_dpi[active];
+                     "%d* dpi", mp_dpi_options.values[i]);
+            has_compat = TRUE;
+        } else {
+            snprintf(mp_dpi_label_storage[i],
+                     sizeof(mp_dpi_label_storage[i]),
+                     "%d dpi", mp_dpi_options.values[i]);
         }
     }
 
     mp_dpi_label_ptrs[count] = NULL;
     resolution_labels = mp_dpi_label_ptrs;
 
+    if (has_compat)
+        printf("DPI: 300* dpi = compatibility (not printer-reported)\n");
+
     g = find_gadget_by_id(GAD_RESOLUTION);
     if (g && win) {
         GT_SetGadgetAttrs(g, win, NULL,
                           GTCY_Labels, (ULONG)resolution_labels,
-                          GTCY_Active, (ULONG)active,
+                          GTCY_Active, (ULONG)mp_dpi_options.active,
                           GA_Disabled, num_supported_dpi > 0 ? FALSE : TRUE,
                           TAG_DONE);
         RefreshGList(g, win, NULL, 1);
@@ -5289,6 +5303,25 @@ void process_window_events(struct Window *win) {
                                 driver_engine_buffer[
                                     sizeof(driver_engine_buffer) - 1] = '\0';
                                 update_sides_dropdown(win);
+                                update_dpi_dropdown(win);
+                            }
+                        }
+                        break;
+
+                        case GAD_RESOLUTION:
+                        {
+                            ULONG selected = 0;
+                            GT_GetGadgetAttrs(gad, win, NULL,
+                                              GTCY_Active, (ULONG)&selected,
+                                              TAG_DONE);
+                            if (selected < (ULONG)mp_dpi_options.count) {
+                                driver_resolution =
+                                    mp_dpi_options.values[selected];
+                                driver_resolution_explicit = TRUE;
+                                if (mp_dpi_options.compatibility[selected])
+                                    printf("DPI set to 300 compatibility mode (not printer-reported)\n");
+                                else
+                                    printf("DPI set to %d\n", driver_resolution);
                             }
                         }
                         break;

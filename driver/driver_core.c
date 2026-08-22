@@ -37,7 +37,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 24
+#define MP_DRIVER_REV 25
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -1267,13 +1267,21 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
              * Settings' test page) has been observed not to match the
              * configured media at all: requesting a 2480px-wide (A4) target
              * via IODRPReq produced a 3287px page here, wide enough that
-             * the printer split the job across two physical sheets. Clamp
-             * back down to the configured media's own width whenever it's
-             * both known and substantially (>10%) narrower than what
-             * printer.device reported - a real page that's already close to
-             * the configured media (the common case) is left untouched. */
-            if (mp_detect_engine(&g_config) == MP_ENGINE_PWG &&
-                !(g_current_special & SPECIAL_NOFORMFEED)) {
+             * the printer split the job across two physical sheets. This is
+             * printer.device's own DUMPRPORT geometry report, not a PWG
+             * artifact, so it happens the same way regardless of which
+             * engine ends up encoding the page - originally scoped to PWG
+             * only (issue #29), a JPEG-engine printer (issue #30: HP
+             * OfficeJet 8014e) has since shown the identical oversized
+             * width producing a needlessly huge JPEG encode (3287x3508
+             * instead of 2480x3508 - ~30% more pixels than the page needs)
+             * on real hardware, slow enough to look like a hang. Clamp back
+             * down to the configured media's own width on any engine
+             * whenever it's both known and substantially (>10%) narrower
+             * than what printer.device reported - a real page that's
+             * already close to the configured media (the common case) is
+             * left untouched. */
+            if (!(g_current_special & SPECIAL_NOFORMFEED)) {
                 ULONG dpi = g_config.resolution ? g_config.resolution : 300UL;
                 /* mp_media_expected_width_px() weighs BOTH reported
                  * dimensions, not width alone - width alone cannot tell an
@@ -1293,7 +1301,7 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                 if (expected_width_px &&
                     expected_width_px < g_page_width &&
                     (g_page_width - expected_width_px) * 10UL > g_page_width) {
-                    mp_log_3("Clamping oversized PWG page width raw/media/dpi",
+                    mp_log_3("Clamping oversized page width raw/media/dpi",
                              (LONG)g_page_width, (LONG)expected_width_px,
                              (LONG)dpi);
                     g_page_width = expected_width_px;

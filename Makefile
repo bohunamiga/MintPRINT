@@ -14,7 +14,7 @@ TEST_BUILD := build/tests
 RELEASE_DIR := release/MintPRINT
 RELEASE31_DIR := release/MintPRINT-OS31
 
-.PHONY: all gui test test-http test-dpi driver driver31 driver-symbols driver-symbols31 release release31 release-all clean help
+.PHONY: all gui test test-http test-dpi test-jpeg driver driver31 driver-symbols driver-symbols31 release release31 release-all clean help
 
 all: gui
 
@@ -23,6 +23,7 @@ help:
 	@echo "  make gui      - build MintPrint Settings (setup/test GUI)"
 	@echo "  make test-http - run host-side HTTP response parser tests"
 	@echo "  make test-dpi  - run host-side DPI option tests"
+	@echo "  make test-jpeg - run host-side JPEG AAN forward-DCT tests"
 	@echo "  make driver   - build the experimental DEVS:Printers/MintPRINT driver"
 	@echo "  make driver31 - build the AmigaOS 3.1-compatible classic printer driver"
 	@echo "  make driver-symbols - show ABI symbols used by the driver"
@@ -50,6 +51,11 @@ test-dpi: | $(TEST_BUILD)
 	$(HOSTCC) -std=c89 -Wall -Wextra -Werror -Isrc \
 		tests/test_dpi_options.c src/dpi_options.c -o $(TEST_BUILD)/test_dpi_options
 	$(TEST_BUILD)/test_dpi_options
+
+test-jpeg: | $(TEST_BUILD)
+	$(HOSTCC) -std=c89 -Wall -Wextra -Werror -Idriver \
+		tests/test_jpeg_writer.c driver/jpeg_writer.c -o $(TEST_BUILD)/test_jpeg_writer
+	$(TEST_BUILD)/test_jpeg_writer
 
 $(DRIVER_BUILD):
 	mkdir -p $@
@@ -128,7 +134,7 @@ driver-symbols31: $(DRIVER31_BUILD)/driver_core.o $(DRIVER31_BUILD)/classic_rend
 	$(NM) $(DRIVER31_BUILD)/classic_render_shim.o | grep -E '(_Render|_MintPRINT_RenderCore)' || true
 	$(NM) $(DRIVER_BUILD)/command_table.o | grep -E '_CommandTable' || true
 
-test: test-dpi | $(TEST_BUILD)
+test: test-dpi test-jpeg | $(TEST_BUILD)
 	$(HOSTCC) -std=c89 -Wall -Wextra -Werror -Idriver \
 		tests/test_media_size.c driver/media_size.c driver/pwg_writer.c \
 		-o $(TEST_BUILD)/test_media_size

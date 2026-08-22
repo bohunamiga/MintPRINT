@@ -1,19 +1,5 @@
 #include "jpeg_writer.h"
 
-#define MP_JPEG_SCALE_BITS 10
-#define MP_JPEG_SCALE (1L << MP_JPEG_SCALE_BITS)
-
-static const short mp_dct[8][8] = {
-    { 362, 362, 362, 362, 362, 362, 362, 362 },
-    { 502, 426, 284, 100,-100,-284,-426,-502 },
-    { 473, 196,-196,-473,-473,-196, 196, 473 },
-    { 426,-100,-502,-284, 284, 502, 100,-426 },
-    { 362,-362,-362, 362, 362,-362,-362, 362 },
-    { 284,-502, 100, 426,-426,-100, 502,-284 },
-    { 196,-473, 473,-196,-196, 473,-473, 196 },
-    { 100,-284, 426,-502, 502,-426, 284,-100 }
-};
-
 static const unsigned char mp_q_luma[64] = {
      8, 9,10,11,12,13,14,15,
      9,10,11,12,13,14,15,16,
@@ -42,6 +28,54 @@ static long mp_round_shift(long v, int bits)
     if (v < 0) return -(((-v) + add) >> bits);
     return (v + add) >> bits;
 }
+
+/* AAN (Arai, Agui, Nakajima 1988) fast integer forward DCT - the same
+ * algorithm family as IJG libjpeg's jfdctfst.c, and the forward-transform
+ * counterpart of the fast IDCT MintAMP already ships for its own artwork
+ * decoder (picojpeg.c). A direct 8x8 DCT via matrix multiply (the previous
+ * mp_fdct, removed here) needs 8 multiplies per output cell - 1024 per
+ * 8x8 block across both passes. AAN restructures the same transform into
+ * two 1-D butterfly passes of 5 multiplies each (rows, then columns) - 80
+ * per block, roughly a 12x reduction - by deferring each output
+ * coefficient's non-uniform scale factor rather than normalising it away
+ * immediately. That deferred scale is exactly what mp_fdct_aan_scale[]
+ * below corrects for at quantisation time (see mp_quantize_aan()) - the
+ * two must be changed together.
+ *
+ * CONST_BITS-fixed-point constants (Q8, i.e. real value * 256, rounded):
+ * FIX_0_382683433 = 98, FIX_0_541196100 = 139, FIX_0_707106781 = 181,
+ * FIX_1_306562965 = 334. These are the standard published AAN/IJG values,
+ * unchanged from libjpeg since jfdctfst.c was written; this codebase's own
+ * mp_round_shift() (above) is used for each multiply instead of libjpeg's
+ * plain truncating shift, trading a handful of extra adds for slightly
+ * better accuracy than the classic "ifast" variant. */
+#define MP_FDCT_CONST_BITS 8
+#define MP_FDCT_FIX_0_382683433 98L
+#define MP_FDCT_FIX_0_541196100 139L
+#define MP_FDCT_FIX_0_707106781 181L
+#define MP_FDCT_FIX_1_306562965 334L
+
+/* mp_fdct_aan_scale[u*8+v] = round(16384 * aanscalefactor[u] * aanscalefactor[v]),
+ * where aanscalefactor[] = { 1.0, 1.387039845, 1.306562965, 1.175875602,
+ * 1.0, 0.785694958, 0.541196100, 0.275899379 } is the standard AAN row/
+ * column scale factor set (the same values IJG's jcdctmgr.c/jidctfst.c
+ * use, and the same table MintAMP's picojpeg.c IDCT calls gAANScale[]) -
+ * verified independently here (derivation script, not committed) against
+ * a floating-point reference implementation of both this AAN forward
+ * transform and the direct-matrix mp_dct it replaces: the ratio between
+ * their outputs at every one of the 64 positions matched
+ * 8 * aanscalefactor[u] * aanscalefactor[v] to within floating-point
+ * rounding, confirming both the algorithm and this table. */
+const long mp_fdct_aan_scale[64] = {
+    16384, 22725, 21407, 19266, 16384, 12873,  8867,  4520,
+    22725, 31521, 29692, 26722, 22725, 17855, 12299,  6270,
+    21407, 29692, 27969, 25172, 21407, 16819, 11585,  5906,
+    19266, 26722, 25172, 22654, 19266, 15137, 10426,  5315,
+    16384, 22725, 21407, 19266, 16384, 12873,  8867,  4520,
+    12873, 17855, 16819, 15137, 12873, 10114,  6967,  3552,
+     8867, 12299, 11585, 10426,  8867,  6967,  4799,  2446,
+     4520,  6270,  5906,  5315,  4520,  3552,  2446,  1247
+};
 
 static int mp_abs(int v) { return v < 0 ? -v : v; }
 
@@ -152,32 +186,89 @@ static int mp_zigzag_index(int pos)
     return 0;
 }
 
-static void mp_fdct(const short *block, short *out)
+static long mp_fdct_mul(long var, long c)
 {
-    long tmp[64];
-    int y, u, v, x;
-    for (y = 0; y < 8; ++y) {
-        for (u = 0; u < 8; ++u) {
-            long sum = 0;
-            for (x = 0; x < 8; ++x)
-                sum += (long)mp_dct[u][x] * (long)block[y * 8 + x];
-            tmp[y * 8 + u] = mp_round_shift(sum, MP_JPEG_SCALE_BITS);
-        }
-    }
-    for (v = 0; v < 8; ++v) {
-        for (u = 0; u < 8; ++u) {
-            long sum = 0;
-            for (y = 0; y < 8; ++y)
-                sum += (long)mp_dct[v][y] * tmp[y * 8 + u];
-            out[v * 8 + u] = (short)mp_round_shift(sum, MP_JPEG_SCALE_BITS);
-        }
-    }
+    return mp_round_shift(var * c, MP_FDCT_CONST_BITS);
 }
 
-static int mp_quantize(int value, int q)
+/* One 1-D AAN butterfly pass over 8 samples starting at data[base], spaced
+ * stride apart - stride 1 for the row pass, stride 8 for the column pass.
+ * Same routine serves both passes rather than duplicating it, matching
+ * jfdctfst.c's row pass exactly (the column pass is the same butterfly
+ * applied along the other axis - see mp_fdct() below). */
+static void mp_fdct_pass(long *data, int base, int stride)
 {
-    if (value < 0) return -(((-value) + q / 2) / q);
-    return (value + q / 2) / q;
+    long t0, t1, t2, t3, t4, t5, t6, t7;
+    long t10, t11, t12, t13;
+    long z1, z2, z3, z4, z5, z11, z13;
+    long v0 = data[base + 0 * stride];
+    long v1 = data[base + 1 * stride];
+    long v2 = data[base + 2 * stride];
+    long v3 = data[base + 3 * stride];
+    long v4 = data[base + 4 * stride];
+    long v5 = data[base + 5 * stride];
+    long v6 = data[base + 6 * stride];
+    long v7 = data[base + 7 * stride];
+
+    t0 = v0 + v7; t7 = v0 - v7;
+    t1 = v1 + v6; t6 = v1 - v6;
+    t2 = v2 + v5; t5 = v2 - v5;
+    t3 = v3 + v4; t4 = v3 - v4;
+
+    t10 = t0 + t3; t13 = t0 - t3;
+    t11 = t1 + t2; t12 = t1 - t2;
+
+    data[base + 0 * stride] = t10 + t11;
+    data[base + 4 * stride] = t10 - t11;
+
+    z1 = mp_fdct_mul(t12 + t13, MP_FDCT_FIX_0_707106781);
+    data[base + 2 * stride] = t13 + z1;
+    data[base + 6 * stride] = t13 - z1;
+
+    t10 = t4 + t5;
+    t11 = t5 + t6;
+    t12 = t6 + t7;
+
+    z5 = mp_fdct_mul(t10 - t12, MP_FDCT_FIX_0_382683433);
+    z2 = mp_fdct_mul(t10, MP_FDCT_FIX_0_541196100) + z5;
+    z4 = mp_fdct_mul(t12, MP_FDCT_FIX_1_306562965) + z5;
+    z3 = mp_fdct_mul(t11, MP_FDCT_FIX_0_707106781);
+
+    z11 = t7 + z3;
+    z13 = t7 - z3;
+
+    data[base + 5 * stride] = z13 + z2;
+    data[base + 3 * stride] = z13 - z2;
+    data[base + 1 * stride] = z11 + z4;
+    data[base + 7 * stride] = z11 - z4;
+}
+
+/* AAN forward DCT. Unlike the direct-matrix mp_fdct this replaces, the
+ * output is NOT on a uniform, directly-quantisable scale - each of the 64
+ * positions carries its own extra scale factor (mp_fdct_aan_scale[]) that
+ * mp_quantize_aan() must divide back out. Output can run well past the
+ * range of a 16-bit short (that headroom is exactly what buys the reduced
+ * multiply count), so it's long, not short, unlike the old mp_fdct(). */
+void mp_fdct(const short *block, long *out)
+{
+    int i;
+    for (i = 0; i < 64; ++i) out[i] = (long)block[i];
+    for (i = 0; i < 8; ++i) mp_fdct_pass(out, i * 8, 1); /* rows */
+    for (i = 0; i < 8; ++i) mp_fdct_pass(out, i, 8);     /* columns */
+}
+
+/* Divides an mp_fdct() coefficient by both the quantisation table entry
+ * and its deferred AAN scale factor in one rounded step - see
+ * mp_fdct_aan_scale[]'s comment for where the *2048 comes from (it is
+ * 16384/8, folding the AAN table's own Q14 fixed point together with the
+ * factor of 8 the AAN transform's raw output carries relative to the
+ * scale mp_q_luma/mp_q_chroma were calibrated against). */
+int mp_quantize_aan(long raw, int q, long aan_scale)
+{
+    long num = raw * 2048L;
+    long den = (long)q * aan_scale;
+    if (num < 0) return (int)(-(((-num) + den / 2) / den));
+    return (int)((num + den / 2) / den);
 }
 
 static int mp_emit_dc(MPJpegEncoder *e, int diff)
@@ -204,14 +295,14 @@ static int mp_emit_ac_symbol(MPJpegEncoder *e, int run, int size)
 static int mp_encode_block(MPJpegEncoder *e, const short *samples,
                            const unsigned char *qtable, int *dc_pred)
 {
-    short coeff[64];
+    long coeff[64];
     int qcoeff[64];
     int k, run;
     int dc, diff;
 
     mp_fdct(samples, coeff);
     for (k = 0; k < 64; ++k)
-        qcoeff[k] = mp_quantize((int)coeff[k], (int)qtable[k]);
+        qcoeff[k] = mp_quantize_aan(coeff[k], (int)qtable[k], mp_fdct_aan_scale[k]);
 
     dc = qcoeff[0];
     diff = dc - *dc_pred;

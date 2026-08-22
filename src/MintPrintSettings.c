@@ -486,6 +486,19 @@ int driver_resolution = 300;
  * otherwise keeps an actually reported resolution as the default. */
 static BOOL driver_resolution_explicit = FALSE;
 char driver_engine_buffer[32] = "jpeg";
+/* Same convention as driver_resolution_explicit above: distinguishes a
+ * saved/user-selected engine from the unsaved "jpeg" compiled-in default.
+ * Without this, a fresh printer that supports both JPEG and PWG Raster
+ * silently stayed on JPEG forever - PWG Raster was only ever picked if
+ * JPEG wasn't advertised at all (mp_rebuild_engine_options_from_query()
+ * keeps whatever's already in driver_engine_buffer as long as it's still
+ * supported). JPEG (and PDF, which reuses the same JPEG encoder - see
+ * pdf_writer.c) costs real DCT/quantization work per pixel on top of
+ * printer.device's DUMPRPORT scale-up; PWG Raster is a cheap PackBits-style
+ * pack. Real 68k hardware (issue #30, HP OfficeJet 8014e on an '060) felt
+ * that gap directly: it advertises both formats, defaulted to JPEG anyway,
+ * and Test Print was slow enough to look hung. */
+static BOOL driver_engine_explicit = FALSE;
 #define MP_ENGINE_MAX 3
 
 static const char *mp_engine_all_labels[MP_ENGINE_MAX] = {
@@ -1047,6 +1060,7 @@ static BOOL load_driver_config(void) {
 
     strcpy(driver_path_buffer, "/ipp/print");
     strcpy(driver_engine_buffer, "jpeg");
+    driver_engine_explicit = FALSE;
     driver_debug = FALSE;
     driver_resolution = 300;
     driver_resolution_explicit = FALSE;
@@ -1099,6 +1113,14 @@ static BOOL load_driver_config(void) {
                 strcpy(driver_engine_buffer, "pdf");
             else
                 strcpy(driver_engine_buffer, "jpeg");
+            /* Matches driver_resolution_explicit's own precedent just above:
+             * once a value has actually been saved, treat it as pinned
+             * rather than re-deriving it from capabilities on every load -
+             * consistent behaviour for both settings, and avoids silently
+             * flipping a printer that was deliberately kept on JPEG (e.g.
+             * a real PWG rendering bug on that model) back to PWG Raster
+             * behind the user's back on a later Query. */
+            driver_engine_explicit = TRUE;
         } else if (strncmp(line, "DEBUG=", 6) == 0) {
             driver_debug = (line[6] == '0') ? FALSE : TRUE;
         } else if (strncmp(line, "KEEPJOB=", 8) == 0) {
@@ -1984,6 +2006,29 @@ static void mp_rebuild_engine_options_from_query(void) {
         current_found = TRUE;
     }
 
+    /* Prefer PWG Raster over JPEG/PDF whenever the printer actually
+     * advertised it and the engine hasn't been explicitly pinned (see
+     * driver_engine_explicit above): PWG Raster is a cheap PackBits-style
+     * pack, while JPEG and PDF (which reuses the JPEG encoder - see
+     * pdf_writer.c) both cost real per-pixel DCT/quantization work on top
+     * of printer.device's DUMPRPORT scale-up. Without this, JPEG being
+     * first in mp_engine_all_values kept it as the default for any printer
+     * that also advertises JPEG (nearly all of them), even when PWG Raster
+     * was available and objectively cheaper (issue #30). Only meaningful
+     * with real capability data (use_query) - nothing to prefer yet from
+     * an unqueried printer's "all three visible" list. */
+    if (use_query && !driver_engine_explicit) {
+        for (i = 0; i < out; ++i) {
+            if (strcmp(mp_engine_value_map[i], "pwg-raster") == 0) {
+                if (strcmp(driver_engine_buffer, "pwg-raster") != 0) {
+                    strcpy(driver_engine_buffer, "pwg-raster");
+                }
+                current_found = TRUE;
+                break;
+            }
+        }
+    }
+
     engine_labels[out] = NULL;
     mp_engine_count = out;
 
@@ -2016,8 +2061,12 @@ static void update_engine_dropdown(struct Window *win) {
     }
 
     if (strcmp(previous, driver_engine_buffer) != 0) {
-        printf("Selected %s because the previous engine was not advertised by this printer.\n",
-               engine_labels[mp_engine_active_index()]);
+        if (strcmp(driver_engine_buffer, "pwg-raster") == 0)
+            printf("Selected %s: cheaper than JPEG/PDF and this printer advertises it.\n",
+                   engine_labels[mp_engine_active_index()]);
+        else
+            printf("Selected %s because the previous engine was not advertised by this printer.\n",
+                   engine_labels[mp_engine_active_index()]);
     }
 }
 
@@ -5463,6 +5512,7 @@ void process_window_events(struct Window *win) {
                                         sizeof(driver_engine_buffer) - 1);
                                 driver_engine_buffer[
                                     sizeof(driver_engine_buffer) - 1] = '\0';
+                                driver_engine_explicit = TRUE;
                                 update_sides_dropdown(win);
                                 update_dpi_dropdown(win);
                             }

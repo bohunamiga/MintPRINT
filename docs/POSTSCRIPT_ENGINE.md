@@ -29,6 +29,11 @@ DPI.
 MintPrint Settings starts Test Print with asynchronous `SendIO()`. The button
 is disabled until the request completes, but the Settings window continues to
 refresh and process events while a slow PostScript printer handles the job.
+The PostScript diagnostic uses an explicit 4.5 by 6 inch portrait dump. The
+PostScript writer, rather than `printer.device`, centres that raster on the
+configured media. This avoids encoding the otherwise-materialised blank left
+margin and keeps the diagnostic portrait without changing how landscape output
+from normal applications is handled.
 
 Debug mode retains the generated job as `T:MintPRINT-job.ps`.
 

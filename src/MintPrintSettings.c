@@ -1454,6 +1454,8 @@ static void mp_test_print_palette_pens(UBYTE depth,
 
 #define MP_TEST_PAGE_WIDTH  240
 #define MP_TEST_PAGE_HEIGHT 320
+#define MP_TEST_PS_WIDTH_MILS  4500
+#define MP_TEST_PS_HEIGHT_MILS 6000
 
 static void mp_test_print_text(struct RastPort *rp, WORD x, WORD y,
                                WORD right, const char *text)
@@ -1466,6 +1468,19 @@ static void mp_test_print_text(struct RastPort *rp, WORD x, WORD y,
         --length;
     Move(rp, x, y);
     Text(rp, (STRPTR)text, length);
+}
+
+static void mp_test_print_frame(struct RastPort *rp,
+                                WORD left, WORD top,
+                                WORD right, WORD bottom,
+                                UWORD pen)
+{
+    if (!rp || right <= left || bottom <= top) return;
+    SetAPen(rp, pen);
+    RectFill(rp, left, top, right, top);
+    RectFill(rp, left, bottom, right, bottom);
+    RectFill(rp, left, top, left, bottom);
+    RectFill(rp, right, top, right, bottom);
 }
 
 static const char *mp_test_print_engine_name(void)
@@ -1538,12 +1553,16 @@ static BOOL mintprint_test_page(struct Window *win) {
     test_print_job.rastport.BitMap = test_print_job.bitmap;
     if (screen->RastPort.Font)
         SetFont(&test_print_job.rastport, screen->RastPort.Font);
+    /* JAM1 draws only foreground glyph pixels. InitRastPort's JAM2 mode
+     * otherwise paints BPen rectangles behind every text run, which became
+     * visible as grey highlighter bars once the page background turned white. */
+    SetDrMd(&test_print_job.rastport, JAM1);
 
     /* Use the brightest available Workbench pen for paper rather than pen 0,
      * which is commonly mid-grey and made the Samsung laser cover most of
      * the test page in toner. Other palette pens still provide colour
      * swatches, so this remains an end-to-end colour conversion check. */
-    SetAPen(&test_print_job.rastport, depth > 1 ? 2 : dark_pen);
+    SetAPen(&test_print_job.rastport, light_pen);
     RectFill(&test_print_job.rastport, 0, 0,
              MP_TEST_PAGE_WIDTH - 1, MP_TEST_PAGE_HEIGHT - 1);
     SetAPen(&test_print_job.rastport, dark_pen);
@@ -1611,6 +1630,15 @@ static BOOL mintprint_test_page(struct Window *win) {
     RectFill(&test_print_job.rastport, 86, 190, 152, 224);
     SetAPen(&test_print_job.rastport, dark_pen);
     RectFill(&test_print_job.rastport, 160, 190, 226, 224);
+    /* A white swatch on white paper is useful only when its boundary is
+     * visible. Frame all three so the test also exposes registration and
+     * edge-rendering problems consistently across palettes. */
+    mp_test_print_frame(&test_print_job.rastport, 12, 190, 78, 224,
+                        dark_pen);
+    mp_test_print_frame(&test_print_job.rastport, 86, 190, 152, 224,
+                        dark_pen);
+    mp_test_print_frame(&test_print_job.rastport, 160, 190, 226, 224,
+                        dark_pen);
 
     SetAPen(&test_print_job.rastport, dark_pen);
     mp_test_print_text(&test_print_job.rastport, 12, 246, 228,
@@ -1656,9 +1684,22 @@ static BOOL mintprint_test_page(struct Window *win) {
     test_print_job.request->io_SrcY = 0;
     test_print_job.request->io_SrcWidth = MP_TEST_PAGE_WIDTH;
     test_print_job.request->io_SrcHeight = MP_TEST_PAGE_HEIGHT;
-    test_print_job.request->io_DestCols = 0;
-    test_print_job.request->io_DestRows = 0;
-    test_print_job.request->io_Special = SPECIAL_ASPECT | SPECIAL_CENTER;
+    if (strcmp(driver_engine_buffer, "postscript") == 0) {
+        /* Give printer.device an exact portrait size and do not ask it to
+         * centre the dump. SPECIAL_CENTER materialises the left margin as
+         * blank raster columns (983 columns in the Samsung rev17 capture),
+         * while the PostScript writer already centres the image on /PageSize.
+         * 4.5x6 inches preserves this source's 3:4 aspect ratio and reduces
+         * the 300-DPI encoder input to about 7.3 MB instead of 10.7 MB. */
+        test_print_job.request->io_DestCols = MP_TEST_PS_WIDTH_MILS;
+        test_print_job.request->io_DestRows = MP_TEST_PS_HEIGHT_MILS;
+        test_print_job.request->io_Special =
+            SPECIAL_MILCOLS | SPECIAL_MILROWS;
+    } else {
+        test_print_job.request->io_DestCols = 0;
+        test_print_job.request->io_DestRows = 0;
+        test_print_job.request->io_Special = SPECIAL_ASPECT | SPECIAL_CENTER;
+    }
 
     test_print_job.active = TRUE;
     mp_set_test_print_enabled(win, FALSE);

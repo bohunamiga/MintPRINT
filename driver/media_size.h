@@ -7,6 +7,16 @@ int mp_media_dimensions_100mm(const char *media,
                               unsigned long *x,
                               unsigned long *y);
 
+/* Convert a PWG media keyword to PostScript points and orient the physical
+ * sheet to match the raster supplied by printer.device. This keeps the
+ * document's /PageSize on a real supported medium while allowing landscape
+ * application output. Returns zero when the media keyword is unknown. */
+int mp_media_page_points(const char *media,
+                         unsigned long raster_width,
+                         unsigned long raster_height,
+                         unsigned long *page_width,
+                         unsigned long *page_height);
+
 /* Infer the complete raster height for the configured media from the width
  * printer.device actually supplied. The closest media edge determines
  * portrait versus landscape, while using the real raster width preserves

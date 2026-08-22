@@ -18,13 +18,13 @@ Settings, a GUI setup, discovery and test tool.
 
 Print from applications that use AmigaOS' standard printer graphics dump
 interface (including MultiView, GraphicDump and many paint/DTP programs).
-MintPRINT converts printer.device raster callbacks into JPEG, PWG Raster,
-or PDF and submits the resulting document directly to the printer's IPP
+MintPRINT converts printer.device raster callbacks into JPEG, PostScript,
+PWG Raster, or PDF and submits the resulting document directly to the printer's IPP
 endpoint over the network.
 
 AmigaOS 3.1 is supported by a separate classic driver build. Newer
 AmigaOS releases use the normal extended driver build. Both use the same
-MintPrint Settings GUI and the same IPP/JPEG/PWG/PDF backend.
+MintPrint Settings GUI and the same IPP/JPEG/PostScript/PWG/PDF backend.
 
 Archive contents
 ----------------
@@ -50,7 +50,7 @@ Features
   - Real DEVS:Printers/ printer.device driver
   - AmigaOS 3.1 support via a dedicated classic driver build
   - 68000-compatible driver
-  - Prints using JPEG, PWG Raster, or PDF, selectable per printer
+  - Prints using JPEG, PostScript, PWG Raster, or PDF, selectable per printer
   - LAN printer discovery using SSDP and mDNS
   - IPP capability query - reads the printer's supported media, trays,
     colour modes, quality settings and document formats directly
@@ -72,7 +72,7 @@ Requirements
     for every printing path because MintPRINT talks directly to the
     printer over IP.
   - A network printer supporting IPP and at least one document format
-    MintPRINT can generate: JPEG, PWG Raster, or PDF
+    MintPRINT can generate: JPEG, PostScript, PWG Raster, or PDF
   - AirPrint or IPP Everywhere printers are the most likely to work
     without additional printer-specific support
 
@@ -123,7 +123,7 @@ AmigaOS 3.1 notes
 
 The OS3.1 package uses a classic pre-V44 printer driver structure and a
 compatibility rendering path for the older printer.device raster format.
-The IPP networking and JPEG/PWG Raster/PDF output code is shared with the
+The IPP networking and JPEG/PostScript/PWG Raster/PDF output code is shared with the
 newer driver build.
 
 MintPrintSettings should be launched using the supplied icon so its
@@ -175,7 +175,7 @@ commercially, provided the copyright notice is kept.
 Credits
 -------
 
-Driver, GUI, IPP client, and the JPEG/PWG Raster/PDF document encoders
+Driver, GUI, IPP client, and the JPEG/PostScript/PWG Raster/PDF document encoders
 by Darren Banfi (boingball), developed with assistance from Anthropic
 Claude.
 
@@ -241,7 +241,7 @@ History
 
        - DEVS:Printers/MintPRINT driver
        - Separate AmigaOS 3.1 classic driver build
-       - JPEG, PWG Raster and PDF document backends
+       - JPEG, PostScript, PWG Raster and PDF document backends
        - MintPrint Settings GUI
        - LAN printer discovery
        - IPP capability query

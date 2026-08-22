@@ -1,9 +1,11 @@
 # MintPRINT PDF backend
 
-`DEVS:Printers/MintPRINT` has three document backends, selected by Unit0's
+`DEVS:Printers/MintPRINT` has four document backends, selected by Unit0's
 `ENGINE=` (set from MintPrint Settings' **Printer Engine** control):
 
 - `ENGINE=jpeg` (default) - the original, already-proven JPEG path.
+- `ENGINE=postscript` - PostScript Level 2 (`application/postscript`), see
+  `docs/POSTSCRIPT_ENGINE.md`.
 - `ENGINE=pwg-raster` - PWG Raster (`image/pwg-raster`), see
   `docs/PWG_RASTER.md`.
 - `ENGINE=pdf` - a minimal single-page PDF (`application/pdf`), via
@@ -25,7 +27,7 @@ fixed-shape PDF container around the same byte stream: one
 Catalog/Pages/Page/XObject/Contents object set, a cross-reference table,
 and a trailer. Same row source (`mp_job_write_row` in `driver/driver_core.c`,
 unchanged), same low-memory, one-row-at-a-time streaming shape as the
-other two backends - a page is never held in memory as a whole.
+other three backends - a page is never held in memory as a whole.
 
 ## The one PDF-specific complication: stream length
 

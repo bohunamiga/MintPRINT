@@ -28,7 +28,7 @@ Classic printer.device supplies its traditional 4-bit Y/M/C/B intensity
 values.  `driver/classic_render_shim.c` expands each component from 0..15 to
 0..255 (`n * 17`) before handing the row to the normal MintPRINT renderer.
 
-From that point onward the JPEG, PWG Raster, PDF, spool and IPP code is shared
+From that point onward the JPEG, PostScript, PWG Raster, PDF, spool and IPP code is shared
 with the normal driver.
 
 ## Network requirement
@@ -97,4 +97,3 @@ Before public release, test at minimum:
 If the OS3.1 printer transport opens Parallel/Serial even though MintPRINT
 never calls `PD->pd_PWrite`, that is the first compatibility point to inspect.
 Unlike the V44 build, classic printer.device has no `PRTA_NoIO` tag.
-

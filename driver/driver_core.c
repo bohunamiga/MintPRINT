@@ -37,7 +37,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 23
+#define MP_DRIVER_REV 24
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -97,6 +97,19 @@ static ULONG g_page_height = 0;
 static ULONG g_rows_seen = 0;
 static ULONG g_tiny_page_streak = 0;
 static BOOL g_page_pending = FALSE;
+/* Set when the PWG oversized-page-width clamp (below) actually rewrites
+ * g_page_width away from printer.device's own reported width. When that
+ * happens, printer.device's pi_xpos (observed ~839px for the same
+ * DUMPRPORT-scaled source that reports the oversized ~3287px width) was
+ * computed for the ORIGINAL, now-discarded width, not the clamped one - so
+ * it no longer describes a valid offset into the now-narrower output
+ * buffer and would run content off the right edge instead of merely
+ * failing to center it. mp_job_write_row() uses this, in addition to
+ * SPECIAL_CENTER, to decide when pi_xpos must be discarded in favour of a
+ * freshly computed centered offset. Reset at the start of every new page
+ * (never for a NOFORMFEED continuation band of the same page, which reuses
+ * the same already-decided g_page_width). */
+static BOOL g_recenter_clamped_page = FALSE;
 static ULONG g_accum_width = 0;
 static ULONG g_accum_height = 0;
 static ULONG g_aux_height = 0;
@@ -594,15 +607,29 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
      * unaffected: scaled_total >= g_page_width there, so this still falls
      * through to pi_xpos (normally 0) exactly as before.
      *
-     * Gated on SPECIAL_CENTER: without that check this used to fire for
-     * ANY narrower-than-page row on ANY engine (JPEG/PWG/PDF all funnel
-     * through this function), overriding a deliberately-positioned
-     * narrower image (e.g. one drawn at a specific pi_xpos offset, not
-     * centered) with a centered one instead. Only the caller that actually
-     * asked for centering should get this override. */
-    dst_x = ((g_current_special & SPECIAL_CENTER) && g_page_width > scaled_total)
+     * Gated on SPECIAL_CENTER || g_recenter_clamped_page, not SPECIAL_CENTER
+     * alone: without ANY gate this used to fire for ANY narrower-than-page
+     * row on ANY engine (JPEG/PWG/PDF all funnel through this function),
+     * overriding a deliberately-positioned narrower image with a centered
+     * one instead. SPECIAL_CENTER alone under-covers real hardware,
+     * though: on the exact printer.device path this comment describes,
+     * pi_xpos (~839px) was computed against the ORIGINAL oversized page
+     * width (~3287px) before the PWG clamp above rewrites g_page_width down
+     * to the true media width (~2480px) - so once clamped, that stale
+     * pi_xpos is no longer even a valid offset into the now-narrower output
+     * buffer, and using it runs content off the right edge rather than just
+     * failing to center it. g_recenter_clamped_page (set only when that
+     * clamp actually changed g_page_width, reset every new page) covers
+     * that case without widening this override to any other narrower
+     * content that never went through the clamp. */
+    dst_x = (((g_current_special & SPECIAL_CENTER) || g_recenter_clamped_page) &&
+              g_page_width > scaled_total)
                 ? (g_page_width - scaled_total) / 2UL
                 : (ULONG)pi->pi_xpos;
+
+    if (row_number == 0)
+        mp_log_3("Row xpos printer/used/scaled",
+                 (LONG)pi->pi_xpos, (LONG)dst_x, (LONG)scaled_total);
 
     for (src_x = 0; src_x < (ULONG)pi->pi_width && dst_x < g_page_width; ++src_x) {
         union colorEntry *pixel = &pi->pi_ColorInt[src_x];
@@ -1032,6 +1059,7 @@ int PRT_STDARGS DriverOpen(struct IORequest *ior)
     g_tiny_page_streak = 0;
     g_runaway_tripped = FALSE;
     g_page_pending = FALSE;
+    g_recenter_clamped_page = FALSE;
     g_sizing_pass = FALSE;
     g_current_special = 0;
     g_page_had_noformfeed = FALSE;
@@ -1232,6 +1260,7 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
 
             g_page_width = (ULONG)x;
             g_page_height = (ULONG)y;
+            g_recenter_clamped_page = FALSE;
 
             /* printer.device's own page width for a DUMPRPORT source (no
              * SPECIAL_NOFORMFEED - a single-shot page, e.g. MintPrint
@@ -1268,6 +1297,7 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                              (LONG)g_page_width, (LONG)expected_width_px,
                              (LONG)dpi);
                     g_page_width = expected_width_px;
+                    g_recenter_clamped_page = TRUE;
                 }
             }
 

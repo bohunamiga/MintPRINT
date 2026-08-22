@@ -35,8 +35,8 @@ help:
 
 gui: MintPrintSettings
 
-MintPrintSettings: src/MintPrintSettings.c src/http_response.c src/http_response.h src/dpi_options.c src/dpi_options.h $(IFF_DIR_ESC)/iff-loader.c $(IFF_DIR_ESC)/iff-loader.h
-	$(CC) -O2 -g -I"$(IFF_DIR)" -Isrc -o $@ src/MintPrintSettings.c src/http_response.c src/dpi_options.c "$(IFF_DIR)/iff-loader.c" -lamiga -lm
+MintPrintSettings: src/MintPrintSettings.c src/http_response.c src/http_response.h src/dpi_options.c src/dpi_options.h driver/media_size.c driver/media_size.h $(IFF_DIR_ESC)/iff-loader.c $(IFF_DIR_ESC)/iff-loader.h
+	$(CC) -O2 -g -I"$(IFF_DIR)" -Isrc -Idriver -o $@ src/MintPrintSettings.c src/http_response.c src/dpi_options.c driver/media_size.c "$(IFF_DIR)/iff-loader.c" -lamiga -lm
 
 $(TEST_BUILD):
 	mkdir -p $@

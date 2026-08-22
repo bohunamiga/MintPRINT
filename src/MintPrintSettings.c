@@ -44,6 +44,7 @@ typedef long ssize_t;
 #include "iff-loader.h"
 #include "http_response.h"
 #include "dpi_options.h"
+#include "media_size.h"
 
 /* All status/progress output goes to the on-screen status box, never a
  * console - the end user may have launched this from Workbench, where
@@ -1365,28 +1366,44 @@ static void apply_job_defaults_to_gadgets(struct Window *win) {
     GT_RefreshWindow(win, NULL);
 }
 
-/* Portrait, A4-proportioned (210x297mm) test canvas. printer.device infers
- * portrait vs landscape from the aspect of whatever it actually sends the
- * driver (see mp_media_target_height()'s "closest media edge" comment in
- * driver/media_size.h) - a wide/short source page like the old 320x180 one
- * reads as landscape and gets rotated/cropped on a portrait media size.
- * Matching the page's own aspect here keeps SPECIAL_ASPECT|SPECIAL_CENTER
- * scaling it to fill the full portrait page instead. */
+/* Portrait, A4-proportioned (210x297mm) test canvas, drawn into its own
+ * private bitmap and 8-colour ColorMap rather than the live Workbench
+ * screen's.
+ *
+ * An earlier version left io_DestCols/io_DestRows at 0 and relied on
+ * SPECIAL_ASPECT alone to size the page from this canvas's own portrait
+ * aspect. A real test print showed that doesn't work: printer.device does
+ * not derive the destination from the configured media that way - the
+ * driver log showed a destination of ~3113x3015px, unrelated to both the
+ * configured iso_a4_210x297mm media and to this canvas's shape. Instead,
+ * compute the destination explicitly from the unit's configured media and
+ * resolution (mp_media_dimensions_100mm(), shared with the driver) so the
+ * print always matches what MintPrint Settings actually has configured.
+ *
+ * The private ColorMap exists because pen 0 on a live Workbench screen is
+ * whatever grey the user's background happens to be, not white - dumping
+ * the screen's own pens printed a full page of grey ink. Pen 0 here is
+ * fixed to true white and pen 1 to true black, independent of the user's
+ * screen/theme, and pens 2-7 are fixed primaries for the colour test. */
 #define MP_TESTPAGE_WIDTH  320
 #define MP_TESTPAGE_HEIGHT 453
+#define MP_TESTPAGE_DEPTH  3   /* 8 pens: 2^3 */
+#define MP_TESTPAGE_COLORS 8
 
 static BOOL mintprint_test_page(struct Window *win) {
     struct MsgPort *mp = NULL;
     struct IODRPReq *req = NULL;
     struct BitMap *bm = NULL;
+    struct ColorMap *cm = NULL;
     struct RastPort rp;
     ULONG mode_id = 0;
-    UBYTE depth;
-    UBYTE pen_depth;
+    ULONG dpi;
     LONG ioerr = -1;
     BOOL print_ok = FALSE;
     LONG left = 16, right = MP_TESTPAGE_WIDTH - 17;
-    LONG num_swatches, swatch_area, swatch_w, i;
+    LONG dest_cols, dest_rows;
+    LONG swatch_area, swatch_w, i;
+    unsigned long media_w_100mm, media_h_100mm;
     UWORD installed_rev = 0;
     UWORD tw;
     const char *title = "MintPRINT";
@@ -1395,7 +1412,8 @@ static BOOL mintprint_test_page(struct Window *win) {
     const char *settings_label = "Version & Settings";
     const char *footer1 = "printer.device -> MintPRINT -> IPP";
     const char *footer2 = "github.com/boingball/MintPRINT";
-    char swatch_label[8];
+    static const char *swatch_names[MP_TESTPAGE_COLORS] =
+        { "Wht", "Blk", "Red", "Grn", "Blu", "Cyn", "Mag", "Yel" };
     char info_lines[9][80];
     int num_info_lines = 0;
 
@@ -1410,16 +1428,14 @@ static BOOL mintprint_test_page(struct Window *win) {
         return FALSE;
     }
 
-    depth = screen->RastPort.BitMap->Depth;
-    if (depth < 1) depth = 1;
-
-    /* Pens used for the colour test strip - capped so a shift of a huge RTG
-     * bit depth can't be attempted and so the strip stays a handful of
-     * distinct swatches rather than hundreds of 1px slivers. */
-    pen_depth = (depth > 8) ? 8 : depth;
-    num_swatches = 1L << pen_depth;
-    if (num_swatches > 8) num_swatches = 8;
-    if (num_swatches < 2) num_swatches = 2;
+    dpi = (driver_resolution > 0) ? (ULONG)driver_resolution : 300UL;
+    if (!driver_media_buffer[0] ||
+        !mp_media_dimensions_100mm(driver_media_buffer, &media_w_100mm, &media_h_100mm)) {
+        media_w_100mm = 21000UL; /* A4 210mm fallback */
+        media_h_100mm = 29700UL; /* A4 297mm fallback */
+    }
+    dest_cols = (LONG)((media_w_100mm * dpi + 1270UL) / 2540UL);
+    dest_rows = (LONG)((media_h_100mm * dpi + 1270UL) / 2540UL);
 
     if (!mp_read_driver_revision(MINTPRINT_DRIVER_DEST, &installed_rev))
         installed_rev = 0;
@@ -1453,10 +1469,28 @@ static BOOL mintprint_test_page(struct Window *win) {
     snprintf(info_lines[num_info_lines++], sizeof(info_lines[0]),
              "Debug: %s", driver_debug ? "on" : "off");
 
-    bm = AllocBitMap(MP_TESTPAGE_WIDTH, MP_TESTPAGE_HEIGHT, depth, BMF_CLEAR,
-                      screen->RastPort.BitMap);
+    cm = GetColorMap(MP_TESTPAGE_COLORS);
+    if (!cm) {
+        printf("Test Print: could not allocate colour map\n");
+        return FALSE;
+    }
+    SetRGB4CM(cm, 0, 15, 15, 15); /* white - paper/background */
+    SetRGB4CM(cm, 1, 0, 0, 0);    /* black - ink/text/border */
+    SetRGB4CM(cm, 2, 15, 0, 0);   /* red */
+    SetRGB4CM(cm, 3, 0, 15, 0);   /* green */
+    SetRGB4CM(cm, 4, 0, 0, 15);   /* blue */
+    SetRGB4CM(cm, 5, 0, 15, 15);  /* cyan */
+    SetRGB4CM(cm, 6, 15, 0, 15);  /* magenta */
+    SetRGB4CM(cm, 7, 15, 15, 0);  /* yellow */
+
+    /* No screen "friend" - this bitmap has nothing to do with the display,
+     * only with the private ColorMap above. BMF_CLEAR zeroes every pixel to
+     * pen 0, which is already true white, so no background fill is needed. */
+    bm = AllocBitMap(MP_TESTPAGE_WIDTH, MP_TESTPAGE_HEIGHT, MP_TESTPAGE_DEPTH,
+                      BMF_CLEAR, NULL);
     if (!bm) {
         printf("Test Print: could not allocate test bitmap\n");
+        FreeColorMap(cm);
         return FALSE;
     }
 
@@ -1465,17 +1499,13 @@ static BOOL mintprint_test_page(struct Window *win) {
     if (screen->RastPort.Font) SetFont(&rp, screen->RastPort.Font);
 
     /* Page border. */
-    SetAPen(&rp, 0);
-    RectFill(&rp, 0, 0, MP_TESTPAGE_WIDTH - 1, MP_TESTPAGE_HEIGHT - 1);
     SetAPen(&rp, 1);
     RectFill(&rp, 4, 4, MP_TESTPAGE_WIDTH - 5, 5);
     RectFill(&rp, 4, MP_TESTPAGE_HEIGHT - 6, MP_TESTPAGE_WIDTH - 5, MP_TESTPAGE_HEIGHT - 5);
     RectFill(&rp, 4, 4, 5, MP_TESTPAGE_HEIGHT - 5);
     RectFill(&rp, MP_TESTPAGE_WIDTH - 6, 4, MP_TESTPAGE_WIDTH - 5, MP_TESTPAGE_HEIGHT - 5);
 
-    /* Header - a faux-bold double-strike stands in for a real logo bitmap
-     * (pen 1 is the one pen guaranteed to exist and read as foreground text
-     * at any screen depth/palette, unlike the swatch pens below). */
+    /* Header - a faux-bold double-strike stands in for a real logo bitmap. */
     Move(&rp, left, 24);
     Text(&rp, (STRPTR)title, strlen(title));
     Move(&rp, left + 1, 24);
@@ -1484,26 +1514,27 @@ static BOOL mintprint_test_page(struct Window *win) {
     Text(&rp, (STRPTR)tagline, strlen(tagline));
     RectFill(&rp, left, 52, right, 53);
 
-    /* Workbench palette pens are intentional: it makes a simple colour test
-     * that also exercises every pen the driver has to reproduce. */
     Move(&rp, left, 70);
     Text(&rp, (STRPTR)colour_label, strlen(colour_label));
 
     swatch_area = right - left + 1;
-    swatch_w = swatch_area / num_swatches;
-    for (i = 0; i < num_swatches; i++) {
+    swatch_w = swatch_area / MP_TESTPAGE_COLORS;
+    for (i = 0; i < MP_TESTPAGE_COLORS; i++) {
         LONG x0 = left + i * swatch_w;
-        LONG x1 = (i == num_swatches - 1) ? right : (x0 + swatch_w - 3);
+        LONG x1 = (i == MP_TESTPAGE_COLORS - 1) ? right : (x0 + swatch_w - 3);
         if (x1 < x0) x1 = x0;
 
+        /* A 1px black frame drawn slightly larger than the fill keeps the
+         * white swatch visible against the equally white page background. */
+        SetAPen(&rp, 1);
+        RectFill(&rp, x0 - 1, 79, x1 + 1, 171);
         SetAPen(&rp, (UBYTE)i);
         RectFill(&rp, x0, 80, x1, 170);
 
         SetAPen(&rp, 1);
-        snprintf(swatch_label, sizeof(swatch_label), "%ld", (long)i);
-        tw = TextLength(&rp, (STRPTR)swatch_label, strlen(swatch_label));
+        tw = TextLength(&rp, (STRPTR)swatch_names[i], strlen(swatch_names[i]));
         Move(&rp, x0 + ((x1 - x0 + 1 - tw) / 2), 182);
-        Text(&rp, (STRPTR)swatch_label, strlen(swatch_label));
+        Text(&rp, (STRPTR)swatch_names[i], strlen(swatch_names[i]));
     }
 
     SetAPen(&rp, 1);
@@ -1526,6 +1557,7 @@ static BOOL mintprint_test_page(struct Window *win) {
     if (!mp) {
         printf("Test Print: CreateMsgPort failed\n");
         FreeBitMap(bm);
+        FreeColorMap(cm);
         return FALSE;
     }
 
@@ -1534,6 +1566,7 @@ static BOOL mintprint_test_page(struct Window *win) {
         printf("Test Print: CreateIORequest failed\n");
         DeleteMsgPort(mp);
         FreeBitMap(bm);
+        FreeColorMap(cm);
         return FALSE;
     }
 
@@ -1543,6 +1576,7 @@ static BOOL mintprint_test_page(struct Window *win) {
         DeleteIORequest((struct IORequest *)req);
         DeleteMsgPort(mp);
         FreeBitMap(bm);
+        FreeColorMap(cm);
         return FALSE;
     }
 
@@ -1551,17 +1585,18 @@ static BOOL mintprint_test_page(struct Window *win) {
 
     req->io_Command = PRD_DUMPRPORT;
     req->io_RastPort = &rp;
-    req->io_ColorMap = screen->ViewPort.ColorMap;
+    req->io_ColorMap = cm;
     req->io_Modes = mode_id;
     req->io_SrcX = 0;
     req->io_SrcY = 0;
     req->io_SrcWidth = MP_TESTPAGE_WIDTH;
     req->io_SrcHeight = MP_TESTPAGE_HEIGHT;
-    req->io_DestCols = 0;
-    req->io_DestRows = 0;
+    req->io_DestCols = dest_cols;
+    req->io_DestRows = dest_rows;
     req->io_Special = SPECIAL_ASPECT | SPECIAL_CENTER;
 
-    printf("Test Print: sending page through printer.device...\n");
+    printf("Test Print: sending page through printer.device (dest %ld x %ld)...\n",
+           (long)dest_cols, (long)dest_rows);
     ioerr = DoIO((struct IORequest *)req);
     if (ioerr != 0 || req->io_Error != 0) {
         printf("Test Print failed: DoIO=%ld io_Error=%ld\n",
@@ -1583,6 +1618,9 @@ static BOOL mintprint_test_page(struct Window *win) {
 
     FreeBitMap(bm);
     printf("Test Print cleanup: after FreeBitMap\n");
+
+    FreeColorMap(cm);
+    printf("Test Print cleanup: after FreeColorMap\n");
 
     return print_ok;
 }

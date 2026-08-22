@@ -571,11 +571,30 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
     ULONG src_x;
     ULONG dst_x;
     ULONG i;
+    ULONG scaled_total = 0;
 
     if (!g_job_open || !g_rgb_row || !pi || !pi->pi_ColorInt) return FALSE;
 
     for (i = 0; i < g_rgb_row_bytes; ++i) g_rgb_row[i] = 255;
-    dst_x = (ULONG)pi->pi_xpos;
+
+    if (pi->pi_ScaleX) {
+        for (i = 0; i < (ULONG)pi->pi_width; ++i)
+            scaled_total += (ULONG)pi->pi_ScaleX[i];
+    } else {
+        scaled_total = (ULONG)pi->pi_width;
+    }
+
+    /* printer.device's own pi_xpos has been observed (via a decoded test
+     * job's actual PWG raster bytes) to place a DestCols/DestRows-scaled
+     * DUMPRPORT source hard against one edge - 839px of blank on the left,
+     * 31px on the right for a 2478px-wide image on a 3287px page - rather
+     * than centering it, even with SPECIAL_CENTER set. Center
+     * narrower-than-page content ourselves instead of trusting pi_xpos for
+     * that case. A page-filling row (the common real-document case) is
+     * unaffected: scaled_total >= g_page_width there, so this still falls
+     * through to pi_xpos (normally 0) exactly as before. */
+    dst_x = (g_page_width > scaled_total) ? (g_page_width - scaled_total) / 2UL
+                                           : (ULONG)pi->pi_xpos;
 
     for (src_x = 0; src_x < (ULONG)pi->pi_width && dst_x < g_page_width; ++src_x) {
         union colorEntry *pixel = &pi->pi_ColorInt[src_x];
@@ -931,6 +950,10 @@ static void mp_log_row(struct PrtInfo *pi, ULONG row)
     mp_log_append_long((LONG)pi->pi_width);
     mp_log_append(" scaledWidth=");
     mp_log_append_long((LONG)scaled_width);
+    mp_log_append(" xpos=");
+    mp_log_append_long((LONG)pi->pi_xpos);
+    mp_log_append(" pageWidth=");
+    mp_log_append_long((LONG)g_page_width);
 
     if (pi->pi_ColorInt && pi->pi_width) {
         union colorEntry *p = &pi->pi_ColorInt[0];

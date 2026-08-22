@@ -185,6 +185,7 @@ release: gui driver
 	mkdir -p $(RELEASE_DIR)
 	cp MintPrintSettings $(RELEASE_DIR)/
 	cp $(DRIVER_OUT) $(RELEASE_DIR)/MintPRINT
+	cp docs/MintPrintSettings.guide $(RELEASE_DIR)/
 	cp Aminet/MintPRINT.readme release/MintPRINT.readme
 	@if [ -f $(ART_DIR)/MintPrintSettings.info ]; then \
 		cp $(ART_DIR)/MintPrintSettings.info $(RELEASE_DIR)/; \
@@ -205,6 +206,7 @@ release: gui driver
 	@echo "                            (must stay next to MintPrintSettings;"
 	@echo "                            deliberately has no icon)"
 	@echo "  MintPrintSettings.info  - if $(ART_DIR)/ had one"
+	@echo "  MintPrintSettings.guide - Help menu > MintPrint Settings Help..."
 	@echo
 	@echo "release/MintPRINT.info    - the drawer's own icon, if $(ART_DIR)/ had one"
 	@echo "release/MintPRINT.readme  - the Aminet readme, staged next to the"
@@ -218,6 +220,7 @@ release31: gui driver31
 	mkdir -p $(RELEASE31_DIR)
 	cp MintPrintSettings $(RELEASE31_DIR)/
 	cp $(DRIVER31_OUT) $(RELEASE31_DIR)/MintPRINT
+	cp docs/MintPrintSettings.guide $(RELEASE31_DIR)/
 	cp Aminet/MintPRINT.readme release/MintPRINT-OS31.readme
 	@if [ -f $(ART_DIR)/MintPrintSettings.info ]; then \
 		cp $(ART_DIR)/MintPrintSettings.info $(RELEASE31_DIR)/; \
@@ -237,6 +240,7 @@ release31: gui driver31
 	@echo "  MintPRINT               - classic pre-V44 printer.device driver"
 	@echo "                            (4-bit gun input expanded to 8-bit internally)"
 	@echo "  MintPrintSettings.info  - if $(ART_DIR)/ had one"
+	@echo "  MintPrintSettings.guide - Help menu > MintPrint Settings Help..."
 	@echo
 	@echo "IMPORTANT: OS3.1 requires a working bsdsocket.library TCP/IP stack."
 	@echo "The classic build is new and must be test-printed before public release."

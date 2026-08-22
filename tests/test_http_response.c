@@ -54,11 +54,37 @@ static void test_transfer_encoding_token(void)
                                     "Transfer-Encoding", "chunked") == 1);
 }
 
+static void test_final_chunked_ipp_response(void)
+{
+    static const char expected[] = { 1, 1, 0, 0, 0, 0, 0, 1 };
+    char response[] =
+        "HTTP/1.1 100 Continue\r\n\r\n"
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: application/ipp\r\n"
+        "Transfer-Encoding: chunked\r\n\r\n"
+        "8\r\n"
+        "\x01\x01\x00\x00\x00\x00\x00\x01\r\n"
+        "0\r\n\r\n";
+    int response_len = (int)sizeof(response) - 1;
+    int http_status = 0;
+    int body_off = -1;
+    int body_len = -1;
+
+    assert(mp_http_final_body(response, response_len - 1, &http_status,
+                              &body_off, &body_len) == 0);
+    assert(mp_http_final_body(response, response_len, &http_status,
+                              &body_off, &body_len) == 1);
+    assert(http_status == 200);
+    assert(body_len == (int)sizeof(expected));
+    assert(memcmp(response + body_off, expected, sizeof(expected)) == 0);
+}
+
 int main(void)
 {
     test_interim_and_case_insensitive_length();
     test_chunked_body();
     test_transfer_encoding_token();
+    test_final_chunked_ipp_response();
     puts("HTTP response parser tests passed");
     return 0;
 }

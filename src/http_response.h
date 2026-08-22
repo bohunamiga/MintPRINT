@@ -12,4 +12,10 @@ int mp_http_header_has_token(const char *buf, int header_start, int body_off,
 int mp_http_chunked_complete(const char *body, int encoded_len);
 int mp_http_decode_chunked(char *body, int encoded_len);
 
+/* Locate the final (non-1xx) HTTP response and expose its decoded body.
+ * Chunked bodies are decoded in place. Returns 1 when the response is
+ * complete, 0 when more bytes are required, and -1 for malformed framing. */
+int mp_http_final_body(char *buf, int len, int *http_status,
+                       int *body_off, int *body_len);
+
 #endif

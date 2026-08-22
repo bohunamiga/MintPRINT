@@ -109,6 +109,11 @@ int mp_is_tiny_auxiliary_band(unsigned long page_width,
            page_width >= band_width * 64UL;
 }
 
+int mp_is_tiny_leading_auxiliary_band(unsigned long band_width)
+{
+    return band_width > 0 && band_width <= 8UL;
+}
+
 int mp_media_page_complete(unsigned long raster_rows,
                            unsigned long auxiliary_rows,
                            unsigned long target_rows)

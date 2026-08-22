@@ -75,13 +75,16 @@ $(DRIVER_BUILD)/pwg_writer.o: driver/pwg_writer.c driver/pwg_writer.h | $(DRIVER
 $(DRIVER_BUILD)/pdf_writer.o: driver/pdf_writer.c driver/pdf_writer.h driver/jpeg_writer.h | $(DRIVER_BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(DRIVER_BUILD)/ipp_client.o: driver/ipp_client.c driver/ipp_client.h | $(DRIVER_BUILD)
-	$(CC) $(CFLAGS) -c $< -o $@
+$(DRIVER_BUILD)/ipp_client.o: driver/ipp_client.c driver/ipp_client.h src/http_response.h | $(DRIVER_BUILD)
+	$(CC) $(CFLAGS) -Isrc -c $< -o $@
+
+$(DRIVER_BUILD)/http_response.o: src/http_response.c src/http_response.h | $(DRIVER_BUILD)
+	$(CC) $(CFLAGS) -Isrc -c $< -o $@
 
 $(DRIVER_BUILD)/spool.o: driver/spool.c driver/spool.h | $(DRIVER_BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(DRIVER_OUT): $(DRIVER_BUILD)/printertag.o $(DRIVER_BUILD)/driver_core.o $(DRIVER_BUILD)/command_table.o $(DRIVER_BUILD)/config.o $(DRIVER_BUILD)/media_size.o $(DRIVER_BUILD)/jpeg_writer.o $(DRIVER_BUILD)/pwg_writer.o $(DRIVER_BUILD)/pdf_writer.o $(DRIVER_BUILD)/ipp_client.o $(DRIVER_BUILD)/spool.o
+$(DRIVER_OUT): $(DRIVER_BUILD)/printertag.o $(DRIVER_BUILD)/driver_core.o $(DRIVER_BUILD)/command_table.o $(DRIVER_BUILD)/config.o $(DRIVER_BUILD)/media_size.o $(DRIVER_BUILD)/jpeg_writer.o $(DRIVER_BUILD)/pwg_writer.o $(DRIVER_BUILD)/pdf_writer.o $(DRIVER_BUILD)/ipp_client.o $(DRIVER_BUILD)/http_response.o $(DRIVER_BUILD)/spool.o
 	$(CC) -m68000 -nostartfiles -Wl,-Map,$(DRIVER_BUILD)/MintPRINT.map \
 		-o $@ $^ -lamiga
 
@@ -104,7 +107,7 @@ $(DRIVER31_BUILD)/driver_core.o: driver/driver_core.c | $(DRIVER31_BUILD)
 $(DRIVER31_BUILD)/classic_render_shim.o: driver/classic_render_shim.c | $(DRIVER31_BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(DRIVER31_OUT): $(DRIVER31_BUILD)/printertag.o $(DRIVER31_BUILD)/classic_render_shim.o $(DRIVER31_BUILD)/driver_core.o $(DRIVER_BUILD)/command_table.o $(DRIVER_BUILD)/config.o $(DRIVER_BUILD)/media_size.o $(DRIVER_BUILD)/jpeg_writer.o $(DRIVER_BUILD)/pwg_writer.o $(DRIVER_BUILD)/pdf_writer.o $(DRIVER_BUILD)/ipp_client.o $(DRIVER_BUILD)/spool.o
+$(DRIVER31_OUT): $(DRIVER31_BUILD)/printertag.o $(DRIVER31_BUILD)/classic_render_shim.o $(DRIVER31_BUILD)/driver_core.o $(DRIVER_BUILD)/command_table.o $(DRIVER_BUILD)/config.o $(DRIVER_BUILD)/media_size.o $(DRIVER_BUILD)/jpeg_writer.o $(DRIVER_BUILD)/pwg_writer.o $(DRIVER_BUILD)/pdf_writer.o $(DRIVER_BUILD)/ipp_client.o $(DRIVER_BUILD)/http_response.o $(DRIVER_BUILD)/spool.o
 	$(CC) -m68000 -nostartfiles -Wl,-Map,$(DRIVER31_BUILD)/MintPRINT.map \
 		-o $@ $^ -lamiga
 

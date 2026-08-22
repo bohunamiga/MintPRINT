@@ -100,11 +100,17 @@ void mp_pwg_reverse_rgb_row(unsigned char *rgb, unsigned long width)
 static int mp_pwg_write_header(MPPwgEncoder *e, int write_sync)
 {
     static const unsigned char sync[4] = { 'R', 'a', 'S', '2' };
+    static const unsigned char media_class[64] = "PwgRaster";
 
     if (write_sync && !mp_pwg_raw(e, sync, 4)) return 0;
 
-    /* MediaClass, MediaColor, MediaType, OutputType: char[64] x 4 */
-    if (!mp_pwg_zeros(e, 64UL * 4UL)) return 0;
+    /* PWG 5102.4 identifies this stream through MediaClass. CUPS emits
+     * exactly "PwgRaster" here; leaving it empty creates a non-canonical
+     * header that stricter raster decoders may reject. */
+    if (!mp_pwg_raw(e, media_class, sizeof(media_class))) return 0;
+
+    /* MediaColor, MediaType, OutputType: char[64] x 3 */
+    if (!mp_pwg_zeros(e, 64UL * 3UL)) return 0;
 
     /* AdvanceDistance, AdvanceMedia, Collate, CutMedia */
     if (!mp_pwg_zeros(e, 4UL * 4UL)) return 0;
@@ -158,11 +164,13 @@ static int mp_pwg_write_header(MPPwgEncoder *e, int write_sync)
     /* cupsColorOrder (0 = chunked/interleaved), cupsColorSpace (19 = sRGB) */
     if (!mp_pwg_u32(e, 0UL) || !mp_pwg_u32(e, 19UL)) return 0;
 
-    /* cupsCompression: 1, since every row below is PackBits-compressed */
-    if (!mp_pwg_u32(e, 1UL)) return 0;
+    /* RaS2 selects the PackBits-like raster stream compression. This field
+     * means additional device compression and must remain zero for PWG. */
+    if (!mp_pwg_u32(e, 0UL)) return 0;
 
-    /* cupsRowCount, cupsRowFeed, cupsRowStep */
-    if (!mp_pwg_u32(e, e->height) || !mp_pwg_zeros(e, 4UL * 2UL)) return 0;
+    /* cupsRowCount is rows per device band, not the page height. The CUPS
+     * PWG initializer leaves it and the feed/step fields at zero. */
+    if (!mp_pwg_zeros(e, 4UL * 3UL)) return 0;
 
     /* cupsNumColors */
     if (!mp_pwg_u32(e, 3UL)) return 0;

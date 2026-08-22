@@ -669,11 +669,6 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
     return TRUE;
 }
 
-static ULONG mp_abs_diff_ulong(ULONG a, ULONG b)
-{
-    return a >= b ? a - b : b - a;
-}
-
 /* expected_rows is the total row count this job's encoder should have
  * received by now - g_page_height (this band's own height) for a normal
  * single-band page, or g_accum_height (the true accumulated total) when
@@ -1250,36 +1245,29 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
              * the configured media (the common case) is left untouched. */
             if (mp_detect_engine(&g_config) == MP_ENGINE_PWG &&
                 !(g_current_special & SPECIAL_NOFORMFEED)) {
-                unsigned long media_w_100mm, media_h_100mm;
-                if (mp_media_dimensions_100mm(g_config.media,
-                                              &media_w_100mm, &media_h_100mm)) {
-                    ULONG dpi = g_config.resolution ? g_config.resolution : 300UL;
-                    ULONG media_x_px =
-                        (ULONG)((media_w_100mm * dpi + 1270UL) / 2540UL);
-                    ULONG media_y_px =
-                        (ULONG)((media_h_100mm * dpi + 1270UL) / 2540UL);
-                    /* A media name's x/y are always its portrait width and
-                     * height (e.g. iso_a4_210x297mm is 210mm wide, 297mm
-                     * tall) - a legitimate landscape page's width belongs
-                     * against media_y_px (the portrait height, now lying on
-                     * its side), not media_x_px. Comparing only against
-                     * media_x_px, as this used to, meant a real landscape
-                     * page came out ">10% wider than portrait" on every
-                     * portrait-configured media and got wrongly chopped
-                     * down to portrait width. Judge against whichever axis
-                     * the observed width is actually closer to. */
-                    ULONG expected_width_px =
-                        (mp_abs_diff_ulong(g_page_width, media_x_px) <=
-                         mp_abs_diff_ulong(g_page_width, media_y_px))
-                            ? media_x_px : media_y_px;
-                    if (expected_width_px &&
-                        expected_width_px < g_page_width &&
-                        (g_page_width - expected_width_px) * 10UL > g_page_width) {
-                        mp_log_3("Clamping oversized PWG page width raw/media/dpi",
-                                 (LONG)g_page_width, (LONG)expected_width_px,
-                                 (LONG)dpi);
-                        g_page_width = expected_width_px;
-                    }
+                ULONG dpi = g_config.resolution ? g_config.resolution : 300UL;
+                /* mp_media_expected_width_px() weighs BOTH reported
+                 * dimensions, not width alone - width alone cannot tell an
+                 * oversized portrait page (this exact 3287x3508 case) apart
+                 * from a genuine landscape one (3508x2480): 3287 lands
+                 * closer to a portrait A4's landscape-width (3508) than its
+                 * portrait width (2480), so a width-only comparison reads
+                 * it as landscape and never clamps it - letting the very
+                 * oversized page this clamp exists for straight through.
+                 * Bringing g_page_height into it resolves that: the
+                 * oversized page's height (3508) still matches portrait
+                 * overall, while a real landscape page matches on both
+                 * axes at once. See media_size.c/.h and
+                 * tests/test_media_size.c for the exact regression. */
+                ULONG expected_width_px = (ULONG)mp_media_expected_width_px(
+                    g_config.media, g_page_width, g_page_height, dpi);
+                if (expected_width_px &&
+                    expected_width_px < g_page_width &&
+                    (g_page_width - expected_width_px) * 10UL > g_page_width) {
+                    mp_log_3("Clamping oversized PWG page width raw/media/dpi",
+                             (LONG)g_page_width, (LONG)expected_width_px,
+                             (LONG)dpi);
+                    g_page_width = expected_width_px;
                 }
             }
 

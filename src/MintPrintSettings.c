@@ -2234,7 +2234,12 @@ static void mp_offer_pwg_raster_switch(struct Window *win) {
 
     if (!win || driver_engine_pwg_offer_shown) return;
     if (!driver_engine_explicit) return; /* already auto-preferred if unpinned */
-    if (strcmp(driver_engine_buffer, "pwg-raster") == 0) return;
+    /* Only JPEG/PDF - not PostScript, which may have been deliberately
+     * selected as a compatibility workaround (e.g. a printer that accepts
+     * IPP JPEG but silently discards the job - see PostScript issue #15)
+     * rather than left on by accident the way JPEG/PDF usually are. */
+    if (strcmp(driver_engine_buffer, "jpeg") != 0 &&
+        strcmp(driver_engine_buffer, "pdf") != 0) return;
 
     for (i = 0; i < mp_engine_count; ++i) {
         if (mp_engine_value_map[i] &&
@@ -2251,10 +2256,10 @@ static void mp_offer_pwg_raster_switch(struct Window *win) {
     es.es_Flags = 0;
     es.es_Title = (UBYTE *)"MintPrint Settings";
     es.es_TextFormat = (UBYTE *)
-        "This printer supports PWG Raster, which is cheaper to encode\n"
-        "than JPEG or PDF and prints noticeably faster on real Amiga\n"
-        "hardware. Switch this printer to PWG Raster now?";
-    es.es_GadgetFormat = (UBYTE *)"Switch to PWG Raster|Keep current engine";
+        "This printer supports PWG Raster, which usually uses much less\n"
+        "CPU than JPEG or PDF and is recommended for faster printing on\n"
+        "classic Amigas. Switch this printer to PWG Raster now?";
+    es.es_GadgetFormat = (UBYTE *)"Use PWG Raster|Keep current engine";
     if (!EasyRequest(win, &es, NULL)) return;
 
     printf("Switched to PWG Raster at the user's request (was %s).\n",

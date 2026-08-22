@@ -302,6 +302,8 @@ static struct NewMenu menu_template[] = {
     { NM_ITEM,  (STRPTR)"About MintPRINT...", 0, 0, 0, 0 },
     { NM_ITEM,  NM_BARLABEL, 0, 0, 0, 0 },
     { NM_ITEM,  (STRPTR)"Quit", 0, 0, 0, 0 },
+    { NM_TITLE, (STRPTR)"Help", 0, 0, 0, 0 },
+    { NM_ITEM,  (STRPTR)"MintPrint Settings Help...", 0, 0, 0, 0 },
     { NM_END,   NULL, 0, 0, 0, 0 }
 };
 // Global variable to store the print mode (0 = Black and White, 1 = Color)
@@ -2981,6 +2983,25 @@ static BOOL mp_copy_file(CONST_STRPTR src, CONST_STRPTR dst) {
 
     if (!ok) DeleteFile(dst);
     return ok;
+}
+
+/* Same NIL:-handles convention as mp_launch_printer_prefs() below: an
+ * async SystemTags() child must not inherit and later close this program's
+ * (and its launching Shell's) own console handles. Multiview displays an
+ * AmigaGuide file directly, so no amigaguide.library calls are needed here. */
+static void mp_launch_help_guide(void) {
+    BPTR in = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
+    BPTR out = Open((CONST_STRPTR)"NIL:", MODE_NEWFILE);
+
+    if (SystemTags((CONST_STRPTR)"Multiview PROGDIR:MintPrintSettings.guide",
+                   SYS_Asynch, TRUE,
+                   SYS_Input, (ULONG)in, SYS_Output, (ULONG)out,
+                   TAG_DONE) != 0) {
+        printf("Could not open MintPrintSettings.guide automatically\n");
+        printf("It should be in the same drawer as MintPrintSettings.\n");
+        if (in) Close(in);
+        if (out) Close(out);
+    }
 }
 
 static void mp_launch_printer_prefs(void) {
@@ -5946,8 +5967,14 @@ void process_window_events(struct Window *win) {
                                         terminated = TRUE;
                                         break;
                                 }
+                            } else if (menu_num == 1) { // Help menu
+                                switch (item_num) {
+                                    case 0: // MintPrint Settings Help...
+                                        mp_launch_help_guide();
+                                        break;
+                                }
                             }
-                    
+
                             code = MENUNULL; // Only handling one menu item per event
                         }
                     }

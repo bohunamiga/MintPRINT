@@ -192,3 +192,12 @@ so the UI always uses the newest detected capability set.
 
 The status/output area now starts below the Test Print / Save / Exit row and the
 preferences window is taller so those controls no longer overlap the log box.
+
+## Help menu
+
+**Help > MintPrint Settings Help...** opens `MintPrintSettings.guide` (an
+AmigaGuide document, shipped next to the program in the release bundle) in
+Multiview. It covers the same ground as this document, written for someone
+using the program for the first time: discovery, Query, engines, the DPI
+compatibility option, duplex, Units, the driver install helper, Test Print,
+and reporting a problem. See `docs/MintPrintSettings.guide` for the source.

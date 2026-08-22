@@ -1,0 +1,358 @@
+@database MintPrintSettings.guide
+@$VER: MintPrintSettings.guide 1.1.0 (22.08.2026)
+@author "MintPRINT project (boingball)"
+@(c) "Copyright (c) 2026 Darren Banfi (boingball). MIT License."
+@width 74
+@wordwrap
+@smartwrap
+
+@node Main "MintPrint Settings Help"
+@toc Main
+                       MintPrint Settings Help
+                       ------------------------
+
+MintPrint Settings is the setup and test program for MintPRINT, the
+IPP/AirPrint printer.device driver. It finds your network printer,
+asks it what it can do, and saves the settings MintPRINT needs to
+print from ordinary Amiga applications.
+
+This guide covers the program window itself. For the driver's own
+design notes and printer-by-printer compatibility results, see the
+"docs/" folder shipped with MintPRINT's source, or the project's
+GitHub page.
+
+Topics:
+
+    @{" Getting Started "        LINK "GettingStarted"}
+    @{" Finding your printer "   LINK "Discover"}
+    @{" Query Printer "          LINK "Query"}
+    @{" Printer Engine "         LINK "Engines"}
+    @{" DPI and the 300* option "LINK "DPI"}
+    @{" Media and Tray "         LINK "MediaTrays"}
+    @{" Duplex (Sides) "         LINK "Duplex"}
+    @{" Scaling and Quality "    LINK "ScalingQuality"}
+    @{" Multiple printers (Units) " LINK "Units"}
+    @{" Installing the driver "  LINK "DriverInstall"}
+    @{" Test Print "             LINK "TestPrint"}
+    @{" Troubleshooting "        LINK "Troubleshooting"}
+    @{" Reporting a problem "    LINK "ReportingProblems"}
+
+@endnode
+
+@node GettingStarted "Getting Started"
+@toc Main
+                            Getting Started
+                            ---------------
+
+For a brand new printer, the quickest path is:
+
+    1. Run MintPrint Settings.
+    2. Click @{" Discover " LINK "Discover"} to search the LAN, or type your
+       printer's IP address/hostname straight into "Printer IP/Host".
+    3. Click @{" Query Printer " LINK "Query"}. This asks the printer what it
+       supports and fills in Printer Engine, Media, Print Mode, Scaling,
+       Quality, DPI and Sides from real capability data.
+    4. Check the settings Query filled in look sensible (Printer Engine
+       and Media in particular), then click Save.
+    5. If MintPRINT is not yet installed as your driver, Settings will
+       have already offered to do that - see
+       @{" Installing the driver " LINK "DriverInstall"}. Select MintPRINT
+       in AmigaOS Printer Preferences and save there too.
+    6. Click Test Print to confirm everything actually reaches paper.
+
+Only Unit0 is what the installed driver reads when it prints - see
+@{" Multiple printers (Units) " LINK "Units"} if you have more than one
+network printer.
+
+@endnode
+
+@node Discover "Finding your printer"
+@toc Main
+                          Finding your printer
+                          --------------------
+
+Clicking Discover runs two scans of your local network, about five
+seconds each:
+
+    - SSDP: one UPnP-style multicast search.
+    - mDNS: a DNS query for "_ipp._tcp.local", which is how most current
+      IPP/AirPrint printers actually advertise themselves.
+
+Any address that replies to either scan appears in a small selection
+list. Pick your printer and choose "Use Selected" - this fills in
+Printer IP/Host and immediately runs the same query as the Query
+button, so the printer's real name, supported formats and other
+capabilities appear right away.
+
+Discover is a best-effort LAN scan. A printer behind a router or VLAN
+that blocks multicast traffic will not show up even though it works
+fine once its address is entered manually. If nothing appears, just
+type the printer's IP address into Printer IP/Host and click
+@{" Query Printer " LINK "Query"} as usual.
+
+@endnode
+
+@node Query "Query Printer"
+@toc Main
+                              Query Printer
+                              -------------
+
+Query Printer sends an IPP Get-Printer-Attributes request and uses the
+real answer to fill in, or narrow down, most of the window:
+
+    - Printer Engine: which of JPEG, PostScript, PWG Raster and PDF the
+      printer actually advertises - see @{" Printer Engine " LINK "Engines"}.
+    - Media and tray/source choices.
+    - Print Mode (colour/monochrome).
+    - Scaling and Quality choices the printer reports.
+    - DPI - see @{" DPI and the 300* option " LINK "DPI"}.
+    - Sides (duplex), when the selected engine and printer both support
+      it - see @{" Duplex (Sides) " LINK "Duplex"}.
+    - The printer's make/model, shown once Save has been used at least
+      once for this Unit.
+
+A field showing "Not Detected" simply means nothing has been queried
+and saved yet for the currently selected Unit; it is not an error.
+
+If the printer's advertised format list contains none of the four
+formats MintPRINT can produce, a requester points you at filing a
+GitHub issue - see @{" Reporting a problem " LINK "ReportingProblems"}.
+
+@endnode
+
+@node Engines "Printer Engine"
+@toc Main
+                              Printer Engine
+                              --------------
+
+MintPRINT can produce four kinds of document:
+
+    JPEG          image/jpeg
+    PostScript    application/postscript
+    PWG Raster    image/pwg-raster
+    PDF           application/pdf
+
+Any IPP Everywhere or AirPrint-certified printer (most network
+printers from roughly the last decade) is required to accept PWG
+Raster, so it is usually the safest and cheapest choice - it costs far
+less CPU on real 68k hardware than JPEG or PDF, which both go through
+a DCT/quantization step. When Query finds a printer that supports PWG
+Raster, Settings prefers it automatically unless you have deliberately
+pinned a different engine yourself.
+
+PostScript and PDF are there for older or partially-compliant IPP
+printers that front an existing office-printer PostScript/PCL
+interpreter and reject raster formats outright - some PostScript-only
+printers work but are noticeably slower per page than a native raster
+printer.
+
+If Settings finds your printer supports PWG Raster while a slower
+engine is currently pinned, it will offer, once per session, to switch
+you over.
+
+@endnode
+
+@node DPI "DPI and the 300* option"
+@toc Main
+                          DPI and the 300* option
+                          -----------------------
+
+Query normally fills the DPI cycle gadget from the printer's own
+reported resolution capabilities. Some printers under-report this
+list - for example, a printer may advertise only 600 DPI over IPP but
+still print 300-DPI PWG Raster correctly (and considerably faster).
+
+When PWG Raster is selected and the printer reports resolutions but
+does not report 300 DPI, Settings adds an extra entry marked
+"300* dpi". The asterisk means "compatibility option: not actually
+reported by the printer" - it is a deliberate override, not a printer
+capability. It is never auto-selected for a brand new, unsaved
+profile, but a previously saved 300 DPI choice is kept across future
+queries and restarts.
+
+If your printer's real resolution list does not include a working 300
+DPI mode, leave DPI on one of the plain (non-starred) entries.
+
+@endnode
+
+@node MediaTrays "Media and Tray"
+@toc Main
+                              Media and Tray
+                              --------------
+
+Query reads the printer's supported media sizes and tray/source names
+and fills the Media dropdown with them. Where the printer maps a
+particular tray to a particular medium, MintPRINT uses that mapping
+automatically; otherwise "auto" is generally the safest source choice.
+
+@endnode
+
+@node Duplex "Duplex (Sides)"
+@toc Main
+                              Duplex (Sides)
+                              --------------
+
+The Sides selector defaults to One-sided and is only enabled once
+Query confirms all of the following:
+
+    - Printer Engine is set to PWG Raster.
+    - The printer accepts PWG Raster.
+    - The requested duplex binding is actually advertised by the
+      printer.
+
+When enabled, MintPRINT sends one multi-page PWG Raster document per
+Print-Job, which also works with printers that report
+"multiple-document-jobs-supported=false". Every other engine (JPEG,
+PostScript, PDF) always prints one-sided, regardless of what the
+printer itself supports.
+
+@endnode
+
+@node ScalingQuality "Scaling and Quality"
+@toc Main
+                            Scaling and Quality
+                            -------------------
+
+Both dropdowns are filled directly from what Query finds the printer
+advertises.
+
+"auto" is the best general-purpose starting point for Scaling across
+the printers tested so far - some alternatives (such as "auto-fit")
+have been seen to get a job rejected outright on one printer, or
+mis-paginate a single page across several physical sheets on another,
+while "auto" printed correctly in both cases. Treat any other Scaling
+value as something to try only if "auto" does not look right for your
+particular application and printer.
+
+@endnode
+
+@node Units "Multiple printers (Units)"
+@toc Main
+                         Multiple printers (Units)
+                         -------------------------
+
+If you have more than one network printer, MintPrint Settings can keep
+a separate saved profile per printer, numbered Unit0 through Unit7.
+The Unit dropdown at the top of the window lists all eight slots,
+labelled from whatever has actually been saved:
+
+    "Unit1 - Brother HL-L2350DW"   make/model known and saved
+    "Unit1"                        saved profile, no make/model yet
+    "Unit1 (empty)"                nothing saved in this slot
+
+Picking a different Unit reloads the entire window - IP/host, path,
+engine, media, cached capabilities, everything - from that Unit's own
+saved files.
+
+IMPORTANT: only Unit0 is what the installed MintPRINT driver actually
+reads when it prints. Unit1-7 are switchable saved profiles, not
+simultaneously active printers. To make a different Unit the one that
+actually prints, select it and click Activate: this copies that Unit's
+saved settings (and cached capabilities) over Unit0's, then switches
+the dropdown back to Unit0. Activating overwrites Unit0's previous
+settings, so save them to a spare empty Unit first if you want to keep
+them.
+
+@endnode
+
+@node DriverInstall "Installing the driver"
+@toc Main
+                            Installing the driver
+                            ----------------------
+
+MintPrint Settings expects the compiled MintPRINT driver binary to sit
+right next to it in the same drawer. If DEVS:Printers/MintPRINT is
+missing (or an older revision) when Settings starts, it offers to
+install/update it from that copy.
+
+After a successful install, Settings offers to open AmigaOS Printer
+Preferences for you. In Printer Preferences, select MintPRINT as the
+Printer Type and save - this last step is always manual; Settings
+cannot select a driver in Printer Preferences on your behalf.
+
+Reboot after installing or updating the driver. A copy of the driver
+already resident in memory will not pick up a replacement file until
+then.
+
+@endnode
+
+@node TestPrint "Test Print"
+@toc Main
+                                Test Print
+                                ----------
+
+Test Print sends a small built-in test page straight through
+printer.device to MintPRINT, using whatever settings are currently
+shown in the window (saved or not). It is the simplest way to confirm
+a printer actually produces physical output before trying a real
+application - MultiView and Test Print both provide a much simpler
+baseline than a strip-printing application like Wordworth.
+
+An IPP job reporting success, or even a completed job state, is not
+by itself proof of a physical page - some printer firmware accepts a
+job and silently discards it. Treat an actual sheet of paper as the
+real test.
+
+@endnode
+
+@node Troubleshooting "Troubleshooting"
+@toc Main
+                               Troubleshooting
+                               ---------------
+
+If a printer or a particular application does not print correctly,
+the "printer compatibility page" (docs/PRINTER_COMPATIBILITY.md in
+the MintPRINT source, and linked from the project's GitHub README) is
+the best first stop - it lists confirmed working settings, and known
+problems, for real hardware and applications already tested.
+
+The Debug switch turns on driver logging to T:MintPRINT-driver.log,
+plus a retained T:MintPRINT-job.* file (its extension matches whichever
+document engine was used: .jpg, .ps, .pwg or .pdf). Turn Debug on only
+while actively diagnosing a problem - leaving it on permanently is not
+necessary for normal use.
+
+Some general starting points, if a printer is new or is not printing
+correctly:
+
+    - Prefer port 631 and whatever IPP path the printer itself reports;
+      "/ipp/print" is correct for every printer confirmed so far.
+    - Start with Scaling set to "auto" if the printer advertises it.
+    - Prefer an engine the printer actually advertises. Treat JPEG as
+      suspicious if Query did not report any JPEG size/dimension
+      capabilities for it, even though it remains selectable.
+    - Test from MintPrint Settings' own Test Print, or MultiView,
+      before trying a strip-printing application such as Wordworth or
+      ArtEffect.
+
+@endnode
+
+@node ReportingProblems "Reporting a problem"
+@toc Main
+                             Reporting a problem
+                             --------------------
+
+If Query reports that your printer supports none of the formats
+MintPRINT can produce, or printing otherwise fails, please open an
+issue on the project's GitHub page and attach:
+
+    1. The output of windows_ipp_probe.py run against the printer from
+       a Windows PC on the same network:
+
+           python windows_ipp_probe.py http://<printer-ip>:631/ipp/print --all
+
+       The --all flag requests every printer attribute and includes a
+       full parsed attribute dump, which gives much better debugging
+       detail than the default output.
+
+    2. T:MintPRINT-driver.log from the failed attempt, with Debug
+       switched on beforehand - see @{" Troubleshooting " LINK "Troubleshooting"}.
+
+    3. The retained T:MintPRINT-job.* file from that same attempt, if
+       Debug was on.
+
+Use the report template on the printer compatibility page
+(docs/PRINTER_COMPATIBILITY.md) so your result can be added with its
+AmigaOS version, TCP/IP stack, engine and exact print options.
+
+@endnode

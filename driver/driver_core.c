@@ -37,7 +37,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 22
+#define MP_DRIVER_REV 23
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -592,9 +592,17 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
      * narrower-than-page content ourselves instead of trusting pi_xpos for
      * that case. A page-filling row (the common real-document case) is
      * unaffected: scaled_total >= g_page_width there, so this still falls
-     * through to pi_xpos (normally 0) exactly as before. */
-    dst_x = (g_page_width > scaled_total) ? (g_page_width - scaled_total) / 2UL
-                                           : (ULONG)pi->pi_xpos;
+     * through to pi_xpos (normally 0) exactly as before.
+     *
+     * Gated on SPECIAL_CENTER: without that check this used to fire for
+     * ANY narrower-than-page row on ANY engine (JPEG/PWG/PDF all funnel
+     * through this function), overriding a deliberately-positioned
+     * narrower image (e.g. one drawn at a specific pi_xpos offset, not
+     * centered) with a centered one instead. Only the caller that actually
+     * asked for centering should get this override. */
+    dst_x = ((g_current_special & SPECIAL_CENTER) && g_page_width > scaled_total)
+                ? (g_page_width - scaled_total) / 2UL
+                : (ULONG)pi->pi_xpos;
 
     for (src_x = 0; src_x < (ULONG)pi->pi_width && dst_x < g_page_width; ++src_x) {
         union colorEntry *pixel = &pi->pi_ColorInt[src_x];
@@ -659,6 +667,11 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
 
     ++g_job_rows_written;
     return TRUE;
+}
+
+static ULONG mp_abs_diff_ulong(ULONG a, ULONG b)
+{
+    return a >= b ? a - b : b - a;
 }
 
 /* expected_rows is the total row count this job's encoder should have
@@ -1241,15 +1254,31 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                 if (mp_media_dimensions_100mm(g_config.media,
                                               &media_w_100mm, &media_h_100mm)) {
                     ULONG dpi = g_config.resolution ? g_config.resolution : 300UL;
-                    ULONG media_width_px =
+                    ULONG media_x_px =
                         (ULONG)((media_w_100mm * dpi + 1270UL) / 2540UL);
-                    if (media_width_px &&
-                        media_width_px < g_page_width &&
-                        (g_page_width - media_width_px) * 10UL > g_page_width) {
+                    ULONG media_y_px =
+                        (ULONG)((media_h_100mm * dpi + 1270UL) / 2540UL);
+                    /* A media name's x/y are always its portrait width and
+                     * height (e.g. iso_a4_210x297mm is 210mm wide, 297mm
+                     * tall) - a legitimate landscape page's width belongs
+                     * against media_y_px (the portrait height, now lying on
+                     * its side), not media_x_px. Comparing only against
+                     * media_x_px, as this used to, meant a real landscape
+                     * page came out ">10% wider than portrait" on every
+                     * portrait-configured media and got wrongly chopped
+                     * down to portrait width. Judge against whichever axis
+                     * the observed width is actually closer to. */
+                    ULONG expected_width_px =
+                        (mp_abs_diff_ulong(g_page_width, media_x_px) <=
+                         mp_abs_diff_ulong(g_page_width, media_y_px))
+                            ? media_x_px : media_y_px;
+                    if (expected_width_px &&
+                        expected_width_px < g_page_width &&
+                        (g_page_width - expected_width_px) * 10UL > g_page_width) {
                         mp_log_3("Clamping oversized PWG page width raw/media/dpi",
-                                 (LONG)g_page_width, (LONG)media_width_px,
+                                 (LONG)g_page_width, (LONG)expected_width_px,
                                  (LONG)dpi);
-                        g_page_width = media_width_px;
+                        g_page_width = expected_width_px;
                     }
                 }
             }

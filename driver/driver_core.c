@@ -571,11 +571,30 @@ static BOOL mp_job_write_row(struct PrtInfo *pi, ULONG row_number)
     ULONG src_x;
     ULONG dst_x;
     ULONG i;
+    ULONG scaled_total = 0;
 
     if (!g_job_open || !g_rgb_row || !pi || !pi->pi_ColorInt) return FALSE;
 
     for (i = 0; i < g_rgb_row_bytes; ++i) g_rgb_row[i] = 255;
-    dst_x = (ULONG)pi->pi_xpos;
+
+    if (pi->pi_ScaleX) {
+        for (i = 0; i < (ULONG)pi->pi_width; ++i)
+            scaled_total += (ULONG)pi->pi_ScaleX[i];
+    } else {
+        scaled_total = (ULONG)pi->pi_width;
+    }
+
+    /* printer.device's own pi_xpos has been observed (via a decoded test
+     * job's actual PWG raster bytes) to place a DestCols/DestRows-scaled
+     * DUMPRPORT source hard against one edge - 839px of blank on the left,
+     * 31px on the right for a 2478px-wide image on a 3287px page - rather
+     * than centering it, even with SPECIAL_CENTER set. Center
+     * narrower-than-page content ourselves instead of trusting pi_xpos for
+     * that case. A page-filling row (the common real-document case) is
+     * unaffected: scaled_total >= g_page_width there, so this still falls
+     * through to pi_xpos (normally 0) exactly as before. */
+    dst_x = (g_page_width > scaled_total) ? (g_page_width - scaled_total) / 2UL
+                                           : (ULONG)pi->pi_xpos;
 
     for (src_x = 0; src_x < (ULONG)pi->pi_width && dst_x < g_page_width; ++src_x) {
         union colorEntry *pixel = &pi->pi_ColorInt[src_x];
@@ -931,6 +950,10 @@ static void mp_log_row(struct PrtInfo *pi, ULONG row)
     mp_log_append_long((LONG)pi->pi_width);
     mp_log_append(" scaledWidth=");
     mp_log_append_long((LONG)scaled_width);
+    mp_log_append(" xpos=");
+    mp_log_append_long((LONG)pi->pi_xpos);
+    mp_log_append(" pageWidth=");
+    mp_log_append_long((LONG)g_page_width);
 
     if (pi->pi_ColorInt && pi->pi_width) {
         union colorEntry *p = &pi->pi_ColorInt[0];
@@ -1201,6 +1224,36 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
 
             g_page_width = (ULONG)x;
             g_page_height = (ULONG)y;
+
+            /* printer.device's own page width for a DUMPRPORT source (no
+             * SPECIAL_NOFORMFEED - a single-shot page, e.g. MintPrint
+             * Settings' test page) has been observed not to match the
+             * configured media at all: requesting a 2480px-wide (A4) target
+             * via IODRPReq produced a 3287px page here, wide enough that
+             * the printer split the job across two physical sheets. Clamp
+             * back down to the configured media's own width whenever it's
+             * both known and substantially (>10%) narrower than what
+             * printer.device reported - a real page that's already close to
+             * the configured media (the common case) is left untouched. */
+            if (mp_detect_engine(&g_config) == MP_ENGINE_PWG &&
+                !(g_current_special & SPECIAL_NOFORMFEED)) {
+                unsigned long media_w_100mm, media_h_100mm;
+                if (mp_media_dimensions_100mm(g_config.media,
+                                              &media_w_100mm, &media_h_100mm)) {
+                    ULONG dpi = g_config.resolution ? g_config.resolution : 300UL;
+                    ULONG media_width_px =
+                        (ULONG)((media_w_100mm * dpi + 1270UL) / 2540UL);
+                    if (media_width_px &&
+                        media_width_px < g_page_width &&
+                        (g_page_width - media_width_px) * 10UL > g_page_width) {
+                        mp_log_3("Clamping oversized PWG page width raw/media/dpi",
+                                 (LONG)g_page_width, (LONG)media_width_px,
+                                 (LONG)dpi);
+                        g_page_width = media_width_px;
+                    }
+                }
+            }
+
             leading_height = g_leading_aux_height;
             if (leading_height > 0xffffffffUL - g_page_height) {
                 mp_log_text("Leading PWG whitespace height overflow");

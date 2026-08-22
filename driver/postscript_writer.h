@@ -1,0 +1,51 @@
+#ifndef MINTPRINT_POSTSCRIPT_WRITER_H
+#define MINTPRINT_POSTSCRIPT_WRITER_H
+
+#include "jpeg_writer.h"
+
+/*
+ * Minimal streaming single-page PostScript Level 2 encoder.
+ *
+ * The existing JPEG encoder supplies the compressed image data, but the
+ * printer receives a real application/postscript document rather than a
+ * direct image/jpeg job.  JPEG bytes are ASCII85-wrapped and consumed by
+ * PostScript's standard ASCII85Decode and DCTDecode filters.  This keeps the
+ * same bounded, one-row-at-a-time memory use as the JPEG/PDF paths while
+ * avoiding binary-clean transport assumptions in older PostScript devices.
+ */
+
+typedef long (*MPPostScriptWriteFn)(void *ctx,
+                                    const unsigned char *data,
+                                    unsigned long len);
+
+#define MP_POSTSCRIPT_OUTPUT_BUFFER 4096UL
+
+typedef struct MPPostScriptEncoder {
+    unsigned long width;
+    unsigned long height;
+    MPPostScriptWriteFn write_fn;
+    void *write_ctx;
+    MPJpegEncoder jpeg;
+    unsigned char ascii85_tuple[4];
+    unsigned int ascii85_count;
+    unsigned int ascii85_column;
+    unsigned char outbuf[MP_POSTSCRIPT_OUTPUT_BUFFER];
+    unsigned long out_used;
+    unsigned long output_bytes;
+    unsigned long write_calls;
+    int failed;
+} MPPostScriptEncoder;
+
+unsigned long mp_postscript_scratch_size(unsigned long width);
+int mp_postscript_begin(MPPostScriptEncoder *enc,
+                        unsigned long width, unsigned long height,
+                        unsigned long page_width_points,
+                        unsigned long page_height_points,
+                        unsigned long dpi,
+                        unsigned char *scratch, unsigned long scratch_size,
+                        MPPostScriptWriteFn write_fn, void *write_ctx);
+int mp_postscript_write_scanline(MPPostScriptEncoder *enc,
+                                 const unsigned char *rgb);
+int mp_postscript_finish(MPPostScriptEncoder *enc);
+
+#endif

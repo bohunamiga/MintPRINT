@@ -152,6 +152,9 @@ REQUESTED_ATTRIBUTES = [
     "document-format-default",
     "document-format-preferred",
     "document-format-supported",
+    "jpeg-k-octets-supported",
+    "jpeg-x-dimension-supported",
+    "jpeg-y-dimension-supported",
     "compression-supported",
     "charset-configured",
     "charset-supported",
@@ -670,15 +673,28 @@ def report(parsed, target, http_status, http_reason, response_bytes, dump_all=Fa
     lines.append("")
 
     formats = [s.lower() for s in flat_strings(all_values(parsed, "document-format-supported"))]
+    jpeg_constraint_names = (
+        "jpeg-k-octets-supported",
+        "jpeg-x-dimension-supported",
+        "jpeg-y-dimension-supported",
+    )
+    jpeg_constraints = any(all_values(parsed, name) for name in jpeg_constraint_names)
     lines.append("Document formats")
     add_list(lines, "Default", all_values(parsed, "document-format-default"), max_items=5)
     add_list(lines, "Preferred", all_values(parsed, "document-format-preferred"), max_items=5)
     add_list(lines, "Supported", all_values(parsed, "document-format-supported"), max_items=60)
     lines.append("")
     lines.append("MintPRINT engine compatibility")
-    lines.append("  %-27s %s" % ("JPEG (image/jpeg):", "YES" if "image/jpeg" in formats else "NO"))
+    jpeg_status = "NO"
+    if "image/jpeg" in formats:
+        jpeg_status = "YES" if jpeg_constraints else "NOMINAL (no JPEG constraints reported)"
+    lines.append("  %-27s %s" % ("JPEG (image/jpeg):", jpeg_status))
+    lines.append("  %-27s %s" % ("PostScript:", "YES" if "application/postscript" in formats else "NO"))
     lines.append("  %-27s %s" % ("PWG Raster:", "YES" if "image/pwg-raster" in formats else "NO"))
     lines.append("  %-27s %s" % ("PDF (application/pdf):", "YES" if "application/pdf" in formats else "NO"))
+    add_list(lines, "JPEG size limit", all_values(parsed, "jpeg-k-octets-supported"), max_items=10)
+    add_list(lines, "JPEG width limit", all_values(parsed, "jpeg-x-dimension-supported"), max_items=10)
+    add_list(lines, "JPEG height limit", all_values(parsed, "jpeg-y-dimension-supported"), max_items=10)
     add_list(lines, "PWG raster type(s)", all_values(parsed, "pwg-raster-document-type-supported"), max_items=30)
     add_list(lines, "PWG resolution(s)", all_values(parsed, "pwg-raster-document-resolution-supported"), max_items=30)
     add_list(lines, "PWG sheet-back", all_values(parsed, "pwg-raster-document-sheet-back"), max_items=10)
@@ -751,10 +767,17 @@ def report(parsed, target, http_status, http_reason, response_bytes, dump_all=Fa
         warnings.append("Printer rejected the capability request.")
     if http_status >= 400:
         warnings.append("HTTP transport returned an error.")
-    if formats and not any(x in formats for x in ("image/jpeg", "image/pwg-raster", "application/pdf")):
-        warnings.append("Printer advertises none of MintPRINT's JPEG/PWG/PDF engines.")
+    if formats and not any(x in formats for x in (
+        "image/jpeg", "application/postscript", "image/pwg-raster", "application/pdf"
+    )):
+        warnings.append("Printer advertises none of MintPRINT's JPEG/PostScript/PWG/PDF engines.")
     if not formats:
         warnings.append("Printer did not report document-format-supported.")
+    if "image/jpeg" in formats and not jpeg_constraints:
+        warnings.append(
+            "JPEG is advertised without JPEG size/dimension constraints; "
+            "support is nominal and jobs may be silently discarded."
+        )
     if operations and OP_PRINT_JOB not in operations:
         warnings.append("Printer does not advertise the IPP Print-Job operation.")
     duplex_sides = [value for value in all_values(parsed, "sides-supported")
@@ -845,7 +868,7 @@ def main():
     )
     parser.add_argument(
         "--validate-mintprint", action="store_true",
-        help="run non-printing Validate-Job checks for JPEG, PWG Raster and PDF"
+        help="run non-printing Validate-Job checks for JPEG, PostScript, PWG Raster and PDF"
     )
     parser.add_argument(
         "--print-file",
@@ -892,7 +915,7 @@ def main():
         extra.append("Validate-Job checks (no page should be printed)")
         extra.append("-" * 66)
         for idx, mime in enumerate(
-            ("image/jpeg", "image/pwg-raster", "application/pdf"), start=10
+            ("image/jpeg", "application/postscript", "image/pwg-raster", "application/pdf"), start=10
         ):
             try:
                 req = build_validate_job(target["printer_uri"], mime, idx)

@@ -69,6 +69,35 @@ int mp_media_dimensions_100mm(const char *media,
     return (*x && *y) ? 1 : 0;
 }
 
+int mp_media_page_points(const char *media,
+                         unsigned long raster_width,
+                         unsigned long raster_height,
+                         unsigned long *page_width,
+                         unsigned long *page_height)
+{
+    unsigned long x, y, short_edge, long_edge;
+
+    if (!page_width || !page_height ||
+        !mp_media_dimensions_100mm(media, &x, &y))
+        return 0;
+
+    /* hundredths of a millimetre -> 1/72 inch points, rounded */
+    x = (x * 72UL + 1270UL) / 2540UL;
+    y = (y * 72UL + 1270UL) / 2540UL;
+    if (!x || !y) return 0;
+
+    short_edge = x < y ? x : y;
+    long_edge = x < y ? y : x;
+    if (raster_width > raster_height) {
+        *page_width = long_edge;
+        *page_height = short_edge;
+    } else {
+        *page_width = short_edge;
+        *page_height = long_edge;
+    }
+    return 1;
+}
+
 static unsigned long mp_abs_diff(unsigned long a, unsigned long b)
 {
     return a >= b ? a - b : b - a;

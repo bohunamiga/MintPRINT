@@ -6,12 +6,14 @@
 /* MintPRINT prefs #9: compact address row and status-box fit. */
 /* MintPRINT prefs #8: capability cache and output-area layout polish. */
 /* Amiga IPP Print-Job Prototype with GUI
-   Sends a JPEG file to an IPP printer (AirPrint-compatible)
+   Configures and tests MintPRINT's IPP document engines
    Compile with: m68k-amigaos-gcc -g -o IPP-test11 ipp-test11.c -lamiga -lsocket -lm
  PATCH INCOMING: Adds IFF -> RGB -> PWG -> IPP printing support to IPP-test15 */
 
 
 #include <proto/exec.h>
+#include <exec/execbase.h>
+#include <exec/libraries.h>
 #include <ctype.h> // for tolower()
 #include <proto/dos.h>
 #include <dos/dostags.h> // for SYS_Asynch (SystemTags)
@@ -110,6 +112,20 @@ struct DiscoveredPrinter {
     char label[80];
 };
 
+/* Test Print must outlive the gadget callback that starts it. Keeping the
+ * RastPort, bitmap and IO request here lets printer.device run asynchronously
+ * while the normal GadTools event loop continues servicing the window. */
+struct MPTestPrintJob {
+    struct MsgPort *port;
+    struct IODRPReq *request;
+    struct BitMap *bitmap;
+    struct RastPort rastport;
+    BOOL device_open;
+    BOOL active;
+};
+
+static struct MPTestPrintJob test_print_job;
+
 // Saved printer profiles: ENV:MintPRINT/Unit0 .. Unit(MAX_UNITS-1). Only
 // Unit0 is what the driver actually reads at print time; the others are
 // switchable GUI-side profiles (e.g. for a second/third network printer).
@@ -122,6 +138,10 @@ struct DiscoveredPrinter {
 // Define the USED macro for GCC
 #define USED __attribute__((used))
 #define MINTPRINT_SETTINGS_VERSION "1.0.3b"
+#define MINTPRINT_DRIVER_DEST ((CONST_STRPTR)"DEVS:Printers/MintPRINT")
+#define MINTPRINT_DRIVER_SRC  ((CONST_STRPTR)"PROGDIR:MintPRINT")
+
+static BOOL mp_read_driver_revision(CONST_STRPTR path, UWORD *revision_out);
 
 /* DEVS:Printers/MintPRINT install helper paths - also read by the test
  * page (mintprint_test_page) to report the installed driver revision. */
@@ -168,6 +188,10 @@ struct MediaTrayMap {
 // Globals for parsed capabilities
 char supported_formats[MAX_VALUES][MAX_ATTR_LEN];
 int num_supported_formats = 0;
+BOOL jpeg_constraints_queried = FALSE;
+BOOL jpeg_k_octets_reported = FALSE;
+BOOL jpeg_x_dimension_reported = FALSE;
+BOOL jpeg_y_dimension_reported = FALSE;
 
 char supported_media[MAX_VALUES][MAX_ATTR_LEN];
 int num_supported_media = 0;
@@ -408,12 +432,13 @@ BOOL parse_media_dimensions(const char *media_str, int *x, int *y) {
 
 void ensure_quality_defaults() {
     if (num_supported_quality == 0) {
-        printf("No print-quality-supported returned by printer, falling back to default values.\n");
-
-        strcpy(supported_quality[0], "draft");
-        strcpy(supported_quality[1], "normal");
-        strcpy(supported_quality[2], "high");
-        num_supported_quality = 3;
+        /* Do not invent draft/high support when a printer omits this
+         * capability. The Samsung C480W only accepts normal, yet the old
+         * three-value fallback selected draft and made the IPP server
+         * return successful-ok-ignored-or-substituted-attributes. */
+        printf("No print-quality-supported returned; using safe normal quality.\n");
+        strcpy(supported_quality[0], "normal");
+        num_supported_quality = 1;
     }
 }
 
@@ -499,26 +524,26 @@ char driver_engine_buffer[32] = "jpeg";
  * that gap directly: it advertises both formats, defaulted to JPEG anyway,
  * and Test Print was slow enough to look hung. */
 static BOOL driver_engine_explicit = FALSE;
-#define MP_ENGINE_MAX 3
+#define MP_ENGINE_MAX 4
 
 static const char *mp_engine_all_labels[MP_ENGINE_MAX] = {
-    "JPEG", "PWG Raster", "PDF"
+    "JPEG", "PostScript", "PWG Raster", "PDF"
 };
 static const char *mp_engine_all_values[MP_ENGINE_MAX] = {
-    "jpeg", "pwg-raster", "pdf"
+    "jpeg", "postscript", "pwg-raster", "pdf"
 };
 static const char *mp_engine_all_mimes[MP_ENGINE_MAX] = {
-    "image/jpeg", "image/pwg-raster", "application/pdf"
+    "image/jpeg", "application/postscript", "image/pwg-raster", "application/pdf"
 };
 
 /* This array address stays fixed for the lifetime of the GadTools Cycle. */
 static STRPTR engine_labels[MP_ENGINE_MAX + 1] = {
-    "JPEG", "PWG Raster", "PDF", NULL
+    "JPEG", "PostScript", "PWG Raster", "PDF", NULL
 };
 
 /* Maps the currently-visible Cycle index to MintPRINT's internal value. */
 static const char *mp_engine_value_map[MP_ENGINE_MAX] = {
-    "jpeg", "pwg-raster", "pdf"
+    "jpeg", "postscript", "pwg-raster", "pdf"
 };
 static int mp_engine_count = MP_ENGINE_MAX;
 char driver_media_buffer[MAX_ATTR_LEN] = "";
@@ -721,12 +746,13 @@ static void refresh_unit_dropdown(struct Window *win) {
 }
 
 static const char *engine_mime_type(const char *engine) {
+    if (strcmp(engine, "postscript") == 0) return "application/postscript";
     if (strcmp(engine, "pwg-raster") == 0) return "image/pwg-raster";
     if (strcmp(engine, "pdf") == 0) return "application/pdf";
     return "image/jpeg";
 }
 
-/* engine_labels[] order: 0=JPEG, 1=PWG Raster, 2=PDF. */
+/* The visible order may be filtered by a printer capability query. */
 static ULONG mp_engine_active_index(void) {
     int i;
 
@@ -741,7 +767,7 @@ static ULONG mp_engine_active_index(void) {
 /* Every document-format this driver's engines can actually produce. Kept
  * in sync with engine_mime_type()'s cases. */
 static const char *mp_supported_engine_mimes[] = {
-    "image/jpeg", "image/pwg-raster", "application/pdf"
+    "image/jpeg", "application/postscript", "image/pwg-raster", "application/pdf"
 };
 #define MP_SUPPORTED_ENGINE_MIME_COUNT \
     (sizeof(mp_supported_engine_mimes) / sizeof(mp_supported_engine_mimes[0]))
@@ -776,7 +802,7 @@ static void mp_check_any_engine_supported(struct Window *win) {
     es.es_Title = (UBYTE *)"MintPrint Settings";
     es.es_TextFormat = (UBYTE *)
         "This printer did not advertise any document format\n"
-        "MintPRINT can produce (JPEG, PWG Raster, or PDF).\n\n"
+        "MintPRINT can produce JPEG, PostScript, PWG Raster, or PDF.\n\n"
         "It is likely not supported yet. To help add support,\n"
         "please log an issue at github.com/boingball/MintPRINT -\n"
         "run windows_ipp_probe.py (from a Windows PC on the same\n"
@@ -1111,6 +1137,8 @@ static BOOL load_driver_config(void) {
                 strcpy(driver_engine_buffer, "pwg-raster");
             else if (strcmp(line + 7, "pdf") == 0)
                 strcpy(driver_engine_buffer, "pdf");
+            else if (strcmp(line + 7, "postscript") == 0)
+                strcpy(driver_engine_buffer, "postscript");
             else
                 strcpy(driver_engine_buffer, "jpeg");
             /* Matches driver_resolution_explicit's own precedent just above:
@@ -1388,56 +1416,183 @@ static void apply_job_defaults_to_gadgets(struct Window *win) {
     GT_RefreshWindow(win, NULL);
 }
 
-/* Portrait, A4-proportioned (210x297mm) test canvas, drawn into its own
- * private bitmap and 8-colour ColorMap rather than the live Workbench
- * screen's.
- *
- * An earlier version left io_DestCols/io_DestRows at 0 and relied on
- * SPECIAL_ASPECT alone to size the page from this canvas's own portrait
- * aspect. A real test print showed that doesn't work: printer.device does
- * not derive the destination from the configured media that way - the
- * driver log showed a destination of ~3113x3015px, unrelated to both the
- * configured iso_a4_210x297mm media and to this canvas's shape. Instead,
- * compute the destination explicitly from the unit's configured media and
- * resolution (mp_media_dimensions_100mm(), shared with the driver) so the
- * print always matches what MintPrint Settings actually has configured.
- *
- * The private ColorMap exists because pen 0 on a live Workbench screen is
- * whatever grey the user's background happens to be, not white - dumping
- * the screen's own pens printed a full page of grey ink. Pen 0 here is
- * fixed to true white and pen 1 to true black, independent of the user's
- * screen/theme, and pens 2-7 are fixed primaries for the colour test. */
-#define MP_TESTPAGE_WIDTH  320
-#define MP_TESTPAGE_HEIGHT 453
-#define MP_TESTPAGE_DEPTH  3   /* 8 pens: 2^3 */
-#define MP_TESTPAGE_COLORS 8
+static void mp_set_test_print_enabled(struct Window *win, BOOL enabled)
+{
+    struct Gadget *g = find_gadget_by_id(GAD_PRINT_BUTTON);
+    if (g && win) {
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GA_Disabled, enabled ? FALSE : TRUE,
+                          TAG_DONE);
+    }
+}
 
+static void mp_test_print_release(struct Window *win)
+{
+    if (test_print_job.request && test_print_job.device_open) {
+        CloseDevice((struct IORequest *)test_print_job.request);
+        test_print_job.device_open = FALSE;
+    }
+    if (test_print_job.request) {
+        DeleteIORequest((struct IORequest *)test_print_job.request);
+        test_print_job.request = NULL;
+    }
+    if (test_print_job.port) {
+        DeleteMsgPort(test_print_job.port);
+        test_print_job.port = NULL;
+    }
+    if (test_print_job.bitmap) {
+        FreeBitMap(test_print_job.bitmap);
+        test_print_job.bitmap = NULL;
+    }
+    test_print_job.active = FALSE;
+    mp_set_test_print_enabled(win, TRUE);
+}
+
+static void mp_test_print_complete(struct Window *win)
+{
+    LONG ioerr;
+
+    if (!test_print_job.active || !test_print_job.request) return;
+    ioerr = WaitIO((struct IORequest *)test_print_job.request);
+    if (ioerr != 0 || test_print_job.request->io_Error != 0) {
+        printf("Test Print failed: WaitIO=%ld io_Error=%ld\n",
+               ioerr, (LONG)test_print_job.request->io_Error);
+    } else {
+        printf("Test Print completed successfully\n");
+    }
+    mp_test_print_release(win);
+}
+
+static void mp_test_print_cancel(struct Window *win)
+{
+    if (!test_print_job.active || !test_print_job.request) return;
+    printf("Cancelling Test Print...\n");
+    if (!CheckIO((struct IORequest *)test_print_job.request))
+        AbortIO((struct IORequest *)test_print_job.request);
+    WaitIO((struct IORequest *)test_print_job.request);
+    mp_test_print_release(win);
+}
+
+static void mp_test_print_palette_pens(UBYTE depth,
+                                       UWORD *light_pen,
+                                       UWORD *dark_pen)
+{
+    ULONG count;
+    ULONG i;
+    ULONG light_score = 0;
+    ULONG dark_score = 0xffffffffUL;
+
+    if (!light_pen || !dark_pen || !screen || !screen->ViewPort.ColorMap)
+        return;
+
+    count = depth < 8 ? (1UL << depth) : 256UL;
+    for (i = 0; i < count; ++i) {
+        ULONG rgb = GetRGB4(screen->ViewPort.ColorMap, (LONG)i);
+        ULONG score = ((rgb >> 8) & 15UL) +
+                      ((rgb >> 4) & 15UL) + (rgb & 15UL);
+        if (score > light_score) {
+            light_score = score;
+            *light_pen = (UWORD)i;
+        }
+        if (score < dark_score) {
+            dark_score = score;
+            *dark_pen = (UWORD)i;
+        }
+    }
+}
+
+#define MP_TEST_PAGE_WIDTH  240
+#define MP_TEST_PAGE_HEIGHT 320
+#define MP_TEST_PS_WIDTH_MILS  4500
+#define MP_TEST_PS_HEIGHT_MILS 6000
+
+static void mp_test_print_text(struct RastPort *rp, WORD x, WORD y,
+                               WORD right, const char *text)
+{
+    ULONG length;
+
+    if (!rp || !text || right <= x) return;
+    length = (ULONG)strlen(text);
+    while (length > 0 && TextLength(rp, (STRPTR)text, length) > right - x)
+        --length;
+    Move(rp, x, y);
+    Text(rp, (STRPTR)text, length);
+}
+
+static void mp_test_print_frame(struct RastPort *rp,
+                                WORD left, WORD top,
+                                WORD right, WORD bottom,
+                                UWORD pen)
+{
+    if (!rp || right <= left || bottom <= top) return;
+    SetAPen(rp, pen);
+    RectFill(rp, left, top, right, top);
+    RectFill(rp, left, bottom, right, bottom);
+    RectFill(rp, left, top, left, bottom);
+    RectFill(rp, right, top, right, bottom);
+}
+
+static const char *mp_test_print_engine_name(void)
+{
+    int i;
+
+    for (i = 0; i < MP_ENGINE_MAX; ++i) {
+        if (strcmp(driver_engine_buffer, mp_engine_all_values[i]) == 0)
+            return mp_engine_all_labels[i];
+    }
+    return driver_engine_buffer[0] ? driver_engine_buffer : "unknown";
+}
+
+static const char *mp_test_print_cpu_name(UWORD flags)
+{
+    /* The 68060 attention bit was added after the original V37 NDK, so use
+     * its documented bit value directly and retain build compatibility with
+     * those older headers. SetPatch/68060.library supplies it at runtime. */
+    if (flags & (1U << 7)) return "68060";
+    if (flags & (1U << 3)) return "68040";
+    if (flags & (1U << 2)) return "68030";
+    if (flags & (1U << 1)) return "68020";
+    if (flags & (1U << 0)) return "68010";
+    return "68000";
+}
+
+/* Small (240x320) portrait test canvas, drawn against the live Workbench
+ * screen's own BitMap/ColorMap - see mp_test_print_palette_pens() above for
+ * why a private ColorMap is no longer needed to get a reliable light/dark
+ * pair. printer.device runs the DUMPRPORT request asynchronously
+ * (test_print_job, above) so the GUI stays responsive; mp_test_print_complete()
+ * (called from the main event loop) and mp_test_print_cancel() (called on
+ * window close) finish the job and release its resources.
+ *
+ * Destination sizing is engine-dependent:
+ *  - PostScript gets an exact small physical size (SPECIAL_MILCOLS/MILROWS,
+ *    no SPECIAL_CENTER) since the PostScript writer centres the image on
+ *    /PageSize itself; asking printer.device to also centre it left 983
+ *    blank raster columns on a real Samsung capture, and the smaller target
+ *    cuts the 300 DPI encoder input from ~10.7MB to ~7.3MB.
+ *  - JPEG/PWG/PDF keep computing DestCols/DestRows explicitly from the
+ *    configured media (mp_media_dimensions_100mm(), shared with the driver)
+ *    rather than leaving them at 0: an earlier version relied on
+ *    SPECIAL_ASPECT alone to size the page from this canvas's own aspect,
+ *    but a real test print showed printer.device does not derive the
+ *    destination from the configured media that way - the driver log
+ *    showed ~3113x3015px, unrelated to both the configured
+ *    iso_a4_210x297mm media and this canvas's own 3:4 shape. */
 static BOOL mintprint_test_page(struct Window *win) {
-    struct MsgPort *mp = NULL;
-    struct IODRPReq *req = NULL;
-    struct BitMap *bm = NULL;
-    struct ColorMap *cm = NULL;
-    struct RastPort rp;
     ULONG mode_id = 0;
-    ULONG dpi;
-    LONG ioerr = -1;
-    BOOL print_ok = FALSE;
-    LONG left = 16, right = MP_TESTPAGE_WIDTH - 17;
-    LONG dest_cols, dest_rows;
-    LONG swatch_area, swatch_w, i;
-    unsigned long media_w_100mm, media_h_100mm;
-    UWORD installed_rev = 0;
-    UWORD tw;
-    const char *title = "MintPRINT";
-    const char *tagline = "Network Printer Test Page";
-    const char *colour_label = "Colour Test";
-    const char *settings_label = "Version & Settings";
-    const char *footer1 = "printer.device -> MintPRINT -> IPP";
-    const char *footer2 = "github.com/boingball/MintPRINT";
-    static const char *swatch_names[MP_TESTPAGE_COLORS] =
-        { "Wht", "Blk", "Red", "Grn", "Blu", "Cyn", "Mag", "Yel" };
-    char info_lines[9][80];
-    int num_info_lines = 0;
+    UBYTE depth;
+    UWORD light_pen = 0;
+    UWORD dark_pen = 1;
+    UWORD driver_revision = 0;
+    struct ExecBase *exec_base;
+    char line[96];
+    const char *title = "MintPRINT TEST PAGE";
+    BOOL is_postscript;
+
+    if (test_print_job.active) {
+        printf("Test Print is already running\n");
+        return FALSE;
+    }
 
     if (!screen) {
         printf("Test Print: public screen is not available\n");
@@ -1450,201 +1605,189 @@ static BOOL mintprint_test_page(struct Window *win) {
         return FALSE;
     }
 
-    dpi = (driver_resolution > 0) ? (ULONG)driver_resolution : 300UL;
-    if (!driver_media_buffer[0] ||
-        !mp_media_dimensions_100mm(driver_media_buffer, &media_w_100mm, &media_h_100mm)) {
-        media_w_100mm = 21000UL; /* A4 210mm fallback */
-        media_h_100mm = 29700UL; /* A4 297mm fallback */
-    }
-    dest_cols = (LONG)((media_w_100mm * dpi + 1270UL) / 2540UL);
-    dest_rows = (LONG)((media_h_100mm * dpi + 1270UL) / 2540UL);
+    depth = screen->RastPort.BitMap->Depth;
+    if (depth < 1) depth = 1;
+    mp_test_print_palette_pens(depth, &light_pen, &dark_pen);
 
-    if (!mp_read_driver_revision(MINTPRINT_DRIVER_DEST, &installed_rev))
-        installed_rev = 0;
-
-    snprintf(info_lines[num_info_lines++], sizeof(info_lines[0]),
-             "Unit%d  |  Settings v%s", current_unit_index, MINTPRINT_SETTINGS_VERSION);
-    if (installed_rev)
-        snprintf(info_lines[num_info_lines++], sizeof(info_lines[0]),
-                 "Driver: rev %u installed", (unsigned)installed_rev);
-    else
-        snprintf(info_lines[num_info_lines++], sizeof(info_lines[0]),
-                 "Driver: not installed");
-    snprintf(info_lines[num_info_lines++], sizeof(info_lines[0]),
-             "Printer: %s", printer_make_model[0] ? printer_make_model : "(unknown model)");
-    snprintf(info_lines[num_info_lines++], sizeof(info_lines[0]),
-             "Host: %s%s", ip_buffer, driver_path_buffer);
-    snprintf(info_lines[num_info_lines++], sizeof(info_lines[0]),
-             "Format: %s   DPI: %d", driver_engine_buffer, driver_resolution);
-    snprintf(info_lines[num_info_lines++], sizeof(info_lines[0]),
-             "Media: %s   Source: %s",
-             driver_media_buffer[0] ? driver_media_buffer : "auto",
-             driver_source_buffer[0] ? driver_source_buffer : "auto");
-    snprintf(info_lines[num_info_lines++], sizeof(info_lines[0]),
-             "Colour: %s   Quality: %s",
-             driver_color_buffer[0] ? driver_color_buffer : "auto",
-             driver_quality_buffer[0] ? driver_quality_buffer : "auto");
-    snprintf(info_lines[num_info_lines++], sizeof(info_lines[0]),
-             "Sides: %s   Scaling: %s",
-             driver_sides_buffer[0] ? driver_sides_buffer : "one-sided",
-             driver_scaling_buffer[0] ? driver_scaling_buffer : "auto");
-    snprintf(info_lines[num_info_lines++], sizeof(info_lines[0]),
-             "Debug: %s", driver_debug ? "on" : "off");
-
-    cm = GetColorMap(MP_TESTPAGE_COLORS);
-    if (!cm) {
-        printf("Test Print: could not allocate colour map\n");
-        return FALSE;
-    }
-    SetRGB4CM(cm, 0, 15, 15, 15); /* white - paper/background */
-    SetRGB4CM(cm, 1, 0, 0, 0);    /* black - ink/text/border */
-    SetRGB4CM(cm, 2, 15, 0, 0);   /* red */
-    SetRGB4CM(cm, 3, 0, 15, 0);   /* green */
-    SetRGB4CM(cm, 4, 0, 0, 15);   /* blue */
-    SetRGB4CM(cm, 5, 0, 15, 15);  /* cyan */
-    SetRGB4CM(cm, 6, 15, 0, 15);  /* magenta */
-    SetRGB4CM(cm, 7, 15, 15, 0);  /* yellow */
-
-    /* No screen "friend" - this bitmap has nothing to do with the display,
-     * only with the private ColorMap above. BMF_CLEAR zeroes every pixel to
-     * pen 0, which is already true white, so no background fill is needed. */
-    bm = AllocBitMap(MP_TESTPAGE_WIDTH, MP_TESTPAGE_HEIGHT, MP_TESTPAGE_DEPTH,
-                      BMF_CLEAR, NULL);
-    if (!bm) {
+    /* A portrait source is intentional: printer.device and every MintPRINT
+     * document engine infer orientation from the raster aspect ratio. The
+     * former 320x180 test bitmap therefore requested landscape every time. */
+    test_print_job.bitmap = AllocBitMap(MP_TEST_PAGE_WIDTH,
+                                        MP_TEST_PAGE_HEIGHT,
+                                        depth, BMF_CLEAR,
+                                        screen->RastPort.BitMap);
+    if (!test_print_job.bitmap) {
         printf("Test Print: could not allocate test bitmap\n");
-        FreeColorMap(cm);
         return FALSE;
     }
 
-    InitRastPort(&rp);
-    rp.BitMap = bm;
-    if (screen->RastPort.Font) SetFont(&rp, screen->RastPort.Font);
+    InitRastPort(&test_print_job.rastport);
+    test_print_job.rastport.BitMap = test_print_job.bitmap;
+    if (screen->RastPort.Font)
+        SetFont(&test_print_job.rastport, screen->RastPort.Font);
+    /* JAM1 draws only foreground glyph pixels. InitRastPort's JAM2 mode
+     * otherwise paints BPen rectangles behind every text run, which became
+     * visible as grey highlighter bars once the page background turned white. */
+    SetDrMd(&test_print_job.rastport, JAM1);
 
-    /* Page border. */
-    SetAPen(&rp, 1);
-    RectFill(&rp, 4, 4, MP_TESTPAGE_WIDTH - 5, 5);
-    RectFill(&rp, 4, MP_TESTPAGE_HEIGHT - 6, MP_TESTPAGE_WIDTH - 5, MP_TESTPAGE_HEIGHT - 5);
-    RectFill(&rp, 4, 4, 5, MP_TESTPAGE_HEIGHT - 5);
-    RectFill(&rp, MP_TESTPAGE_WIDTH - 6, 4, MP_TESTPAGE_WIDTH - 5, MP_TESTPAGE_HEIGHT - 5);
+    /* Use the brightest available Workbench pen for paper rather than pen 0,
+     * which is commonly mid-grey and made the Samsung laser cover most of
+     * the test page in toner. Other palette pens still provide colour
+     * swatches, so this remains an end-to-end colour conversion check. */
+    SetAPen(&test_print_job.rastport, light_pen);
+    RectFill(&test_print_job.rastport, 0, 0,
+             MP_TEST_PAGE_WIDTH - 1, MP_TEST_PAGE_HEIGHT - 1);
+    SetAPen(&test_print_job.rastport, dark_pen);
+    RectFill(&test_print_job.rastport, 4, 4, 235, 5);
+    RectFill(&test_print_job.rastport, 4, 314, 235, 315);
+    RectFill(&test_print_job.rastport, 4, 4, 5, 315);
+    RectFill(&test_print_job.rastport, 234, 4, 235, 315);
 
-    /* Header - a faux-bold double-strike stands in for a real logo bitmap. */
-    Move(&rp, left, 24);
-    Text(&rp, (STRPTR)title, strlen(title));
-    Move(&rp, left + 1, 24);
-    Text(&rp, (STRPTR)title, strlen(title));
-    Move(&rp, left, 40);
-    Text(&rp, (STRPTR)tagline, strlen(tagline));
-    RectFill(&rp, left, 52, right, 53);
+    mp_test_print_text(&test_print_job.rastport, 12, 22, 228, title);
 
-    Move(&rp, left, 70);
-    Text(&rp, (STRPTR)colour_label, strlen(colour_label));
+    snprintf(line, sizeof(line), "Settings: %s", MINTPRINT_SETTINGS_VERSION);
+    mp_test_print_text(&test_print_job.rastport, 12, 42, 228, line);
 
-    swatch_area = right - left + 1;
-    swatch_w = swatch_area / MP_TESTPAGE_COLORS;
-    for (i = 0; i < MP_TESTPAGE_COLORS; i++) {
-        LONG x0 = left + i * swatch_w;
-        LONG x1 = (i == MP_TESTPAGE_COLORS - 1) ? right : (x0 + swatch_w - 3);
-        if (x1 < x0) x1 = x0;
+    if (mp_read_driver_revision(MINTPRINT_DRIVER_DEST, &driver_revision))
+        snprintf(line, sizeof(line), "Driver: MintPRINT rev %u",
+                 (unsigned)driver_revision);
+    else
+        strcpy(line, "Driver: MintPRINT rev unknown");
+    mp_test_print_text(&test_print_job.rastport, 12, 56, 228, line);
 
-        /* A 1px black frame drawn slightly larger than the fill keeps the
-         * white swatch visible against the equally white page background. */
-        SetAPen(&rp, 1);
-        RectFill(&rp, x0 - 1, 79, x1 + 1, 171);
-        SetAPen(&rp, (UBYTE)i);
-        RectFill(&rp, x0, 80, x1, 170);
+    snprintf(line, sizeof(line), "Printer: %s",
+             printer_make_model[0] ? printer_make_model : "model not queried");
+    mp_test_print_text(&test_print_job.rastport, 12, 70, 228, line);
 
-        SetAPen(&rp, 1);
-        tw = TextLength(&rp, (STRPTR)swatch_names[i], strlen(swatch_names[i]));
-        Move(&rp, x0 + ((x1 - x0 + 1 - tw) / 2), 182);
-        Text(&rp, (STRPTR)swatch_names[i], strlen(swatch_names[i]));
+    snprintf(line, sizeof(line), "Engine: %s over IPP",
+             mp_test_print_engine_name());
+    mp_test_print_text(&test_print_job.rastport, 12, 84, 228, line);
+
+    snprintf(line, sizeof(line), "DPI: %d  Colour: %s", driver_resolution,
+             driver_color_buffer[0] ? driver_color_buffer : "auto");
+    mp_test_print_text(&test_print_job.rastport, 12, 98, 228, line);
+
+    snprintf(line, sizeof(line), "Media: %s",
+             driver_media_buffer[0] ? driver_media_buffer : "auto");
+    mp_test_print_text(&test_print_job.rastport, 12, 112, 228, line);
+
+    snprintf(line, sizeof(line), "Tray: %s",
+             driver_source_buffer[0] ? driver_source_buffer : "auto");
+    mp_test_print_text(&test_print_job.rastport, 12, 126, 228, line);
+
+    snprintf(line, sizeof(line), "Quality: %s  Scale: %s",
+             driver_quality_buffer[0] ? driver_quality_buffer : "auto",
+             driver_scaling_buffer[0] ? driver_scaling_buffer : "auto");
+    mp_test_print_text(&test_print_job.rastport, 12, 140, 228, line);
+
+    exec_base = *(struct ExecBase **)4L;
+    if (exec_base) {
+        snprintf(line, sizeof(line), "Exec: V%u.%u  CPU: %s",
+                 (unsigned)exec_base->LibNode.lib_Version,
+                 (unsigned)exec_base->LibNode.lib_Revision,
+                 mp_test_print_cpu_name(exec_base->AttnFlags));
+        mp_test_print_text(&test_print_job.rastport, 12, 158, 228, line);
     }
 
-    SetAPen(&rp, 1);
-    RectFill(&rp, left, 196, right, 197);
-
-    Move(&rp, left, 214);
-    Text(&rp, (STRPTR)settings_label, strlen(settings_label));
-    for (i = 0; i < num_info_lines; i++) {
-        Move(&rp, left, 232 + i * 20);
-        Text(&rp, (STRPTR)info_lines[i], strlen(info_lines[i]));
+    if (SocketBase) {
+        snprintf(line, sizeof(line), "TCP: bsdsocket V%u.%u",
+                 (unsigned)SocketBase->lib_Version,
+                 (unsigned)SocketBase->lib_Revision);
+        mp_test_print_text(&test_print_job.rastport, 12, 172, 228, line);
     }
 
-    RectFill(&rp, left, 404, right, 405);
-    Move(&rp, left, 420);
-    Text(&rp, (STRPTR)footer1, strlen(footer1));
-    Move(&rp, left, 434);
-    Text(&rp, (STRPTR)footer2, strlen(footer2));
+    SetAPen(&test_print_job.rastport, light_pen);
+    RectFill(&test_print_job.rastport, 12, 190, 78, 224);
+    SetAPen(&test_print_job.rastport, depth > 1 ? 3 : dark_pen);
+    RectFill(&test_print_job.rastport, 86, 190, 152, 224);
+    SetAPen(&test_print_job.rastport, dark_pen);
+    RectFill(&test_print_job.rastport, 160, 190, 226, 224);
+    /* A white swatch on white paper is useful only when its boundary is
+     * visible. Frame all three so the test also exposes registration and
+     * edge-rendering problems consistently across palettes. */
+    mp_test_print_frame(&test_print_job.rastport, 12, 190, 78, 224,
+                        dark_pen);
+    mp_test_print_frame(&test_print_job.rastport, 86, 190, 152, 224,
+                        dark_pen);
+    mp_test_print_frame(&test_print_job.rastport, 160, 190, 226, 224,
+                        dark_pen);
 
-    mp = CreateMsgPort();
-    if (!mp) {
+    SetAPen(&test_print_job.rastport, dark_pen);
+    mp_test_print_text(&test_print_job.rastport, 12, 246, 228,
+                       "printer.device -> MintPRINT");
+    mp_test_print_text(&test_print_job.rastport, 12, 260, 228,
+                       "IPP Print-Job to port 631");
+    mp_test_print_text(&test_print_job.rastport, 12, 286, 228,
+                       "Like it? Buy me a coffee:");
+    mp_test_print_text(&test_print_job.rastport, 12, 300, 228,
+                       "buymeacoffee.com/boingball");
+
+    test_print_job.port = CreateMsgPort();
+    if (!test_print_job.port) {
         printf("Test Print: CreateMsgPort failed\n");
-        FreeBitMap(bm);
-        FreeColorMap(cm);
+        mp_test_print_release(win);
         return FALSE;
     }
 
-    req = (struct IODRPReq *)CreateIORequest(mp, sizeof(struct IODRPReq));
-    if (!req) {
+    test_print_job.request = (struct IODRPReq *)CreateIORequest(
+        test_print_job.port, sizeof(struct IODRPReq));
+    if (!test_print_job.request) {
         printf("Test Print: CreateIORequest failed\n");
-        DeleteMsgPort(mp);
-        FreeBitMap(bm);
-        FreeColorMap(cm);
+        mp_test_print_release(win);
         return FALSE;
     }
 
     if (OpenDevice((CONST_STRPTR)"printer.device", 0,
-                   (struct IORequest *)req, 0) != 0) {
+                   (struct IORequest *)test_print_job.request, 0) != 0) {
         printf("Test Print: could not open printer.device\n");
-        DeleteIORequest((struct IORequest *)req);
-        DeleteMsgPort(mp);
-        FreeBitMap(bm);
-        FreeColorMap(cm);
+        mp_test_print_release(win);
         return FALSE;
     }
+    test_print_job.device_open = TRUE;
 
     mode_id = GetVPModeID(&screen->ViewPort);
     if (mode_id == INVALID_ID) mode_id = 0;
 
-    req->io_Command = PRD_DUMPRPORT;
-    req->io_RastPort = &rp;
-    req->io_ColorMap = cm;
-    req->io_Modes = mode_id;
-    req->io_SrcX = 0;
-    req->io_SrcY = 0;
-    req->io_SrcWidth = MP_TESTPAGE_WIDTH;
-    req->io_SrcHeight = MP_TESTPAGE_HEIGHT;
-    req->io_DestCols = dest_cols;
-    req->io_DestRows = dest_rows;
-    req->io_Special = SPECIAL_ASPECT | SPECIAL_CENTER;
+    test_print_job.request->io_Command = PRD_DUMPRPORT;
+    test_print_job.request->io_RastPort = &test_print_job.rastport;
+    test_print_job.request->io_ColorMap = screen->ViewPort.ColorMap;
+    test_print_job.request->io_Modes = mode_id;
+    test_print_job.request->io_SrcX = 0;
+    test_print_job.request->io_SrcY = 0;
+    test_print_job.request->io_SrcWidth = MP_TEST_PAGE_WIDTH;
+    test_print_job.request->io_SrcHeight = MP_TEST_PAGE_HEIGHT;
 
-    printf("Test Print: sending page through printer.device (dest %ld x %ld)...\n",
-           (long)dest_cols, (long)dest_rows);
-    ioerr = DoIO((struct IORequest *)req);
-    if (ioerr != 0 || req->io_Error != 0) {
-        printf("Test Print failed: DoIO=%ld io_Error=%ld\n",
-               ioerr, (LONG)req->io_Error);
+    is_postscript = strcmp(driver_engine_buffer, "postscript") == 0;
+    if (is_postscript) {
+        test_print_job.request->io_DestCols = MP_TEST_PS_WIDTH_MILS;
+        test_print_job.request->io_DestRows = MP_TEST_PS_HEIGHT_MILS;
+        test_print_job.request->io_Special =
+            SPECIAL_MILCOLS | SPECIAL_MILROWS;
     } else {
-        printf("Test Print completed successfully\n");
-        print_ok = TRUE;
+        ULONG dpi = (driver_resolution > 0) ? (ULONG)driver_resolution : 300UL;
+        unsigned long media_w_100mm, media_h_100mm;
+        if (!driver_media_buffer[0] ||
+            !mp_media_dimensions_100mm(driver_media_buffer,
+                                       &media_w_100mm, &media_h_100mm)) {
+            media_w_100mm = 21000UL; /* A4 210mm fallback */
+            media_h_100mm = 29700UL; /* A4 297mm fallback */
+        }
+        test_print_job.request->io_DestCols =
+            (LONG)((media_w_100mm * dpi + 1270UL) / 2540UL);
+        test_print_job.request->io_DestRows =
+            (LONG)((media_h_100mm * dpi + 1270UL) / 2540UL);
+        test_print_job.request->io_Special = SPECIAL_ASPECT | SPECIAL_CENTER;
     }
 
-    printf("Test Print cleanup: before CloseDevice\n");
-    CloseDevice((struct IORequest *)req);
-    printf("Test Print cleanup: after CloseDevice\n");
+    printf("Test Print: sending page through printer.device (dest %ld x %ld)...\n",
+           (long)test_print_job.request->io_DestCols,
+           (long)test_print_job.request->io_DestRows);
 
-    DeleteIORequest((struct IORequest *)req);
-    printf("Test Print cleanup: after DeleteIORequest\n");
-
-    DeleteMsgPort(mp);
-    printf("Test Print cleanup: after DeleteMsgPort\n");
-
-    FreeBitMap(bm);
-    printf("Test Print cleanup: after FreeBitMap\n");
-
-    FreeColorMap(cm);
-    printf("Test Print cleanup: after FreeColorMap\n");
-
-    return print_ok;
+    test_print_job.active = TRUE;
+    mp_set_test_print_enabled(win, FALSE);
+    printf("Test Print started; MintPRINT remains responsive\n");
+    SendIO((struct IORequest *)test_print_job.request);
+    return TRUE;
 }
 
 static void apply_driver_config_to_gadgets(struct Window *win) {
@@ -1971,12 +2114,32 @@ static BOOL mp_printer_advertises_format(const char *mime) {
     return FALSE;
 }
 
+/* Some printers, including a Samsung C480W seen in the field, advertise
+ * image/jpeg and accept the IPP job while silently discarding its contents.
+ * PWG 5100.13's JPEG size/dimension attributes are not mandatory proof of a
+ * working decoder, so their absence is only a warning and JPEG stays
+ * selectable.  jpeg_constraints_queried distinguishes a fresh negative
+ * answer from an old cache created before MintPRINT requested these fields. */
+static void mp_warn_if_jpeg_nominal(void) {
+    if (!jpeg_constraints_queried ||
+        !mp_printer_advertises_format("image/jpeg") ||
+        jpeg_k_octets_reported || jpeg_x_dimension_reported ||
+        jpeg_y_dimension_reported)
+        return;
+
+    printf("Warning: JPEG is advertised without JPEG limits.\n");
+    if (mp_printer_advertises_format("application/postscript"))
+        printf("JPEG may be unreliable; prefer PostScript if it fails.\n");
+    else
+        printf("JPEG may be unreliable and can silently discard jobs.\n");
+}
+
 /*
  * Rebuild the Engine Cycle from document-format-supported.
  *
  * With no Query/cache yet, all MintPRINT engines remain visible.
  * After a Query, only engines the printer actually advertised are shown.
- * If it advertised none of MintPRINT's formats, leave all three visible;
+ * If it advertised none of MintPRINT's formats, leave all four visible;
  * the existing unsupported-printer requester handles that exceptional case
  * and an empty GadTools Cycle would be undesirable.
  */
@@ -2108,6 +2271,10 @@ static void mp_cache_clear_capabilities(void) {
     num_supported_dpi = 0;
     num_media_tray_mappings = 0;
     has_media_ready = FALSE;
+    jpeg_constraints_queried = FALSE;
+    jpeg_k_octets_reported = FALSE;
+    jpeg_x_dimension_reported = FALSE;
+    jpeg_y_dimension_reported = FALSE;
     supports_create_job = FALSE;
     supports_send_document = FALSE;
     supports_multiple_document_jobs = FALSE;
@@ -2140,6 +2307,15 @@ static BOOL mp_cache_write_file(CONST_STRPTR filename,
         snprintf(line, sizeof(line), "FORMAT=%s\n", supported_formats[i]);
         FPuts(fh, line);
     }
+
+    if (jpeg_constraints_queried)
+        FPuts(fh, "JPEG_CONSTRAINTS_QUERIED=1\n");
+    if (jpeg_k_octets_reported)
+        FPuts(fh, "JPEG_K_OCTETS_REPORTED=1\n");
+    if (jpeg_x_dimension_reported)
+        FPuts(fh, "JPEG_X_DIMENSION_REPORTED=1\n");
+    if (jpeg_y_dimension_reported)
+        FPuts(fh, "JPEG_Y_DIMENSION_REPORTED=1\n");
 
     for (i = 0; i < num_supported_media; ++i) {
         snprintf(line, sizeof(line), "MEDIA_SUPPORTED=%s\n", supported_media[i]);
@@ -2317,6 +2493,14 @@ static BOOL mp_cache_load_file(CONST_STRPTR filename) {
         if (strncmp(mp_cap_cache_line, "FORMAT=", 7) == 0) {
             store_value(supported_formats, &num_supported_formats,
                         mp_cap_cache_line + 7);
+        } else if (strcmp(mp_cap_cache_line, "JPEG_CONSTRAINTS_QUERIED=1") == 0) {
+            jpeg_constraints_queried = TRUE;
+        } else if (strcmp(mp_cap_cache_line, "JPEG_K_OCTETS_REPORTED=1") == 0) {
+            jpeg_k_octets_reported = TRUE;
+        } else if (strcmp(mp_cap_cache_line, "JPEG_X_DIMENSION_REPORTED=1") == 0) {
+            jpeg_x_dimension_reported = TRUE;
+        } else if (strcmp(mp_cap_cache_line, "JPEG_Y_DIMENSION_REPORTED=1") == 0) {
+            jpeg_y_dimension_reported = TRUE;
         } else if (strncmp(mp_cap_cache_line, "MEDIA_SUPPORTED=", 16) == 0) {
             store_value(supported_media, &num_supported_media,
                         mp_cap_cache_line + 16);
@@ -2413,6 +2597,7 @@ static void apply_cached_capabilities(struct Window *win) {
 
     /* Put the user's saved Unit0 choices back on top of the available lists. */
     apply_job_defaults_to_gadgets(win);
+    mp_warn_if_jpeg_nominal();
 }
 
 /* Reloads everything for current_unit_index: saved Unit%d config, its
@@ -3614,6 +3799,10 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     num_supported_dpi = 0;
     num_media_tray_mappings = 0;
     has_media_ready = FALSE;
+    jpeg_constraints_queried = TRUE;
+    jpeg_k_octets_reported = FALSE;
+    jpeg_x_dimension_reported = FALSE;
+    jpeg_y_dimension_reported = FALSE;
     supports_create_job = FALSE;
     supports_send_document = FALSE;
     supports_multiple_document_jobs = FALSE;
@@ -3698,7 +3887,9 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
             "document-format-supported", "printer-make-and-model",
             "sides-supported", "operations-supported",
             "multiple-document-jobs-supported",
-            "multiple-document-handling-supported", NULL
+            "multiple-document-handling-supported",
+            "jpeg-k-octets-supported", "jpeg-x-dimension-supported",
+            "jpeg-y-dimension-supported", NULL
         };
         int i;
         for (i = 0; mp_requested_attrs[i]; i++) {
@@ -4242,6 +4433,12 @@ query_receive_pump_gui:
                         }
                     } else if (strcmp(name, "document-format-supported") == 0 && value_tag == 0x49) {
                         store_value(supported_formats, &num_supported_formats, value);
+                    } else if (strcmp(name, "jpeg-k-octets-supported") == 0) {
+                        jpeg_k_octets_reported = TRUE;
+                    } else if (strcmp(name, "jpeg-x-dimension-supported") == 0) {
+                        jpeg_x_dimension_reported = TRUE;
+                    } else if (strcmp(name, "jpeg-y-dimension-supported") == 0) {
+                        jpeg_y_dimension_reported = TRUE;
                     } else if (strcmp(name, "printer-make-and-model") == 0 &&
                                (value_tag == 0x41 || value_tag == 0x42)) {
                         strncpy(printer_make_model, value, sizeof(printer_make_model) - 1);
@@ -4398,6 +4595,8 @@ query_receive_pump_gui:
     } else {
         printf("Printer did not report document-format-supported\n");
     }
+
+    mp_warn_if_jpeg_nominal();
 
     printf("query_printer_attributes completed\n");
     return 0;
@@ -5182,7 +5381,7 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
         ng.ng_TopEdge = row2_top;
     }
 
-    // Printer document engine: JPEG, PWG Raster, or PDF.
+    // Printer document engine: JPEG, PostScript, PWG Raster, or PDF.
     // LeftEdge is nudged right of the other rows' shared 130 - this is the
     // longest label at this column ("Printer Engine:", 15 chars) and at 130
     // it renders with no left margin at all, clipping against the window
@@ -5376,7 +5575,20 @@ void process_window_events(struct Window *win) {
     }
 
     while (!terminated) {
-        Wait(1L << win->UserPort->mp_SigBit);
+        ULONG window_signal = 1L << win->UserPort->mp_SigBit;
+        ULONG wait_mask = window_signal;
+        ULONG received_signals;
+
+        if (test_print_job.active && test_print_job.port)
+            wait_mask |= 1L << test_print_job.port->mp_SigBit;
+
+        received_signals = Wait(wait_mask);
+        if (test_print_job.active && test_print_job.port &&
+            (received_signals & (1L << test_print_job.port->mp_SigBit))) {
+            mp_test_print_complete(win);
+        }
+        if (!(received_signals & window_signal))
+            continue;
 
         imsg = GT_GetIMsg(win->UserPort);
         while (!terminated && imsg) {
@@ -5700,6 +5912,9 @@ void process_window_events(struct Window *win) {
             imsg = GT_GetIMsg(win->UserPort);
         }
     }
+
+    if (test_print_job.active)
+        mp_test_print_cancel(win);
 
     free(response); // Free the dynamically allocated buffer
 }

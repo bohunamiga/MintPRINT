@@ -37,7 +37,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 18
+#define MP_DRIVER_REV 21
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;
@@ -100,11 +100,17 @@ static BOOL g_page_pending = FALSE;
 static ULONG g_accum_width = 0;
 static ULONG g_accum_height = 0;
 static ULONG g_aux_height = 0;
+/* Some strip-printing applications describe the blank top margin as one or
+ * more impossible-width NOFORMFEED bands before the first real raster band.
+ * Keep their vertical extent pending without opening a page; when a normal
+ * width band arrives, materialise the pending height as white PWG rows. */
+static ULONG g_leading_aux_height = 0;
 static ULONG g_page_target_height = 0;
 static BOOL g_runaway_tripped = FALSE;
 static BOOL g_page_had_noformfeed = FALSE;
 static BOOL g_discard_aux_band = FALSE;
 static BOOL g_discard_aux_band_has_ink = FALSE;
+static BOOL g_discard_leading_aux_band = FALSE;
 /* io_Special from the most recent case-5 pre-master call - the one place
  * the RKM docs confirm carries it. Case 4 also receives io_Special as its
  * own x parameter per the same docs; case 4 logs its own x purely to
@@ -870,9 +876,7 @@ static BOOL mp_page_finalize(void)
         be[2] = (UBYTE)(g_accum_height >> 8);
         be[3] = (UBYTE)g_accum_height;
         if (!mp_spool_job_patch(g_pwg_page_header_offset +
-                                MP_PWG_HEIGHT_HEADER_OFFSET, be, 4) ||
-            !mp_spool_job_patch(g_pwg_page_header_offset +
-                                MP_PWG_ROWCOUNT_HEADER_OFFSET, be, 4)) {
+                                MP_PWG_HEIGHT_HEADER_OFFSET, be, 4)) {
             mp_log_text("Failed to patch accumulated PWG page height");
             g_job_failed = TRUE;
         }
@@ -1002,7 +1006,9 @@ int PRT_STDARGS DriverOpen(struct IORequest *ior)
     g_page_had_noformfeed = FALSE;
     g_discard_aux_band = FALSE;
     g_discard_aux_band_has_ink = FALSE;
+    g_discard_leading_aux_band = FALSE;
     g_aux_height = 0;
+    g_leading_aux_height = 0;
     g_page_target_height = 0;
     g_duplex_job_failed = FALSE;
     g_duplex_page_count = 0;
@@ -1104,9 +1110,11 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
             BOOL continuation;
             ULONG encoder_height;
             ULONG media_height = 0;
+            ULONG leading_height = 0;
             g_rows_seen = 0;
             g_discard_aux_band = FALSE;
             g_discard_aux_band_has_ink = FALSE;
+            g_discard_leading_aux_band = FALSE;
             /* g_config was already loaded once for this job in DriverOpen()
              * - case 5 (which fires before this on the job's first page)
              * needs it that early for the PED resolution fields below. */
@@ -1133,10 +1141,28 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                 return PDERR_CANCEL;
             }
 
-            /* Wordworth can issue narrow graphics dumps under the same
-             * SPECIAL_NOFORMFEED page. They cannot be appended as horizontal
-             * rows to the full-width PWG raster, so ignore their pixels but
-             * retain their total height as page-boundary evidence. */
+            /* Some applications issue narrow blank bands before their real
+             * page. The Canon trace contained five 4x50 bands before one
+             * 4962-pixel-wide page: discarding them removed 250 vertical
+             * rows (10.6mm at 600dpi) from the document's top margin. Keep
+             * suppressing the impossible-width raster itself, but case 4
+             * retains its height until the first normal-width page begins. */
+            if (!g_page_pending && g_engine == MP_ENGINE_PWG &&
+                (g_current_special & SPECIAL_NOFORMFEED) &&
+                mp_is_tiny_leading_auxiliary_band((ULONG)x)) {
+                g_discard_aux_band = TRUE;
+                g_discard_leading_aux_band = TRUE;
+                g_page_width = (ULONG)x;
+                g_page_height = (ULONG)y;
+                mp_log_3("Ignoring leading tiny NOFORMFEED band width/height/zero",
+                         x, y, 0);
+                return PDERR_NOERR;
+            }
+
+            /* Wordworth can also issue narrow graphics dumps under a page
+             * already being accumulated. They cannot be appended as
+             * horizontal rows to the full-width PWG raster, so ignore their
+             * pixels but retain their height as page-boundary evidence. */
             if (g_page_pending && g_engine == MP_ENGINE_PWG &&
                 (g_current_special & SPECIAL_NOFORMFEED) &&
                 mp_is_tiny_auxiliary_band(g_accum_width, (ULONG)x)) {
@@ -1175,7 +1201,13 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
 
             g_page_width = (ULONG)x;
             g_page_height = (ULONG)y;
-            encoder_height = g_page_height;
+            leading_height = g_leading_aux_height;
+            if (leading_height > 0xffffffffUL - g_page_height) {
+                mp_log_text("Leading PWG whitespace height overflow");
+                g_leading_aux_height = 0;
+                return PDERR_BUFFERMEMORY;
+            }
+            encoder_height = leading_height + g_page_height;
             if (mp_detect_engine(&g_config) == MP_ENGINE_PWG &&
                 (g_current_special & SPECIAL_NOFORMFEED)) {
                 media_height = mp_media_target_height(
@@ -1192,6 +1224,22 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                 return PDERR_BUFFERMEMORY;
             }
 
+            /* The narrow leading bands carry no usable horizontal raster,
+             * but their height is real page geometry. Write that height as
+             * white rows before accepting the first full-width content row.
+             * Pending bands alone never open a job, so an all-auxiliary
+             * sequence still cannot resurrect the old blank-page storm. */
+            if (leading_height > 0) {
+                if (!mp_job_pad_pwg(leading_height)) {
+                    g_leading_aux_height = 0;
+                    if (mp_duplex_requested()) g_duplex_job_failed = TRUE;
+                    return PDERR_BUFFERMEMORY;
+                }
+                mp_log_3("PWG restored leading whitespace rows/pending/pageHeight",
+                         (LONG)leading_height, 0, (LONG)encoder_height);
+            }
+            g_leading_aux_height = 0;
+
             /* Every page tentatively starts pending; case 4 is the only
              * place that decides whether to finish now or wait for more
              * bands (SPECIAL_NOFORMFEED), so a normal single-band page
@@ -1199,7 +1247,7 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
              * its own case 4 call exactly as before this change. */
             g_page_pending = TRUE;
             g_accum_width = g_page_width;
-            g_accum_height = g_page_height;
+            g_accum_height = leading_height + g_page_height;
             g_aux_height = 0;
             g_page_target_height = media_height;
             g_page_had_noformfeed =
@@ -1253,10 +1301,25 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
 
             if (g_discard_aux_band) {
                 if (ct != 0) g_job_failed = TRUE;
-                mp_log_text(g_discard_aux_band_has_ink
-                    ? "Discarded nonblank tiny NOFORMFEED auxiliary band"
-                    : "Discarded blank tiny NOFORMFEED auxiliary band");
-                if (ct == 0) {
+                if (g_discard_leading_aux_band) {
+                    if (ct == 0) {
+                        if (g_leading_aux_height >
+                            0xffffffffUL - g_page_height)
+                            g_leading_aux_height = 0xffffffffUL;
+                        else
+                            g_leading_aux_height += g_page_height;
+                    }
+                    mp_log_3(g_discard_aux_band_has_ink
+                        ? "Deferred nonblank leading tiny band width/height/pending"
+                        : "Deferred blank leading tiny band width/height/pending",
+                        (LONG)g_page_width, (LONG)g_page_height,
+                        (LONG)g_leading_aux_height);
+                } else {
+                    mp_log_text(g_discard_aux_band_has_ink
+                        ? "Discarded nonblank tiny NOFORMFEED auxiliary band"
+                        : "Discarded blank tiny NOFORMFEED auxiliary band");
+                }
+                if (ct == 0 && !g_discard_leading_aux_band) {
                     if (g_aux_height > 0xffffffffUL - g_page_height)
                         g_aux_height = 0xffffffffUL;
                     else
@@ -1264,7 +1327,8 @@ LONG PRT_STDARGS Render(LONG ct, LONG x, LONG y, LONG status, ...)
                 }
                 g_discard_aux_band = FALSE;
                 g_discard_aux_band_has_ink = FALSE;
-                if (!g_job_failed && mp_media_page_complete(
+                g_discard_leading_aux_band = FALSE;
+                if (g_page_pending && !g_job_failed && mp_media_page_complete(
                         g_accum_height, g_aux_height,
                         g_page_target_height)) {
                     mp_log_3("PWG media boundary reached rows/aux/target",

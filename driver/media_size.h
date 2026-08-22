@@ -23,6 +23,11 @@ unsigned long mp_media_target_height(const char *media,
 int mp_is_tiny_auxiliary_band(unsigned long page_width,
                               unsigned long band_width);
 
+/* Some applications emit a narrow NOFORMFEED control dump before the real
+ * page. At that point the page width is not known yet, so keep this leading
+ * classifier limited to widths that cannot plausibly be a printable page. */
+int mp_is_tiny_leading_auxiliary_band(unsigned long band_width);
+
 /* Decide whether the logical vertical extent accumulated under
  * SPECIAL_NOFORMFEED has reached the configured physical media height.
  * Auxiliary dumps are not written into the full-width PWG raster, but their

@@ -228,3 +228,51 @@ int mp_http_decode_chunked(char *body, int encoded_len)
         src += (int)size + 2;
     }
 }
+
+int mp_http_final_body(char *buf, int len, int *http_status,
+                       int *body_off, int *body_len)
+{
+    int header_start = 0;
+    int body;
+    int status;
+    int length;
+
+    if (!buf || len < 0) return -1;
+
+    for (;;) {
+        body = mp_http_find_body(buf, len, header_start);
+        if (body < 0) return 0;
+        status = mp_http_status(buf, len, header_start);
+        if (status < 100 || status > 999) return -1;
+        if (status < 200) {
+            /* Interim responses such as 100 Continue have no body. The
+             * next status line begins exactly where this header ended. */
+            header_start = body;
+            continue;
+        }
+        break;
+    }
+
+    if (mp_http_header_has_token(buf, header_start, body,
+                                 "Transfer-Encoding", "chunked")) {
+        int complete = mp_http_chunked_complete(buf + body, len - body);
+        if (complete <= 0) return complete;
+        length = mp_http_decode_chunked(buf + body, len - body);
+        if (length < 0) return -1;
+    } else {
+        length = mp_http_content_length(buf, header_start, body);
+        if (length >= 0) {
+            if (len - body < length) return 0;
+        } else {
+            /* IPP's fixed eight-byte response header is enough to read the
+             * status when an HTTP/1.0-style server supplies no framing. */
+            length = len - body;
+            if (length < 8) return 0;
+        }
+    }
+
+    if (http_status) *http_status = status;
+    if (body_off) *body_off = body;
+    if (body_len) *body_len = length;
+    return 1;
+}

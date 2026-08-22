@@ -93,6 +93,42 @@ static void mp_spool_proc_close_job(BPTR *job_fh)
     }
 }
 
+/* Single-sided documents submit one Print-Job per page (see driver_core.c's
+ * mp_page_submit_and_track) as soon as each page finishes rendering. A real
+ * printer (Canon TS8300) is still busy engine-printing page N when page
+ * N+1's Print-Job request arrives and correctly rejects it with IPP
+ * server-error-busy (0x0507) rather than queuing it - so without a retry,
+ * only the first page of a one-sided job ever prints. Duplex jobs never hit
+ * this because they accumulate every page into one job file and submit
+ * once, at DriverClose. Retry only this specific, well-defined "try again
+ * later" status; any other error status is left to fail immediately as
+ * before. */
+#define MP_IPP_STATUS_SERVER_BUSY 0x0507
+#define MP_IPP_BUSY_RETRY_LIMIT 30
+#define MP_IPP_BUSY_RETRY_TICKS 50 /* Delay() ticks, ~1 second */
+
+static LONG mp_spool_proc_ipp_submit_retrying(const struct MPConfig *cfg,
+                                              CONST_STRPTR filename,
+                                              CONST_STRPTR document_format,
+                                              struct MPIPPResult *result)
+{
+    LONG rc;
+    ULONG attempt = 0;
+
+    for (;;) {
+        rc = mp_ipp_print_document(cfg, filename, document_format, result);
+        if (rc != -16 || !result ||
+            result->ipp_status != MP_IPP_STATUS_SERVER_BUSY ||
+            ++attempt >= MP_IPP_BUSY_RETRY_LIMIT)
+            break;
+        if (cfg && cfg->debug)
+            mp_spool_proc_append_log(
+                "MintPRINT: IPP server busy, retrying page submission");
+        Delay(MP_IPP_BUSY_RETRY_TICKS);
+    }
+    return rc;
+}
+
 static LONG mp_spool_entry(void)
 {
     struct MsgPort *port;
@@ -218,9 +254,9 @@ static LONG mp_spool_entry(void)
                     break;
 
                 case MP_SPOOL_CMD_IPP_SUBMIT:
-                    m->result = mp_ipp_print_document(m->cfg, m->filename,
-                                                      m->document_format,
-                                                      &m->ipp_result);
+                    m->result = mp_spool_proc_ipp_submit_retrying(
+                                     m->cfg, m->filename, m->document_format,
+                                     &m->ipp_result);
                     break;
 
                 case MP_SPOOL_CMD_CONFIG_LOAD:

@@ -2,7 +2,7 @@ Short:        IPP/AirPrint driver and setup tool
 Author:       Darren Banfi (boingball)
 Uploader:     boingball gmail com (Darren Banfi)
 Type:         driver/print
-Version:      1.0.3b
+Version:      1.1.0
 Requires:     68000+; AmigaOS 3.1+; TCP/IP stack providing bsdsocket.library
 Architecture: m68k-amigaos >= 3.1.0
 Distribution: MIT License - see LICENSE in the source repository
@@ -181,6 +181,34 @@ Claude.
 
 History
 -------
+
+1.1.0  PostScript engine, faster JPEG, and more reliable wireless setup.
+
+       - Added a fourth output engine, PostScript, for printers (e.g.
+         Samsung C480W) that advertise IPP JPEG support but silently
+         discard the job; it reuses the existing JPEG encoder internally,
+         so it benefits from the speed-up below too
+       - Query/Discover now wait long enough for Wi-Fi printers that
+         power down their radio between jobs (HP OfficeJet/Envy series
+         confirmed) to wake up, instead of giving up after one attempt
+       - Fixed printer.device occasionally reporting an oversized page
+         width for a single-shot page (observed producing a page ~30%
+         wider than the configured media); the fix now correctly tells
+         a genuinely oversized page apart from a legitimate landscape
+         one, and covers the JPEG and PDF engines as well as PWG Raster
+       - Fixed the test page's Wi-Fi-driven-oversized-page fix leaving a
+         blank left margin and clipping the right edge on some hardware
+       - PWG Raster (the cheapest engine to encode) is now the default
+         whenever a printer advertises it, instead of always defaulting
+         to JPEG
+       - Replaced the JPEG encoder's page-width DCT with a much faster
+         algorithm (fewer than a tenth of the multiplications for the
+         same result), significantly speeding up JPEG and PostScript
+         jobs on real 68k hardware
+       - Test Print now runs asynchronously so the window stays
+         responsive while printing, and uses the current Workbench
+         screen's own palette instead of a fixed one, fixing a
+         toner-wasting grey background on at least one laser printer
 
 1.0.3b Page-boundary fixes and clearer setup options.
 

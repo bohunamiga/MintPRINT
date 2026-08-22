@@ -28,6 +28,7 @@ accepts a job and silently discards it.
 | **Brother HL-L2350DW** on A500 PiStorm, Wi-Fi | ✅ Working | 3.2.3 | Roadshow | Original Aminet release reported as working perfectly; exact engine was not recorded | No printer-specific override reported |
 | **Brother HL-L2350DW** on A4000, CSMkII 060/50 and Ariadne-II, wired | 🟡 Partial | 3.2.3 | Roadshow | A one-page AmigaWriter document prints, but multi-page output is broken in both 1.0.3 and the 1.0.3a/main revision-15 test build | 1.0.3 adds a Brother error sheet after each page and enlarges/crops page 3; revision 15 removes the error sheets but prints only page 2 |
 | **Canon TS8360** (IPP identifies it as **TS8300 series**) | ✅ Working | 3.2.3 | Not reported | PWG Raster text and colour pictures physically confirmed; JPEG pictures also work | Port `631`; path `/ipp/print`; PWG Raster; **`300* dpi` compatibility mode**; A4; source `auto`; scaling as required. Printer advertises only 600 DPI but accepts 300 DPI |
+| **HP OfficeJet 8014e** on A4000, 68060, Wi-Fi | 🧪 Testing | 3.2.3 | Not reported | Detection/Query confirmed fixed by the driver's Wi-Fi connect retry; Test Print not yet reconfirmed after the oversized-page-width and JPEG-speed fixes | Port `631`; path `/ipp/print`; advertises both JPEG and PWG Raster - a fresh add now defaults to PWG Raster |
 | **Samsung C480W / C48x Series** | ❌ Current release / 🧪 PostScript build | 3.9 Boing Bag 2; Kickstart 3.1 | Not reported | JPEG is silently discarded; PWG Raster and PDF are rejected. External one-shot PostScript printed; MintPRINT PostScript PR #17 awaits confirmation | Port `631`; path `/ipp/print`; `300 dpi`; A4; tray `tray-1`; normal quality; scaling `auto`; allow 3–4 minutes for PostScript |
 
 “Not recorded” is intentional. Do not assume Roadshow, AmiTCP or Miami from
@@ -125,6 +126,43 @@ raster has poor font rendering. Manually setting `RESOLUTION=300` produced a
 fully correct physical page. Settings therefore offers **`300* dpi`** for PWG
 Raster; `*` identifies an unreported compatibility resolution rather than a
 capability claimed by the printer.
+
+### HP OfficeJet 8014e
+
+Full evidence is in
+[issue #30](https://github.com/boingball/MintPRINT/issues/30). The tested
+system was an A4000 with a 68060 (128MB Fast RAM plus a 128MB Zorro III
+card), AmigaOS 3.2.3, connected to the printer over Wi-Fi.
+
+The printer's IPP capability response is unremarkable - it advertises both
+`image/jpeg` and `image/pwg-raster` (not `application/pdf`), answers on
+port `631` at `/ipp/print`, and reports `iso_a4_210x297mm` as its default
+media. Two problems specific to this report, both since fixed:
+
+- **Detection/Query.** The printer was found by Discover (SSDP/mDNS, which
+  only needs a UDP reply) but a direct Query, and the follow-up query after
+  Discover, both timed out. HP OfficeJet/Envy-series printers let their
+  Wi-Fi radio drop into a power-save state between jobs; the radio wakes for
+  broadcast/multicast discovery traffic, but the first real TCP connect
+  afterwards can be slow enough to blow past the driver's connect timeout.
+  Fixed by giving a connect timeout on the primary port a second attempt
+  before moving on, and raising the timeout itself from 5 to 8 seconds.
+- **Test Print.** After the Query fix, Test Print appeared to hang - the
+  driver log showed a JPEG encode targeting `3287x3508` instead of the
+  correct `2480x3508` for A4 (the same oversized-DUMPRPORT-page-width
+  behaviour documented for the Settings test page elsewhere in this repo,
+  here hitting the JPEG engine since this printer's driver defaulted to
+  JPEG despite also supporting PWG Raster). ~30% more pixels than necessary,
+  through the JPEG encoder's original direct-matrix DCT, was slow enough on
+  real 68k hardware to look hung rather than merely slow. Addressed by
+  extending the page-width clamp to the JPEG/PDF engines (previously
+  PWG-only), replacing the JPEG DCT with a much faster algorithm, and
+  making PWG Raster - unaffected by the JPEG-specific slowness in the first
+  place - the default engine whenever a printer advertises it.
+
+None of the Test Print fixes have been reconfirmed against this printer's
+actual hardware yet; this entry should move to ✅ Working once a physical
+print is confirmed, or be updated with whatever is still wrong if not.
 
 ### Samsung C480W / C48x Series
 

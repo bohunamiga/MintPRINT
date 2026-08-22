@@ -137,7 +137,7 @@ static struct MPTestPrintJob test_print_job;
 
 // Define the USED macro for GCC
 #define USED __attribute__((used))
-#define MINTPRINT_SETTINGS_VERSION "1.0.3b"
+#define MINTPRINT_SETTINGS_VERSION "1.1.0"
 #define MINTPRINT_DRIVER_DEST ((CONST_STRPTR)"DEVS:Printers/MintPRINT")
 #define MINTPRINT_DRIVER_SRC  ((CONST_STRPTR)"PROGDIR:MintPRINT")
 
@@ -154,7 +154,7 @@ static BOOL mp_read_driver_revision(CONST_STRPTR path, UWORD *revision_out);
 
 /* Visible both to AmigaOS's Version command and in the About requester. */
 static const char USED mintprint_version[] =
-    "$VER: MintPrintSettings " MINTPRINT_SETTINGS_VERSION " (21.08.2026)";
+    "$VER: MintPrintSettings " MINTPRINT_SETTINGS_VERSION " (22.08.2026)";
 
 // Simple extension check
 BOOL has_extension(const char *filename, const char *ext) {

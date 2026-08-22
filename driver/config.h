@@ -25,6 +25,7 @@ struct MPConfig {
     char quality[MP_CONFIG_OPTION_MAX];
     char scaling[MP_CONFIG_OPTION_MAX];
     char sides[MP_CONFIG_OPTION_MAX];
+    char pwg_sheet_back[MP_CONFIG_OPTION_MAX];
 };
 
 void mp_config_defaults(struct MPConfig *cfg);

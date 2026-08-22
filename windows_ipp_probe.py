@@ -25,6 +25,8 @@ VERSION = "2.1"
 # IPP operations
 OP_PRINT_JOB = 0x0002
 OP_VALIDATE_JOB = 0x0004
+OP_CREATE_JOB = 0x0005
+OP_SEND_DOCUMENT = 0x0006
 OP_GET_PRINTER_ATTRIBUTES = 0x000B
 
 # Delimiter tags
@@ -160,6 +162,7 @@ REQUESTED_ATTRIBUTES = [
     "generated-natural-language-supported",
     "job-creation-attributes-supported",
     "multiple-document-jobs-supported",
+    "multiple-document-handling-supported",
     "copies-default",
     "copies-supported",
     "media-default",
@@ -735,13 +738,16 @@ def report(parsed, target, http_status, http_reason, response_bytes, dump_all=Fa
     add_list(lines, "Orientations", all_values(parsed, "orientation-requested-supported"), ORIENTATION_NAMES, 10)
     add_list(lines, "Sides default", all_values(parsed, "sides-default"), max_items=5)
     add_list(lines, "Sides supported", all_values(parsed, "sides-supported"), max_items=20)
+    add_list(lines, "Multi-doc jobs", all_values(parsed, "multiple-document-jobs-supported"), max_items=5)
+    add_list(lines, "Multi-doc handling", all_values(parsed, "multiple-document-handling-supported"), max_items=20)
     add_list(lines, "Copies supported", all_values(parsed, "copies-supported"), max_items=10)
     add_list(lines, "Output bins", all_values(parsed, "output-bin-supported"), max_items=20)
     lines.append("")
 
     operations = [v for v in all_values(parsed, "operations-supported") if isinstance(v, int)]
     lines.append("IPP operations")
-    for op in (OP_PRINT_JOB, OP_VALIDATE_JOB, OP_GET_PRINTER_ATTRIBUTES):
+    for op in (OP_PRINT_JOB, OP_VALIDATE_JOB, OP_CREATE_JOB,
+               OP_SEND_DOCUMENT, OP_GET_PRINTER_ATTRIBUTES):
         lines.append("  %-27s %s" % (
             OPERATION_NAMES[op] + ":",
             "YES" if op in operations else ("UNKNOWN" if not operations else "NO")
@@ -774,6 +780,13 @@ def report(parsed, target, http_status, http_reason, response_bytes, dump_all=Fa
         )
     if operations and OP_PRINT_JOB not in operations:
         warnings.append("Printer does not advertise the IPP Print-Job operation.")
+    duplex_sides = [value for value in all_values(parsed, "sides-supported")
+                    if value in ("two-sided-long-edge", "two-sided-short-edge")]
+    if duplex_sides and "image/pwg-raster" not in formats:
+        warnings.append(
+            "Printer advertises duplex sides but not the multi-page PWG "
+            "Raster format required by MintPRINT duplex."
+        )
     if first_value(parsed, "printer-is-accepting-jobs") is False:
         warnings.append("Printer reports that it is not accepting jobs.")
     if first_value(parsed, "printer-state") == 5:

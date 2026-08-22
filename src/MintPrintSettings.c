@@ -96,6 +96,7 @@ extern struct GfxBase *GfxBase;
 #define GAD_SET_ACTIVE_BUTTON 16
 #define GAD_MODEL_DISPLAY 17
 #define GAD_RESOLUTION 18
+#define GAD_SIDES 19
 
 // Discovery selection dialog gadget IDs (separate window/gadget list)
 #define GAD_DISC_CYCLE  1
@@ -189,6 +190,11 @@ int num_supported_output_modes = 0;
 
 char supported_sides[MAX_VALUES][MAX_ATTR_LEN];
 int num_supported_sides = 0;
+BOOL supports_create_job = FALSE;
+BOOL supports_send_document = FALSE;
+BOOL supports_multiple_document_jobs = FALSE;
+BOOL supports_single_document_handling = FALSE;
+char pwg_sheet_back_value[MAX_ATTR_LEN] = "normal";
 
 char supported_scaling[MAX_VALUES][MAX_ATTR_LEN];
 int num_supported_scaling = 0;
@@ -239,6 +245,12 @@ static STRPTR mp_quality_label_ptrs[MAX_VALUES + 2];
 
 static char mp_dpi_label_storage[MP_MAX_DPI_OPTIONS + 1][16];
 static STRPTR mp_dpi_label_ptrs[MP_MAX_DPI_OPTIONS + 2];
+
+#define MP_MAX_SIDES_OPTIONS 3
+static char mp_sides_label_storage[MP_MAX_SIDES_OPTIONS][24];
+static char mp_sides_value_storage[MP_MAX_SIDES_OPTIONS][MAX_ATTR_LEN];
+static STRPTR mp_sides_label_ptrs[MP_MAX_SIDES_OPTIONS + 1];
+static int mp_sides_option_count = 1;
 
 static char mp_unit_label_storage[MAX_UNITS][MP_UNIT_LABEL_LEN];
 static STRPTR mp_unit_label_ptrs[MAX_UNITS + 1];
@@ -348,6 +360,44 @@ static int mp_dpi_active_index(int dpi) {
 
     for (i = 0; i < num_supported_dpi; ++i) {
         if (supported_dpi[i] == dpi) return i;
+    }
+    return 0;
+}
+
+/* Defined with the other persisted Unit0 buffers below. */
+extern char driver_sides_buffer[MAX_ATTR_LEN];
+extern char driver_engine_buffer[32];
+
+static BOOL mp_supported_side(const char *value) {
+    int i;
+
+    if (!value) return FALSE;
+    for (i = 0; i < num_supported_sides; ++i) {
+        if (strcmp(supported_sides[i], value) == 0) return TRUE;
+    }
+    return FALSE;
+}
+
+static BOOL mp_duplex_transport_supported(void) {
+    int i;
+
+    /* MintPRINT duplex is one multi-page PWG Raster document in one ordinary
+     * Print-Job. This works on printers such as the Brother MFC-J6930DW that
+     * advertise duplex but explicitly reject multi-document IPP Jobs. */
+    if (strcmp(driver_engine_buffer, "pwg-raster") != 0) return FALSE;
+    for (i = 0; i < num_supported_formats; ++i) {
+        if (strcmp(supported_formats[i], "image/pwg-raster") == 0)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static ULONG mp_sides_active_index(void) {
+    int i;
+
+    for (i = 0; i < mp_sides_option_count; ++i) {
+        if (strcmp(driver_sides_buffer, mp_sides_value_storage[i]) == 0)
+            return (ULONG)i;
     }
     return 0;
 }
@@ -874,6 +924,23 @@ static void capture_driver_settings(struct Window *win) {
             selected_quality[sizeof(selected_quality) - 1] = '\0';
         }
     }
+
+    g = find_gadget_by_id(GAD_SIDES);
+    if (g && mp_sides_option_count > 1) {
+        ULONG selected = 0;
+        GT_GetGadgetAttrs(g, win, NULL,
+                          GTCY_Active, (ULONG)&selected,
+                          TAG_DONE);
+        if (selected < (ULONG)mp_sides_option_count) {
+            strncpy(driver_sides_buffer, mp_sides_value_storage[selected],
+                    sizeof(driver_sides_buffer) - 1);
+            driver_sides_buffer[sizeof(driver_sides_buffer) - 1] = '\0';
+        }
+    } else if (mp_sides_option_count <= 1) {
+        /* Absence already means one-sided. Avoid adding a `sides` Job
+         * Template attribute to a printer that did not advertise it. */
+        driver_sides_buffer[0] = '\0';
+    }
 }
 
 static BOOL write_driver_config_file(CONST_STRPTR filename) {
@@ -924,6 +991,8 @@ static BOOL write_driver_config_file(CONST_STRPTR filename) {
     snprintf(line, sizeof(line), "SCALING=%s\n", driver_scaling_buffer);
     FPuts(file, line);
     snprintf(line, sizeof(line), "SIDES=%s\n", driver_sides_buffer);
+    FPuts(file, line);
+    snprintf(line, sizeof(line), "PWG_SHEET_BACK=%s\n", pwg_sheet_back_value);
     FPuts(file, line);
     snprintf(line, sizeof(line), "MODEL=%s\n", printer_make_model);
     FPuts(file, line);
@@ -992,6 +1061,7 @@ static BOOL load_driver_config(void) {
     driver_quality_buffer[0] = '\0';
     driver_scaling_buffer[0] = '\0';
     driver_sides_buffer[0] = '\0';
+    strcpy(pwg_sheet_back_value, "normal");
     printer_make_model[0] = '\0';
 
     unit_config_path(current_unit_index, FALSE, env_path, sizeof(env_path));
@@ -1060,8 +1130,24 @@ static BOOL load_driver_config(void) {
             strncpy(driver_scaling_buffer, line + 8, sizeof(driver_scaling_buffer) - 1);
             driver_scaling_buffer[sizeof(driver_scaling_buffer) - 1] = '\0';
         } else if (strncmp(line, "SIDES=", 6) == 0) {
-            strncpy(driver_sides_buffer, line + 6, sizeof(driver_sides_buffer) - 1);
-            driver_sides_buffer[sizeof(driver_sides_buffer) - 1] = '\0';
+            const char *sides = line + 6;
+            if (strcmp(sides, "one-sided") == 0 ||
+                strcmp(sides, "two-sided-long-edge") == 0 ||
+                strcmp(sides, "two-sided-short-edge") == 0) {
+                strncpy(driver_sides_buffer, sides,
+                        sizeof(driver_sides_buffer) - 1);
+                driver_sides_buffer[sizeof(driver_sides_buffer) - 1] = '\0';
+            }
+        } else if (strncmp(line, "PWG_SHEET_BACK=", 15) == 0) {
+            const char *sheet_back = line + 15;
+            if (strcmp(sheet_back, "normal") == 0 ||
+                strcmp(sheet_back, "rotated") == 0 ||
+                strcmp(sheet_back, "flipped") == 0 ||
+                strcmp(sheet_back, "manual-tumble") == 0) {
+                strncpy(pwg_sheet_back_value, sheet_back,
+                        sizeof(pwg_sheet_back_value) - 1);
+                pwg_sheet_back_value[sizeof(pwg_sheet_back_value) - 1] = '\0';
+            }
         } else if (strncmp(line, "MODEL=", 6) == 0) {
             strncpy(printer_make_model, line + 6, sizeof(printer_make_model) - 1);
             printer_make_model[sizeof(printer_make_model) - 1] = '\0';
@@ -1136,6 +1222,12 @@ static void seed_saved_option_labels(void) {
     mp_dpi_label_storage[0][sizeof(mp_dpi_label_storage[0]) - 1] = '\0';
     mp_dpi_label_ptrs[1] = NULL;
 
+    mp_sides_label_ptrs[0] = mp_sides_label_storage[0];
+    strcpy(mp_sides_label_storage[0], "One-sided");
+    strcpy(mp_sides_value_storage[0], "one-sided");
+    mp_sides_label_ptrs[1] = NULL;
+    mp_sides_option_count = 1;
+
     media_dropdown_items = mp_media_label_ptrs;
     print_mode_labels = mp_print_mode_label_ptrs;
     scaling_mode_labels = mp_scaling_label_ptrs;
@@ -1199,6 +1291,14 @@ static void apply_saved_option_state(struct Window *win) {
                               TAG_DONE);
     }
 
+    g = find_gadget_by_id(GAD_SIDES);
+    if (g)
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GTCY_Labels, (ULONG)mp_sides_label_ptrs,
+                          GTCY_Active, 0,
+                          GA_Disabled, TRUE,
+                          TAG_DONE);
+
     GT_RefreshWindow(win, NULL);
 }
 
@@ -1257,6 +1357,12 @@ static void apply_job_defaults_to_gadgets(struct Window *win) {
             }
         }
     }
+
+    g = find_gadget_by_id(GAD_SIDES);
+    if (g)
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GTCY_Active, mp_sides_active_index(),
+                          TAG_DONE);
 
     GT_RefreshWindow(win, NULL);
 }
@@ -1437,7 +1543,7 @@ static BOOL mintprint_test_page(struct Window *win) {
      * which is commonly mid-grey and made the Samsung laser cover most of
      * the test page in toner. Other palette pens still provide colour
      * swatches, so this remains an end-to-end colour conversion check. */
-    SetAPen(&test_print_job.rastport, light_pen);
+    SetAPen(&test_print_job.rastport, depth > 1 ? 2 : dark_pen);
     RectFill(&test_print_job.rastport, 0, 0,
              MP_TEST_PAGE_WIDTH - 1, MP_TEST_PAGE_HEIGHT - 1);
     SetAPen(&test_print_job.rastport, dark_pen);
@@ -1499,7 +1605,7 @@ static BOOL mintprint_test_page(struct Window *win) {
         mp_test_print_text(&test_print_job.rastport, 12, 172, 228, line);
     }
 
-    SetAPen(&test_print_job.rastport, depth > 1 ? 2 : dark_pen);
+    SetAPen(&test_print_job.rastport, light_pen);
     RectFill(&test_print_job.rastport, 12, 190, 78, 224);
     SetAPen(&test_print_job.rastport, depth > 1 ? 3 : dark_pen);
     RectFill(&test_print_job.rastport, 86, 190, 152, 224);
@@ -1594,6 +1700,12 @@ static void apply_driver_config_to_gadgets(struct Window *win) {
     if (g)
         GT_SetGadgetAttrs(g, win, NULL,
                           GTCY_Active, (ULONG)mp_dpi_active_index(driver_resolution),
+                          TAG_DONE);
+
+    g = find_gadget_by_id(GAD_SIDES);
+    if (g)
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GTCY_Active, mp_sides_active_index(),
                           TAG_DONE);
 
     g = find_gadget_by_id(GAD_MODEL_DISPLAY);
@@ -1818,6 +1930,59 @@ void update_quality_dropdown(struct Window *win) {
     }
 }
 
+static void update_sides_dropdown(struct Window *win) {
+    struct Gadget *g;
+    BOOL transport_ok = mp_duplex_transport_supported();
+    int count = 0;
+
+    mp_sides_label_ptrs[count] = mp_sides_label_storage[count];
+    strcpy(mp_sides_label_storage[count], "One-sided");
+    strcpy(mp_sides_value_storage[count], "one-sided");
+    ++count;
+
+    if (transport_ok && mp_supported_side("two-sided-long-edge")) {
+        mp_sides_label_ptrs[count] = mp_sides_label_storage[count];
+        strcpy(mp_sides_label_storage[count], "Long edge");
+        strcpy(mp_sides_value_storage[count], "two-sided-long-edge");
+        ++count;
+    }
+    if (transport_ok && mp_supported_side("two-sided-short-edge")) {
+        mp_sides_label_ptrs[count] = mp_sides_label_storage[count];
+        strcpy(mp_sides_label_storage[count], "Short edge");
+        strcpy(mp_sides_value_storage[count], "two-sided-short-edge");
+        ++count;
+    }
+
+    mp_sides_label_ptrs[count] = NULL;
+    mp_sides_option_count = count;
+
+    if (count <= 1) {
+        if (driver_sides_buffer[0] == 't')
+            printf("Duplex is unavailable for this printer; using one-sided.\n");
+        driver_sides_buffer[0] = '\0';
+    } else if (mp_sides_active_index() == 0 &&
+               strcmp(driver_sides_buffer, "one-sided") != 0) {
+        strcpy(driver_sides_buffer, "one-sided");
+    }
+
+    g = find_gadget_by_id(GAD_SIDES);
+    if (g && win) {
+        GT_SetGadgetAttrs(g, win, NULL,
+                          GTCY_Labels, (ULONG)mp_sides_label_ptrs,
+                          GTCY_Active, mp_sides_active_index(),
+                          GA_Disabled, count > 1 ? FALSE : TRUE,
+                          TAG_DONE);
+        RefreshGList(g, win, NULL, 1);
+        GT_RefreshWindow(win, NULL);
+    }
+
+    if (!transport_ok &&
+        (mp_supported_side("two-sided-long-edge") ||
+         mp_supported_side("two-sided-short-edge"))) {
+        printf("Duplex requires the PWG Raster engine; select PWG Raster.\n");
+    }
+}
+
 static BOOL mp_printer_advertises_format(const char *mime) {
     int i;
 
@@ -1963,6 +2128,11 @@ static void mp_cache_clear_capabilities(void) {
     jpeg_k_octets_reported = FALSE;
     jpeg_x_dimension_reported = FALSE;
     jpeg_y_dimension_reported = FALSE;
+    supports_create_job = FALSE;
+    supports_send_document = FALSE;
+    supports_multiple_document_jobs = FALSE;
+    supports_single_document_handling = FALSE;
+    strcpy(pwg_sheet_back_value, "normal");
 }
 
 static BOOL mp_cache_write_file(CONST_STRPTR filename,
@@ -2028,6 +2198,15 @@ static BOOL mp_cache_write_file(CONST_STRPTR filename,
         snprintf(line, sizeof(line), "SIDE=%s\n", supported_sides[i]);
         FPuts(fh, line);
     }
+
+    if (supports_create_job) FPuts(fh, "CREATE_JOB=1\n");
+    if (supports_send_document) FPuts(fh, "SEND_DOCUMENT=1\n");
+    if (supports_multiple_document_jobs)
+        FPuts(fh, "MULTIPLE_DOCUMENT_JOBS=1\n");
+    if (supports_single_document_handling)
+        FPuts(fh, "SINGLE_DOCUMENT_HANDLING=1\n");
+    snprintf(line, sizeof(line), "PWG_SHEET_BACK=%s\n", pwg_sheet_back_value);
+    FPuts(fh, line);
 
     for (i = 0; i < num_supported_scaling; ++i) {
         snprintf(line, sizeof(line), "SCALING=%s\n", supported_scaling[i]);
@@ -2190,6 +2369,25 @@ static BOOL mp_cache_load_file(CONST_STRPTR filename) {
         } else if (strncmp(mp_cap_cache_line, "SIDE=", 5) == 0) {
             store_value(supported_sides, &num_supported_sides,
                         mp_cap_cache_line + 5);
+        } else if (strcmp(mp_cap_cache_line, "CREATE_JOB=1") == 0) {
+            supports_create_job = TRUE;
+        } else if (strcmp(mp_cap_cache_line, "SEND_DOCUMENT=1") == 0) {
+            supports_send_document = TRUE;
+        } else if (strcmp(mp_cap_cache_line,
+                          "MULTIPLE_DOCUMENT_JOBS=1") == 0) {
+            supports_multiple_document_jobs = TRUE;
+        } else if (strcmp(mp_cap_cache_line,
+                          "SINGLE_DOCUMENT_HANDLING=1") == 0) {
+            supports_single_document_handling = TRUE;
+        } else if (strncmp(mp_cap_cache_line, "PWG_SHEET_BACK=", 15) == 0) {
+            const char *sheet_back = mp_cap_cache_line + 15;
+            if (strcmp(sheet_back, "normal") == 0 ||
+                strcmp(sheet_back, "rotated") == 0 ||
+                strcmp(sheet_back, "flipped") == 0 ||
+                strcmp(sheet_back, "manual-tumble") == 0) {
+                mp_cache_copy(pwg_sheet_back_value,
+                              sizeof(pwg_sheet_back_value), sheet_back);
+            }
         } else if (strncmp(mp_cap_cache_line, "SCALING=", 8) == 0) {
             store_value(supported_scaling, &num_supported_scaling,
                         mp_cap_cache_line + 8);
@@ -2248,6 +2446,7 @@ static void apply_cached_capabilities(struct Window *win) {
     update_scaling_dropdown(win);
     update_quality_dropdown(win);
     update_dpi_dropdown(win);
+    update_sides_dropdown(win);
 
     /* Put the user's saved Unit0 choices back on top of the available lists. */
     apply_job_defaults_to_gadgets(win);
@@ -3456,6 +3655,11 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
     jpeg_k_octets_reported = FALSE;
     jpeg_x_dimension_reported = FALSE;
     jpeg_y_dimension_reported = FALSE;
+    supports_create_job = FALSE;
+    supports_send_document = FALSE;
+    supports_multiple_document_jobs = FALSE;
+    supports_single_document_handling = FALSE;
+    strcpy(pwg_sheet_back_value, "normal");
     printer_make_model[0] = '\0';
 
     // Allocate buffers for parsing
@@ -3531,7 +3735,11 @@ int query_printer_attributes(const char *ip, int port, char *response, int maxle
             "print-scaling-supported", "print-quality-supported",
             "printer-resolution-default", "printer-resolution-supported",
             "pwg-raster-document-resolution-supported",
+            "pwg-raster-document-sheet-back",
             "document-format-supported", "printer-make-and-model",
+            "sides-supported", "operations-supported",
+            "multiple-document-jobs-supported",
+            "multiple-document-handling-supported",
             "jpeg-k-octets-supported", "jpeg-x-dimension-supported",
             "jpeg-y-dimension-supported", NULL
         };
@@ -4003,6 +4211,50 @@ query_receive_pump_gui:
                     else if (strcmp(name, "print-scaling-supported") == 0 && value_tag == 0x44) {
                         store_value(supported_scaling, &num_supported_scaling, value);
                         printf("Added print-scaling-supported: %s\n", value);
+                    } else if (strcmp(name, "sides-supported") == 0 &&
+                               value_tag == 0x44) {
+                        if (strcmp(value, "one-sided") == 0 ||
+                            strcmp(value, "two-sided-long-edge") == 0 ||
+                            strcmp(value, "two-sided-short-edge") == 0) {
+                            store_value(supported_sides, &num_supported_sides,
+                                        value);
+                            printf("Added sides-supported: %s\n", value);
+                        }
+                    } else if (strcmp(name, "operations-supported") == 0 &&
+                               value_tag == 0x23 && value_len == 4) {
+                        const UBYTE *raw =
+                            (const UBYTE *)ipp_start + pos - value_len;
+                        ULONG operation = ((ULONG)raw[0] << 24) |
+                                          ((ULONG)raw[1] << 16) |
+                                          ((ULONG)raw[2] << 8) |
+                                          (ULONG)raw[3];
+                        if (operation == 0x0005UL) supports_create_job = TRUE;
+                        if (operation == 0x0006UL) supports_send_document = TRUE;
+                    } else if (strcmp(name,
+                                      "multiple-document-jobs-supported") == 0 &&
+                               value_tag == 0x22 && value_len == 1) {
+                        const UBYTE *raw =
+                            (const UBYTE *)ipp_start + pos - value_len;
+                        supports_multiple_document_jobs = raw[0] ? TRUE : FALSE;
+                    } else if (strcmp(name,
+                                      "multiple-document-handling-supported") == 0 &&
+                               value_tag == 0x44 &&
+                               strcmp(value, "single-document") == 0) {
+                        supports_single_document_handling = TRUE;
+                    } else if (strcmp(name,
+                                      "pwg-raster-document-sheet-back") == 0 &&
+                               value_tag == 0x44) {
+                        if (strcmp(value, "normal") == 0 ||
+                            strcmp(value, "rotated") == 0 ||
+                            strcmp(value, "flipped") == 0 ||
+                            strcmp(value, "manual-tumble") == 0) {
+                            strncpy(pwg_sheet_back_value, value,
+                                    sizeof(pwg_sheet_back_value) - 1);
+                            pwg_sheet_back_value[
+                                sizeof(pwg_sheet_back_value) - 1] = '\0';
+                            printf("PWG sheet-back: %s\n",
+                                   pwg_sheet_back_value);
+                        }
                     } else if ((strcmp(name, "printer-resolution-default") == 0 ||
                                 strcmp(name, "printer-resolution-supported") == 0 ||
                                 strcmp(name, "pwg-raster-document-resolution-supported") == 0) &&
@@ -4156,6 +4408,7 @@ query_receive_pump_gui:
     if (window) update_quality_dropdown(window);
     if (window) update_dpi_dropdown(window);
     if (window) update_engine_dropdown(window);
+    if (window) update_sides_dropdown(window);
 
     if (printer_make_model[0]) {
         printf("Printer: %s\n", printer_make_model);
@@ -5072,6 +5325,24 @@ struct Gadget *createAllGadgets(struct Gadget **glistptr, void *vi, UWORD topbor
         return NULL;
     }
 
+    /* Duplex needs multiple Amiga pages in one PWG Raster document. Query
+     * enables these choices only for PWG Raster when the printer advertises
+     * the requested sides value. */
+    ng.ng_LeftEdge = 350;
+    ng.ng_Width = 150;
+    ng.ng_Height = 12;
+    ng.ng_GadgetText = (STRPTR)"Sides:";
+    ng.ng_GadgetID = GAD_SIDES;
+    gad = CreateGadget(CYCLE_KIND, gad, &ng,
+        GTCY_Labels, (ULONG)mp_sides_label_ptrs,
+        GTCY_Active, mp_sides_active_index(),
+        GA_Disabled, TRUE,
+        TAG_DONE);
+    if (!gad) {
+        printf("Failed to create sides gadget\n");
+        return NULL;
+    }
+
     // Test Print button
     ng.ng_LeftEdge = 10;
     ng.ng_TopEdge += 30;
@@ -5266,6 +5537,23 @@ void process_window_events(struct Window *win) {
                                 strncpy(selected_print_mode, supported_print_modes[selected], MAX_ATTR_LEN - 1);
                                 selected_print_mode[MAX_ATTR_LEN - 1] = '\0';
                                 printf("Print mode set to: %s\n", selected_print_mode);
+                            }
+                        }
+                        break;
+
+                        case GAD_ENGINE:
+                        {
+                            ULONG selected = 0;
+                            GT_GetGadgetAttrs(gad, win, NULL,
+                                              GTCY_Active, (ULONG)&selected,
+                                              TAG_DONE);
+                            if (selected < (ULONG)mp_engine_count) {
+                                strncpy(driver_engine_buffer,
+                                        mp_engine_value_map[selected],
+                                        sizeof(driver_engine_buffer) - 1);
+                                driver_engine_buffer[
+                                    sizeof(driver_engine_buffer) - 1] = '\0';
+                                update_sides_dropdown(win);
                             }
                         }
                         break;

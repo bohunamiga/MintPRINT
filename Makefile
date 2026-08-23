@@ -59,7 +59,7 @@ MintPrintSettings: src/MintPrintSettings.c src/http_response.c src/http_response
 gui-aros: MintPrintSettings-aros
 
 MintPrintSettings-aros: src/MintPrintSettings.c src/http_response.c src/http_response.h src/dpi_options.c src/dpi_options.h src/ipp_enum.c src/ipp_enum.h driver/media_size.c driver/media_size.h $(IFF_DIR_ESC)/iff-loader.c $(IFF_DIR_ESC)/iff-loader.h
-	$(AROS_CC) $(AROS_CFLAGS) -O2 -g -I"$(IFF_DIR)" -Isrc -Idriver -o $@ src/MintPrintSettings.c src/http_response.c src/dpi_options.c src/ipp_enum.c driver/media_size.c "$(IFF_DIR)/iff-loader.c" -lamiga -lm
+	$(AROS_CC) $(AROS_CFLAGS) -g -I"$(IFF_DIR)" -Isrc -Idriver -o $@ src/MintPrintSettings.c src/http_response.c src/dpi_options.c src/ipp_enum.c driver/media_size.c "$(IFF_DIR)/iff-loader.c" -lamiga -lm
 
 $(TEST_BUILD):
 	mkdir -p $@
@@ -208,7 +208,7 @@ $(DRIVER_AROS_BUILD)/http_response.o: src/http_response.c src/http_response.h | 
 $(DRIVER_AROS_BUILD)/spool.o: driver/spool.c driver/spool.h | $(DRIVER_AROS_BUILD)
 	$(AROS_CC) $(AROS_CFLAGS) -c $< -o $@
 
-$(DRIVER_AROS_OUT): $(DRIVER_AROS_BUILD)/printertag.o $(DRIVER_AROS_BUILD)/driver_core.o $(DRIVER_AROS_BUILD)/command_table.o $(DRIVER_AROS_BUILD)/config.o $(DRIVER_AROS_BUILD)/media_size.o $(DRIVER_AROS_BUILD)/jpeg_writer.o $(DRIVER_AROS_BUILD)/pwg_writer.o $(DRIVER_AROS_BUILD)/pdf_writer.o $(DRIVER_AROS_BUILD)/postscript_writer.o $(DRIVER_AROS_BUILD)/ipp_client.o $(DRIVER_AROS_BUILD)/http_response.o $(DRIVER_AROS_BUILD)/spool.o
+$(DRIVER_AROS_OUT): $(DRIVER_AROS_BUILD)/printertag.o $(DRIVER_AROS_BUILD)/driver_core.o $(DRIVER_AROS_BUILD)/command_table.o $(DRIVER_AROS_BUILD)/config.o $(DRIVER_AROS_BUILD)/media_size.o $(DRIVER_AROS_BUILD)/jpeg_writer.o $(DRIVER_AROS_BUILD)/pwg_writer.o $(DRIVER_AROS_BUILD)/pdf_writer.o $(DRIVER_AROS_BUILD)/postscript_writer.o $(DRIVER_AROS_BUILD)/ipp_client.o $(DRIVER_AROS_BUILD)/http_response.o $(DRIVER_AROS_BUILD)/spool.o | $(DRIVER_AROS_BUILD)
 	$(AROS_CC) -nostartfiles -Wl,-Map,$(DRIVER_AROS_BUILD)/MintPRINT.map \
 		-o $@ $^ -lamiga
 

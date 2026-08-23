@@ -2,11 +2,35 @@
 
 #define MP_PS_ASCII85_LINE 75U
 
+#define MP_PS_SCALE_AUTO 0
+#define MP_PS_SCALE_FIT  1
+#define MP_PS_SCALE_FILL 2
+
+static int g_mp_ps_scaling = MP_PS_SCALE_AUTO;
+
 static unsigned long mp_ps_strlen(const char *s)
 {
     unsigned long n = 0;
     while (s && s[n]) ++n;
     return n;
+}
+
+static int mp_ps_streq(const char *a, const char *b)
+{
+    unsigned long i = 0;
+    if (!a || !b) return 0;
+    while (a[i] && b[i] && a[i] == b[i]) ++i;
+    return a[i] == 0 && b[i] == 0;
+}
+
+void mp_postscript_set_scaling(const char *scaling)
+{
+    if (mp_ps_streq(scaling, "fit"))
+        g_mp_ps_scaling = MP_PS_SCALE_FIT;
+    else if (mp_ps_streq(scaling, "fill"))
+        g_mp_ps_scaling = MP_PS_SCALE_FILL;
+    else
+        g_mp_ps_scaling = MP_PS_SCALE_AUTO;
 }
 
 static int mp_ps_flush(MPPostScriptEncoder *e)
@@ -66,6 +90,19 @@ static int mp_ps_uint(MPPostScriptEncoder *e, unsigned long value)
 
     return mp_ps_raw(e, (const unsigned char *)(buf + pos),
                      (unsigned long)sizeof(buf) - pos);
+}
+
+static int mp_ps_int(MPPostScriptEncoder *e, long value)
+{
+    unsigned long magnitude;
+
+    if (value < 0) {
+        if (!mp_ps_lit(e, "-")) return 0;
+        magnitude = (unsigned long)(-value);
+    } else {
+        magnitude = (unsigned long)value;
+    }
+    return mp_ps_uint(e, magnitude);
 }
 
 static int mp_ps_ascii85_chars(MPPostScriptEncoder *e,
@@ -155,8 +192,8 @@ int mp_postscript_begin(MPPostScriptEncoder *e,
     unsigned long image_h;
     unsigned long draw_w;
     unsigned long draw_h;
-    unsigned long draw_x;
-    unsigned long draw_y;
+    long draw_x;
+    long draw_y;
 
     if (!e || !width || !height || width > 65535UL || height > 65535UL ||
         !scratch || !write_fn)
@@ -181,13 +218,40 @@ int mp_postscript_begin(MPPostScriptEncoder *e,
     page_w = page_width_points ? page_width_points : image_w;
     page_h = page_height_points ? page_height_points : image_h;
 
-    /* Preserve the printer.device raster's aspect ratio. Images smaller
-     * than the configured sheet retain their physical DPI size; oversized
-     * images are fitted to the sheet rather than clipped or forcing a
-     * custom /PageSize that the printer has to substitute. */
+    /*
+     * Keep the rev27 placement policy for auto/auto-fit/none: preserve the
+     * printer.device raster's physical DPI size when it already fits, and
+     * only reduce oversized content so it cannot run off the selected sheet.
+     *
+     * Explicit fit/fill are different.  printer.device can intentionally
+     * deliver a lower-resolution raster to keep classic-Amiga CPU/memory use
+     * reasonable (the built-in PostScript test page is 4.2 x 5.94 inches at
+     * 300 DPI), while /PageSize still describes the real A4/Letter sheet.
+     * Once that raster is embedded in a full-size PostScript page, an IPP
+     * print-scaling attribute can no longer enlarge the image itself.  Apply
+     * those two user-selected modes here, changing only PostScript geometry;
+     * the JPEG stream, raster dimensions and transfer size stay unchanged.
+     */
     draw_w = image_w;
     draw_h = image_h;
-    if (draw_w > page_w || draw_h > page_h) {
+
+    if (g_mp_ps_scaling == MP_PS_SCALE_FIT) {
+        if (image_w * page_h > image_h * page_w) {
+            draw_w = page_w;
+            draw_h = (image_h * page_w + image_w / 2UL) / image_w;
+        } else {
+            draw_h = page_h;
+            draw_w = (image_w * page_h + image_h / 2UL) / image_h;
+        }
+    } else if (g_mp_ps_scaling == MP_PS_SCALE_FILL) {
+        if (image_w * page_h > image_h * page_w) {
+            draw_h = page_h;
+            draw_w = (image_w * page_h + image_h / 2UL) / image_h;
+        } else {
+            draw_w = page_w;
+            draw_h = (image_h * page_w + image_w / 2UL) / image_w;
+        }
+    } else if (draw_w > page_w || draw_h > page_h) {
         if (draw_w * page_h > draw_h * page_w) {
             draw_h = (draw_h * page_w + draw_w / 2UL) / draw_w;
             draw_w = page_w;
@@ -195,11 +259,19 @@ int mp_postscript_begin(MPPostScriptEncoder *e,
             draw_w = (draw_w * page_h + draw_h / 2UL) / draw_h;
             draw_h = page_h;
         }
-        if (!draw_w) draw_w = 1UL;
-        if (!draw_h) draw_h = 1UL;
     }
-    draw_x = (page_w - draw_w) / 2UL;
-    draw_y = (page_h - draw_h) / 2UL;
+
+    if (!draw_w) draw_w = 1UL;
+    if (!draw_h) draw_h = 1UL;
+
+    if (draw_w <= page_w)
+        draw_x = (long)((page_w - draw_w) / 2UL);
+    else
+        draw_x = -(long)((draw_w - page_w) / 2UL);
+    if (draw_h <= page_h)
+        draw_y = (long)((page_h - draw_h) / 2UL);
+    else
+        draw_y = -(long)((draw_h - page_h) / 2UL);
 
     if (!mp_ps_lit(e, "%!PS-Adobe-3.0\n"
                        "%%Creator: MintPRINT\n"
@@ -215,8 +287,8 @@ int mp_postscript_begin(MPPostScriptEncoder *e,
     if (!mp_ps_lit(e, "] >> setpagedevice\n"
                        "%%Page: 1 1\n"
                        "gsave\n")) return 0;
-    if (!mp_ps_uint(e, draw_x) || !mp_ps_lit(e, " ") ||
-        !mp_ps_uint(e, draw_y) || !mp_ps_lit(e, " translate\n")) return 0;
+    if (!mp_ps_int(e, draw_x) || !mp_ps_lit(e, " ") ||
+        !mp_ps_int(e, draw_y) || !mp_ps_lit(e, " translate\n")) return 0;
     if (!mp_ps_uint(e, draw_w) || !mp_ps_lit(e, " ") ||
         !mp_ps_uint(e, draw_h)) return 0;
     if (!mp_ps_lit(e, " scale\n"

@@ -21,14 +21,6 @@
 Print directly from normal Amiga applications to modern IPP/AirPrint printers
 using PWG Raster, JPEG, PDF or PostScript — no PC print server required.
 
-## What's here
-
-**Modern network printing for classic Amigas.**
-
-Print directly from normal Amiga applications to modern IPP/AirPrint printers
-using PWG Raster, JPEG, PDF or PostScript — no PC print server required.
-
-
 # MintPRINT
 
 IPP/AirPrint printing for classic AmigaOS - print to modern network
@@ -62,6 +54,26 @@ printer.device driver plus a GUI setup tool.
 - **`Archive/`, `Binarys/`, `Tools/`** - earlier test programs and
   experiments kept for reference; not part of the current driver/GUI.
 
+## Installing
+
+Run `MintPrintSettings` - it detects a missing or out-of-date
+`DEVS:Printers/MintPRINT` and offers to install/update it (copying from
+next to itself). **Reboot after any driver install or update** - a driver
+segment already resident in memory will not pick up a replaced file until
+then. Then open `Prefs/Printer`, select `MintPRINT`, and configure your
+printer's IP/host, IPP path, and document format in MintPrint Settings.
+
+## Supported document formats
+
+`image/jpeg`, `application/postscript`, `image/pwg-raster`, and
+`application/pdf`.
+Any IPP Everywhere or AirPrint-certified printer
+(most network printers from roughly the last decade) 
+is required to accept PWG Raster, so most printers should already
+work with that alone. PostScript and PDF cover older or partially-compliant
+IPP printers whose network support fronts an existing office-printer
+interpreter and which reject raster formats.
+
 ## Building
 
 Requires `m68k-amigaos-gcc` (Bebbo's cross-toolchain) on `PATH`, or set
@@ -76,25 +88,6 @@ Requires `m68k-amigaos-gcc` (Bebbo's cross-toolchain) on `PATH`, or set
 `MintPrintSettings.info` / `MintPRINT.info` inside `release/MintPRINT/`,
 and a drawer icon matching the folder's name in its parent directory,
 before distributing.
-
-## Installing
-
-Run `MintPrintSettings` - it detects a missing or out-of-date
-`DEVS:Printers/MintPRINT` and offers to install/update it (copying from
-next to itself). **Reboot after any driver install or update** - a driver
-segment already resident in memory will not pick up a replaced file until
-then. Then open `Prefs/Printer`, select `MintPRINT`, and configure your
-printer's IP/host, IPP path, and document format in MintPrint Settings.
-
-## Supported document formats
-
-`image/jpeg`, `application/postscript`, `image/pwg-raster`, and
-`application/pdf`. Any IPP Everywhere
-or AirPrint-certified printer (most network printers from roughly the last
-decade) is required to accept PWG Raster, so most printers should already
-work with that alone. PostScript and PDF cover older or partially-compliant
-IPP printers whose network support fronts an existing office-printer
-interpreter and which reject raster formats.
 
 ## Reporting a problem
 

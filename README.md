@@ -10,8 +10,18 @@
 ![Discovery](https://img.shields.io/badge/Discovery-mDNS%20%2B%20SSDP-green)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
+[![Aminet](https://img.shields.io/badge/Download-Aminet-005CA9)](https://aminet.net/package/driver/print/MintPRINT)
+[![Support](https://img.shields.io/badge/Support-Buy%20Me%20a%20Coffee-FFDD00?logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/boingball)
+
 ![GitHub stars](https://img.shields.io/github/stars/boingball/MintPRINT)
 ![GitHub last commit](https://img.shields.io/github/last-commit/boingball/MintPRINT)
+
+**Modern network printing for classic Amigas.**
+
+Print directly from normal Amiga applications to modern IPP/AirPrint printers
+using PWG Raster, JPEG, PDF or PostScript — no PC print server required.
+
+## What's here
 
 **Modern network printing for classic Amigas.**
 

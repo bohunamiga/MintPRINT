@@ -4,7 +4,7 @@ Uploader:     boingball gmail com (Darren Banfi)
 Type:         driver/print
 Version:      1.1.0
 Requires:     68000+; AmigaOS 3.1+; TCP/IP stack providing bsdsocket.library
-Architecture: m68k-amigaos >= 3.1.0
+Architecture: m68k-amigaos
 Distribution: MIT License - see LICENSE in the source repository
 
 MintPRINT

@@ -3,7 +3,7 @@
   MintPRINT
 </h1>
 
-![AmigaOS](https://img.shields.io/badge/AmigaOS-3.1%2B-orange)
+![AmigaOS](https://img.shields.io/badge/AmigaOS-3.0%2B-orange)
 ![CPU](https://img.shields.io/badge/CPU-m68k-blue)
 ![Printing](https://img.shields.io/badge/Printing-IPP%20%2F%20AirPrint-0078D4)
 ![Formats](https://img.shields.io/badge/Formats-PWG%20%7C%20JPEG%20%7C%20PDF%20%7C%20PostScript-purple)

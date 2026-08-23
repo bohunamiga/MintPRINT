@@ -348,6 +348,8 @@ static int mp_encode_mcu_row(MPJpegEncoder *e)
 {
     unsigned long mx;
     unsigned long mcus = (e->width + 15UL) / 16UL;
+    unsigned long full_mcus = e->width / 16UL;
+    unsigned long stride = e->width * 3UL;
     short block[64];
     short cb_block[64];
     short cr_block[64];
@@ -355,6 +357,70 @@ static int mp_encode_mcu_row(MPJpegEncoder *e)
     for (mx = 0; mx < mcus; ++mx) {
         int by, bx, yy, xx;
 
+        /* Nearly every MCU in a normal printer raster is a complete 16x16
+         * block.  For those interior MCUs every source coordinate is known
+         * in range, so calling mp_get_rgb() three times per component adds
+         * bounds checks, row clamping and repeated address arithmetic for no
+         * benefit.  Walk the packed RGB scratch rows directly instead.
+         *
+         * The old accessor path is retained below for the final partial MCU
+         * of widths that are not a multiple of 16, preserving edge-repeat
+         * padding exactly.  A4 at 300 dpi is 2480 pixels wide = 155 complete
+         * MCUs, so the common benchmark/job never needs the slow path. */
+        if (mx < full_mcus) {
+            unsigned long base_x = mx * 16UL;
+
+            for (by = 0; by < 2; ++by) {
+                for (bx = 0; bx < 2; ++bx) {
+                    for (yy = 0; yy < 8; ++yy) {
+                        const unsigned char *p =
+                            e->scratch +
+                            (unsigned long)(by * 8 + yy) * stride +
+                            (base_x + (unsigned long)(bx * 8)) * 3UL;
+                        for (xx = 0; xx < 8; ++xx) {
+                            int r = p[0];
+                            int g = p[1];
+                            int b = p[2];
+                            block[yy * 8 + xx] = mp_y_from_rgb(r, g, b);
+                            p += 3;
+                        }
+                    }
+                    if (!mp_encode_block(e, block, mp_q_luma, &e->dc_y))
+                        return 0;
+                }
+            }
+
+            for (yy = 0; yy < 8; ++yy) {
+                const unsigned char *p0 =
+                    e->scratch + (unsigned long)(yy * 2) * stride +
+                    base_x * 3UL;
+                const unsigned char *p1 = p0 + stride;
+
+                for (xx = 0; xx < 8; ++xx) {
+                    unsigned long off = (unsigned long)xx * 6UL;
+                    int r = p0[off] + p0[off + 3UL] +
+                            p1[off] + p1[off + 3UL];
+                    int g = p0[off + 1UL] + p0[off + 4UL] +
+                            p1[off + 1UL] + p1[off + 4UL];
+                    int b = p0[off + 2UL] + p0[off + 5UL] +
+                            p1[off + 2UL] + p1[off + 5UL];
+                    int idx = yy * 8 + xx;
+
+                    r = (r + 2) >> 2;
+                    g = (g + 2) >> 2;
+                    b = (b + 2) >> 2;
+                    cb_block[idx] = mp_cb_from_rgb(r, g, b);
+                    cr_block[idx] = mp_cr_from_rgb(r, g, b);
+                }
+            }
+            if (!mp_encode_block(e, cb_block, mp_q_chroma, &e->dc_cb))
+                return 0;
+            if (!mp_encode_block(e, cr_block, mp_q_chroma, &e->dc_cr))
+                return 0;
+            continue;
+        }
+
+        /* Partial right-edge MCU: preserve the original clamped accessor. */
         for (by = 0; by < 2; ++by) {
             for (bx = 0; bx < 2; ++bx) {
                 for (yy = 0; yy < 8; ++yy) {
@@ -373,9 +439,6 @@ static int mp_encode_mcu_row(MPJpegEncoder *e)
             }
         }
 
-        /* Cb and Cr use the same 2x2 averaged RGB sample.  The old encoder
-         * walked and averaged those four source pixels twice - once for Cb
-         * and then again for Cr.  Build both chroma blocks in one pass. */
         for (yy = 0; yy < 8; ++yy) {
             for (xx = 0; xx < 8; ++xx) {
                 unsigned long x0 = mx * 16UL + (unsigned long)(xx * 2);

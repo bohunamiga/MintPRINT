@@ -11,6 +11,7 @@
 #include <proto/dos.h>
 
 #include "config.h"
+#include "postscript_writer.h"
 
 extern struct DosLibrary *DOSBase;
 
@@ -109,6 +110,12 @@ LONG mp_config_load(struct MPConfig *cfg)
 
     if (!cfg) return MP_CONFIG_SOURCE_DEFAULTS;
     mp_config_defaults(cfg);
+
+    /* Keep the PostScript writer in step with the configuration actually
+     * used by this job. Empty/default scaling intentionally maps to its
+     * historical auto-fit placement until a saved SCALING= overrides it. */
+    mp_postscript_set_scaling(cfg->scaling);
+
     if (!DOSBase) return MP_CONFIG_SOURCE_DEFAULTS;
 
     fh = Open((CONST_STRPTR)"ENV:MintPRINT/Unit0", MODE_OLDFILE);
@@ -236,5 +243,6 @@ LONG mp_config_load(struct MPConfig *cfg)
     }
 
     Close(fh);
+    mp_postscript_set_scaling(cfg->scaling);
     return source;
 }

@@ -5,27 +5,6 @@
 
 #include "../driver/jpeg_writer.h"
 
-/* Reference IDCT for this test only - NOT part of the encoder.
- *
- * mp_dct_ref[u][x]/1024 is the exact same cosine basis the encoder used
- * before this AAN rewrite (mp_fdct's old direct-matrix implementation,
- * removed from jpeg_writer.c but reproduced here as ground truth). It is
- * numerically confirmed orthonormal (mp_dct_ref^T * mp_dct_ref == very
- * nearly the identity matrix, to the rounding precision of its 1024-scale
- * integers) - see the PR description for the derivation. For an
- * orthonormal 2-D separable transform coeff = M * block * M^T, the exact
- * inverse is block = M^T * coeff * M: this file's mp_ref_idct_block()
- * applies the SAME basis transposed, in the same two-pass row/column
- * shape mp_fdct() itself uses.
- *
- * This gives an inversion path that is independent of - and does not
- * simply trust - the AAN forward transform under test: it reconstructs
- * pixels from mp_fdct()'s dequantised output using different (much
- * simpler, directly verifiable) matrix math, so a scale or sign bug in
- * mp_fdct()/mp_quantize_aan()/mp_fdct_aan_scale[] shows up as a real
- * reconstruction error here rather than being invisible because both
- * sides share the same mistake.
- */
 static const double mp_dct_ref[8][8] = {
     { 362, 362, 362, 362, 362, 362, 362, 362 },
     { 502, 426, 284, 100,-100,-284,-426,-502 },
@@ -42,17 +21,15 @@ static void mp_ref_idct_block(const long *coeff, double *pixel)
     double tmp[64];
     int y, x, u, v;
 
-    /* Row pass: undo the forward transform's column pass, i.e. apply the
-     * basis transposed along axis v. */
     for (y = 0; y < 8; ++y) {
         for (x = 0; x < 8; ++x) {
             double sum = 0.0;
             for (v = 0; v < 8; ++v)
-                sum += (mp_dct_ref[v][x] / 1024.0) * (double)coeff[y * 8 + v];
+                sum += (mp_dct_ref[v][x] / 1024.0) *
+                       (double)coeff[y * 8 + v];
             tmp[y * 8 + x] = sum;
         }
     }
-    /* Column pass: undo the forward transform's row pass. */
     for (x = 0; x < 8; ++x) {
         for (y = 0; y < 8; ++y) {
             double sum = 0.0;
@@ -63,13 +40,6 @@ static void mp_ref_idct_block(const long *coeff, double *pixel)
     }
 }
 
-/* Full round trip through the real encoder math: level-shifted samples ->
- * mp_fdct() (AAN) -> mp_quantize_aan() (the paired compensation) ->
- * dequantise -> mp_ref_idct_block() -> compare against the original
- * samples. qtable mirrors driver/jpeg_writer.c's mp_q_luma (this test has
- * no access to that static table, so it reproduces the same 64 values -
- * any table works for this test's purpose since only the *pairing* with
- * mp_quantize_aan matters, not the specific compression quality). */
 static const unsigned char test_qtable[64] = {
      8, 9,10,11,12,13,14,15,
      9,10,11,12,13,14,15,16,
@@ -91,7 +61,8 @@ static double mp_round_trip_max_error(const short *block)
 
     mp_fdct(block, coeff);
     for (k = 0; k < 64; ++k) {
-        int q = mp_quantize_aan(coeff[k], (int)test_qtable[k], mp_fdct_aan_scale[k]);
+        int q = mp_quantize_aan(coeff[k], (int)test_qtable[k],
+                                mp_fdct_aan_scale[k]);
         dequant[k] = (long)q * (long)test_qtable[k];
     }
     mp_ref_idct_block(dequant, pixel);
@@ -123,7 +94,8 @@ static void fill_checkerboard(short *block)
     int y, x;
     for (y = 0; y < 8; ++y)
         for (x = 0; x < 8; ++x)
-            block[y * 8 + x] = (short)(((y + x) & 1) ? 127 : -128);
+            block[y * 8 + x] =
+                (short)(((y + x) & 1) ? 127 : -128);
 }
 
 static void fill_random(short *block, unsigned int *seed)
@@ -135,6 +107,79 @@ static void fill_random(short *block, unsigned int *seed)
     }
 }
 
+struct TestSink {
+    unsigned long bytes;
+    unsigned long calls;
+};
+
+static long test_sink_write(void *ctx, const unsigned char *data,
+                            unsigned long len)
+{
+    struct TestSink *sink = (struct TestSink *)ctx;
+    (void)data;
+    sink->bytes += len;
+    ++sink->calls;
+    return (long)len;
+}
+
+static void test_flat_encoder_fast_path(void)
+{
+    MPJpegEncoder enc;
+    struct TestSink sink;
+    unsigned char scratch[16 * 16 * 3];
+    unsigned char row[16 * 3];
+    unsigned long scratch_size;
+    int y, i;
+
+    sink.bytes = 0;
+    sink.calls = 0;
+    for (i = 0; i < (int)sizeof(row); ++i) row[i] = 255;
+
+    scratch_size = mp_jpeg_scratch_size(16);
+    assert(scratch_size == sizeof(scratch));
+    assert(mp_jpeg_begin(&enc, 16, 16, scratch, sizeof(scratch),
+                         test_sink_write, &sink));
+    for (y = 0; y < 16; ++y)
+        assert(mp_jpeg_write_scanline(&enc, row));
+    assert(mp_jpeg_finish(&enc));
+
+    /* One 16x16 4:2:0 MCU = four Y blocks + one Cb + one Cr. Pure white
+     * makes all six blocks constant, so every one must take the shortcut. */
+    assert(enc.blocks_total == 6UL);
+    assert(enc.blocks_constant == 6UL);
+    assert(sink.bytes > 0UL);
+    printf("flat encoder: %lu/%lu blocks used constant fast path\n",
+           enc.blocks_constant, enc.blocks_total);
+}
+
+static void test_nonflat_encoder_still_uses_dct(void)
+{
+    MPJpegEncoder enc;
+    struct TestSink sink;
+    unsigned char scratch[16 * 16 * 3];
+    unsigned char row[16 * 3];
+    int y, x;
+
+    sink.bytes = 0;
+    sink.calls = 0;
+    assert(mp_jpeg_begin(&enc, 16, 16, scratch, sizeof(scratch),
+                         test_sink_write, &sink));
+    for (y = 0; y < 16; ++y) {
+        for (x = 0; x < 16; ++x) {
+            row[x * 3 + 0] = (unsigned char)(x * 16);
+            row[x * 3 + 1] = (unsigned char)(y * 16);
+            row[x * 3 + 2] = (unsigned char)((x + y) * 8);
+        }
+        assert(mp_jpeg_write_scanline(&enc, row));
+    }
+    assert(mp_jpeg_finish(&enc));
+    assert(enc.blocks_total == 6UL);
+    assert(enc.blocks_constant < enc.blocks_total);
+    assert(sink.bytes > 0UL);
+    printf("gradient encoder: %lu/%lu constant blocks\n",
+           enc.blocks_constant, enc.blocks_total);
+}
+
 int main(void)
 {
     short block[64];
@@ -143,11 +188,6 @@ int main(void)
     int trial;
     double max_seen = 0.0;
 
-    /* Flat blocks exercise only the DC path, which the AAN butterfly
-     * computes via pure addition (no multiply, no rounding) - this is
-     * the least ambiguous possible correctness anchor: any scale bug in
-     * mp_fdct_aan_scale[]/mp_quantize_aan() big enough to matter would
-     * show up here as a large, obvious error, not subtle noise. */
     fill_flat(block, 0);
     err = mp_round_trip_max_error(block);
     printf("flat 0: max error %.3f\n", err);
@@ -163,32 +203,28 @@ int main(void)
     printf("flat -128: max error %.3f\n", err);
     assert(err < 1.0);
 
-    /* Smooth content (gradient) - low-frequency energy only, should
-     * quantise and reconstruct cleanly. */
     fill_gradient(block);
     err = mp_round_trip_max_error(block);
     printf("gradient: max error %.3f\n", err);
     assert(err < 10.0);
 
-    /* Worst case for any 8x8 DCT: a checkerboard is pure Nyquist-frequency
-     * energy concentrated in the single highest AC coefficient, which is
-     * exactly the coefficient the AAN transform scales most aggressively
-     * (mp_fdct_aan_scale[63] = 1247, the smallest entry in the table) -
-     * if the compensation math were wrong, this is where it would show. */
     fill_checkerboard(block);
     err = mp_round_trip_max_error(block);
     printf("checkerboard: max error %.3f\n", err);
     assert(err < 20.0);
 
-    /* Broad random-content sweep. */
     for (trial = 0; trial < 500; ++trial) {
         fill_random(block, &seed);
         err = mp_round_trip_max_error(block);
         if (err > max_seen) max_seen = err;
         assert(err < 25.0);
     }
-    printf("random sweep (500 blocks): worst-case max error %.3f\n", max_seen);
+    printf("random sweep (500 blocks): worst-case max error %.3f\n",
+           max_seen);
 
-    puts("jpeg AAN forward DCT tests passed");
+    test_flat_encoder_fast_path();
+    test_nonflat_encoder_still_uses_dct();
+
+    puts("jpeg AAN/JPEG Turbo tests passed");
     return 0;
 }

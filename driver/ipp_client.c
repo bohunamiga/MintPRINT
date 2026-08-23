@@ -10,7 +10,11 @@
 #include <dos/dos.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
+/* ssize_t is provided by the AROS SDK; only define it manually for classic
+ * m68k AmigaOS / libnix where it is absent from the system headers. */
+#ifndef __AROS__
 typedef long ssize_t;
+#endif
 #include <proto/bsdsocket.h>
 
 #include "ipp_client.h"

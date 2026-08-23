@@ -3,8 +3,8 @@ Author:       Darren Banfi (boingball)
 Uploader:     boingball gmail com (Darren Banfi)
 Type:         driver/print
 Version:      1.1.0
-Requires:     68000+; AmigaOS 3.1+; TCP/IP stack providing bsdsocket.library
-Architecture: m68k-amigaos
+Requires:     68000+; AmigaOS 3.0+; TCP/IP stack providing bsdsocket.library
+Architecture: m68k-amigaos >= 3.0.0
 Distribution: MIT License - see LICENSE in the source repository
 
 MintPRINT
@@ -22,9 +22,10 @@ MintPRINT converts printer.device raster callbacks into JPEG, PostScript,
 PWG Raster, or PDF and submits the resulting document directly to the printer's IPP
 endpoint over the network.
 
-AmigaOS 3.1 is supported by a separate classic driver build. Newer
-AmigaOS releases use the normal extended driver build. Both use the same
-MintPrint Settings GUI and the same IPP/JPEG/PostScript/PWG/PDF backend.
+AmigaOS 3.0/3.1 use the separate classic pre-V44 driver build. Newer
+V44-capable AmigaOS releases use the normal extended driver build. Both use
+the same MintPrint Settings GUI and the same IPP/JPEG/PostScript/PWG/PDF
+backend.
 
 Archive contents
 ----------------
@@ -37,18 +38,18 @@ This archive contains two drawers:
 
   MintPRINT-OS31/
     MintPrintSettings       same GUI setup, discovery and test tool
-    MintPRINT               classic AmigaOS 3.1 driver build
+    MintPRINT               classic AmigaOS 3.0/3.1 driver build
 
-Use MintPRINT-OS31 on AmigaOS 3.1.
+Use MintPRINT-OS31 on AmigaOS 3.0 or 3.1.
 
-Use MintPRINT on AmigaOS 3.2 and later systems, including AmigaOS 3.5/3.9
-and newer classic AmigaOS releases.
+Use MintPRINT on V44-capable classic AmigaOS systems such as AmigaOS 3.2,
+3.5 and 3.9.
 
 Features
 --------
 
   - Real DEVS:Printers/ printer.device driver
-  - AmigaOS 3.1 support via a dedicated classic driver build
+  - AmigaOS 3.0/3.1 support via a dedicated classic driver build
   - 68000-compatible driver
   - Prints using JPEG, PostScript, PWG Raster, or PDF, selectable per printer
   - LAN printer discovery using SSDP and mDNS
@@ -67,7 +68,7 @@ Requirements
 ------------
 
   - Motorola 68000 or later
-  - AmigaOS 3.1 or later
+  - AmigaOS 3.0 or later
   - A running TCP/IP stack providing bsdsocket.library. This is required
     for every printing path because MintPRINT talks directly to the
     printer over IP.
@@ -86,10 +87,10 @@ Installation
 
 Extract the archive and choose the drawer for your AmigaOS version:
 
-  AmigaOS 3.1:
+  AmigaOS 3.0 or 3.1:
     use MintPRINT-OS31/
 
-  AmigaOS 3.2 or later:
+  V44-capable AmigaOS 3.x systems (including 3.2, 3.5 and 3.9):
     use MintPRINT/
 
 Copy the selected drawer wherever you like and run MintPrintSettings.
@@ -118,13 +119,18 @@ After rebooting:
 The active printer configuration is Unit0. Additional configurations can
 be stored in Unit1-Unit7 and copied to Unit0 when required.
 
-AmigaOS 3.1 notes
------------------
+AmigaOS 3.0/3.1 notes
+---------------------
 
-The OS3.1 package uses a classic pre-V44 printer driver structure and a
-compatibility rendering path for the older printer.device raster format.
-The IPP networking and JPEG/PostScript/PWG Raster/PDF output code is shared with the
-newer driver build.
+The MintPRINT-OS31 package uses a classic pre-V44 printer driver structure and
+a compatibility rendering path for the older printer.device raster format.
+The same ABI also covers AmigaOS 3.0. The IPP networking and
+JPEG/PostScript/PWG Raster/PDF output code is shared with the newer driver
+build.
+
+AmigaOS 3.0 compatibility follows from the V39/V37 library requirements and
+pre-V44 printer.device ABI used by this build. AmigaOS 3.1 has had more direct
+real-hardware testing, so 3.0 user reports are especially welcome.
 
 MintPrintSettings should be launched using the supplied icon so its
 configured stack size is used. If launching from a Shell on a classic
@@ -155,7 +161,7 @@ Please include the AmigaOS version, TCP/IP stack, document engine, DPI,
 media/tray, scaling, quality and colour mode so a successful configuration
 can be reproduced by another user.
 
-When reporting an AmigaOS 3.1 problem, please also mention that the
+When reporting an AmigaOS 3.0/3.1 problem, please also mention that the
 MintPRINT-OS31 driver build is being used.
 
 Source Code

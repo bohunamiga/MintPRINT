@@ -21,7 +21,11 @@
 #include <proto/datatypes.h>
 #include <proto/gadtools.h>
 #include <proto/graphics.h>
+/* ssize_t is provided by the AROS SDK; only define it manually for classic
+ * m68k AmigaOS / libnix where it is absent from the system headers. */
+#ifndef __AROS__
 typedef long ssize_t;
+#endif
 #include <datatypes/pictureclass.h>
 #include <datatypes/datatypesclass.h>
 #include <clib/alib_protos.h>
@@ -173,11 +177,15 @@ BOOL has_extension(const char *filename, const char *ext) {
  * has deep parsing / GadTools / bsdsocket call chains.
  *
  * 384 KiB = 393216 bytes.
+ *
+ * AROS uses its own startup mechanism and does not honour __stack.
  */
+#ifndef __AROS__
 unsigned long __stack = 393216UL;
 
 /* Keep the cookie as harmless metadata for newer startup code too. */
 static const char USED min_stack[] = "$STACK:393216";
+#endif
 
 // Structure to map media sizes to trays (Updated to include tray name and medianame)
 struct MediaTrayMap {

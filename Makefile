@@ -4,34 +4,49 @@ HOSTCC  ?= cc
 NM       = $(CROSS)nm
 CFLAGS  ?= -Os -m68000 -Wall -Wextra -fomit-frame-pointer -fno-builtin
 
+# AROS aarch64 cross-compiler.  Override on the command line if your
+# toolchain uses a different prefix, e.g.:
+#   make driver-aros AROS_CROSS=aarch64-aros-
+AROS_CROSS  ?= aarch64-aros-
+AROS_CC      = $(AROS_CROSS)gcc
+AROS_NM      = $(AROS_CROSS)nm
+AROS_CFLAGS ?= -Os -Wall -Wextra -fomit-frame-pointer -fno-builtin
+
 IFF_DIR := Archive/Old JPEG Decode
 IFF_DIR_ESC := Archive/Old\ JPEG\ Decode
 DRIVER_BUILD := build/driver
 DRIVER_OUT := $(DRIVER_BUILD)/MintPRINT
 DRIVER31_BUILD := build/driver31
 DRIVER31_OUT := $(DRIVER31_BUILD)/MintPRINT
+DRIVER_AROS_BUILD := build/driver-aros
+DRIVER_AROS_OUT := $(DRIVER_AROS_BUILD)/MintPRINT
 TEST_BUILD := build/tests
 RELEASE_DIR := release/MintPRINT
 RELEASE31_DIR := release/MintPRINT-OS31
+RELEASE_AROS_DIR := release/MintPRINT-AROS
 
-.PHONY: all gui test test-http test-dpi test-jpeg test-ipp-enum test-postscript driver driver31 driver-symbols driver-symbols31 release release31 release-all clean help
+.PHONY: all gui gui-aros test test-http test-dpi test-jpeg test-ipp-enum test-postscript driver driver31 driver-aros driver-symbols driver-symbols31 driver-symbols-aros release release31 release-aros release-all clean help
 
 all: gui
 
 help:
 	@echo "MintPRINT targets:"
 	@echo "  make gui      - build MintPrint Settings (setup/test GUI)"
+	@echo "  make gui-aros - build MintPrint Settings for AROS aarch64"
 	@echo "  make test-http - run host-side HTTP response parser tests"
 	@echo "  make test-dpi  - run host-side DPI option tests"
 	@echo "  make test-jpeg - run host-side JPEG AAN forward-DCT tests"
 	@echo "  make test-ipp-enum - run host-side IPP enum decode tests"
 	@echo "  make driver   - build the experimental DEVS:Printers/MintPRINT driver"
 	@echo "  make driver31 - build the AmigaOS 3.1-compatible classic printer driver"
+	@echo "  make driver-aros - build the AROS aarch64 printer driver"
 	@echo "  make driver-symbols - show ABI symbols used by the driver"
 	@echo "  make driver-symbols31 - show ABI symbols used by the OS3.1 driver"
+	@echo "  make driver-symbols-aros - show ABI symbols used by the AROS aarch64 driver"
 	@echo "  make test-postscript - host-test and Ghostscript-validate the PostScript writer"
 	@echo "  make release  - build both and stage a distributable bundle"
 	@echo "  make release31 - stage the AmigaOS 3.1 bundle"
+	@echo "  make release-aros - stage the AROS aarch64 bundle"
 	@echo "  make release-all - stage both modern and OS3.1 bundles"
 	@echo "  make test     - run host-side geometry regression tests"
 	@echo "  make clean"
@@ -40,6 +55,11 @@ gui: MintPrintSettings
 
 MintPrintSettings: src/MintPrintSettings.c src/http_response.c src/http_response.h src/dpi_options.c src/dpi_options.h src/ipp_enum.c src/ipp_enum.h driver/media_size.c driver/media_size.h $(IFF_DIR_ESC)/iff-loader.c $(IFF_DIR_ESC)/iff-loader.h
 	$(CC) -O2 -g -I"$(IFF_DIR)" -Isrc -Idriver -o $@ src/MintPrintSettings.c src/http_response.c src/dpi_options.c src/ipp_enum.c driver/media_size.c "$(IFF_DIR)/iff-loader.c" -lamiga -lm
+
+gui-aros: MintPrintSettings-aros
+
+MintPrintSettings-aros: src/MintPrintSettings.c src/http_response.c src/http_response.h src/dpi_options.c src/dpi_options.h src/ipp_enum.c src/ipp_enum.h driver/media_size.c driver/media_size.h $(IFF_DIR_ESC)/iff-loader.c $(IFF_DIR_ESC)/iff-loader.h
+	$(AROS_CC) $(AROS_CFLAGS) -O2 -g -I"$(IFF_DIR)" -Isrc -Idriver -o $@ src/MintPrintSettings.c src/http_response.c src/dpi_options.c src/ipp_enum.c driver/media_size.c "$(IFF_DIR)/iff-loader.c" -lamiga -lm
 
 $(TEST_BUILD):
 	mkdir -p $@
@@ -144,6 +164,58 @@ driver-symbols31: $(DRIVER31_BUILD)/driver_core.o $(DRIVER31_BUILD)/classic_rend
 	$(NM) $(DRIVER31_BUILD)/classic_render_shim.o | grep -E '(_Render|_MintPRINT_RenderCore)' || true
 	$(NM) $(DRIVER_BUILD)/command_table.o | grep -E '_CommandTable' || true
 
+# AROS aarch64 driver build.
+#
+# Uses driver/printertag_aarch64.s for the segment tag (aarch64 instructions,
+# 8-byte .quad pointer fields) and aarch64-aros-gcc for all C objects.
+# No -m68000 flag; -nostartfiles omits the C startup stub only.
+$(DRIVER_AROS_BUILD):
+	mkdir -p $@
+
+$(DRIVER_AROS_BUILD)/printertag.o: driver/printertag_aarch64.s | $(DRIVER_AROS_BUILD)
+	$(AROS_CC) -c $< -o $@
+
+$(DRIVER_AROS_BUILD)/driver_core.o: driver/driver_core.c | $(DRIVER_AROS_BUILD)
+	$(AROS_CC) $(AROS_CFLAGS) -c $< -o $@
+
+$(DRIVER_AROS_BUILD)/command_table.o: driver/command_table.c | $(DRIVER_AROS_BUILD)
+	$(AROS_CC) $(AROS_CFLAGS) -c $< -o $@
+
+$(DRIVER_AROS_BUILD)/config.o: driver/config.c driver/config.h | $(DRIVER_AROS_BUILD)
+	$(AROS_CC) $(AROS_CFLAGS) -c $< -o $@
+
+$(DRIVER_AROS_BUILD)/media_size.o: driver/media_size.c driver/media_size.h | $(DRIVER_AROS_BUILD)
+	$(AROS_CC) $(AROS_CFLAGS) -c $< -o $@
+
+$(DRIVER_AROS_BUILD)/jpeg_writer.o: driver/jpeg_writer.c driver/jpeg_writer.h | $(DRIVER_AROS_BUILD)
+	$(AROS_CC) $(AROS_CFLAGS) -c $< -o $@
+
+$(DRIVER_AROS_BUILD)/pwg_writer.o: driver/pwg_writer.c driver/pwg_writer.h | $(DRIVER_AROS_BUILD)
+	$(AROS_CC) $(AROS_CFLAGS) -c $< -o $@
+
+$(DRIVER_AROS_BUILD)/pdf_writer.o: driver/pdf_writer.c driver/pdf_writer.h driver/jpeg_writer.h | $(DRIVER_AROS_BUILD)
+	$(AROS_CC) $(AROS_CFLAGS) -c $< -o $@
+
+$(DRIVER_AROS_BUILD)/postscript_writer.o: driver/postscript_writer.c driver/postscript_writer.h driver/jpeg_writer.h | $(DRIVER_AROS_BUILD)
+	$(AROS_CC) $(AROS_CFLAGS) -c $< -o $@
+
+$(DRIVER_AROS_BUILD)/ipp_client.o: driver/ipp_client.c driver/ipp_client.h src/http_response.h | $(DRIVER_AROS_BUILD)
+	$(AROS_CC) $(AROS_CFLAGS) -Isrc -c $< -o $@
+
+$(DRIVER_AROS_BUILD)/http_response.o: src/http_response.c src/http_response.h | $(DRIVER_AROS_BUILD)
+	$(AROS_CC) $(AROS_CFLAGS) -Isrc -c $< -o $@
+
+$(DRIVER_AROS_BUILD)/spool.o: driver/spool.c driver/spool.h | $(DRIVER_AROS_BUILD)
+	$(AROS_CC) $(AROS_CFLAGS) -c $< -o $@
+
+$(DRIVER_AROS_OUT): $(DRIVER_AROS_BUILD)/printertag.o $(DRIVER_AROS_BUILD)/driver_core.o $(DRIVER_AROS_BUILD)/command_table.o $(DRIVER_AROS_BUILD)/config.o $(DRIVER_AROS_BUILD)/media_size.o $(DRIVER_AROS_BUILD)/jpeg_writer.o $(DRIVER_AROS_BUILD)/pwg_writer.o $(DRIVER_AROS_BUILD)/pdf_writer.o $(DRIVER_AROS_BUILD)/postscript_writer.o $(DRIVER_AROS_BUILD)/ipp_client.o $(DRIVER_AROS_BUILD)/http_response.o $(DRIVER_AROS_BUILD)/spool.o
+	$(AROS_CC) -nostartfiles -Wl,-Map,$(DRIVER_AROS_BUILD)/MintPRINT.map \
+		-o $@ $^ -lamiga
+
+driver-symbols-aros: $(DRIVER_AROS_BUILD)/driver_core.o $(DRIVER_AROS_BUILD)/command_table.o
+	$(AROS_NM) $(DRIVER_AROS_BUILD)/driver_core.o | grep -E '(Init|Expunge|DriverOpen|DriverClose|DoSpecial|Render|DriverTags|PEDData)' || true
+	$(AROS_NM) $(DRIVER_AROS_BUILD)/command_table.o | grep -E 'CommandTable' || true
+
 test: test-dpi test-jpeg | $(TEST_BUILD)
 	$(HOSTCC) -std=c89 -Wall -Wextra -Werror -Idriver \
 		tests/test_media_size.c driver/media_size.c driver/pwg_writer.c \
@@ -160,6 +232,11 @@ driver31: $(DRIVER31_OUT)
 	@echo "Built AmigaOS 3.1 compatibility driver: $(DRIVER31_OUT)"
 	@echo "Requires a bsdsocket.library-compatible TCP/IP stack (Roadshow/AmiTCP/Miami etc.)."
 	@echo "See docs/OS31_SUPPORT.md before installing it."
+
+driver-aros: $(DRIVER_AROS_OUT)
+	@echo
+	@echo "Built AROS aarch64 printer driver: $(DRIVER_AROS_OUT)"
+	@echo "Copy to DEVS:Printers/MintPRINT on your AROS aarch64 installation."
 
 POSTSCRIPT_TEST := $(TEST_BUILD)/test_postscript_writer
 POSTSCRIPT_TEST_PS := $(TEST_BUILD)/test-postscript.ps
@@ -255,5 +332,32 @@ release-all: release release31
 	@echo
 	@echo "Both MintPRINT release bundles are staged under release/."
 
+# AROS aarch64 bundle.  Uses the AROS-compiled MintPrintSettings-aros GUI and
+# the native aarch64 driver binary.
+release-aros: gui-aros driver-aros
+	mkdir -p $(RELEASE_AROS_DIR)
+	cp MintPrintSettings-aros $(RELEASE_AROS_DIR)/MintPrintSettings
+	cp $(DRIVER_AROS_OUT) $(RELEASE_AROS_DIR)/MintPRINT
+	cp docs/MintPrintSettings.guide $(RELEASE_AROS_DIR)/
+	cp Aminet/MintPRINT.readme release/MintPRINT-AROS.readme
+	@if [ -f $(ART_DIR)/MintPrintSettings.info ]; then \
+		cp $(ART_DIR)/MintPrintSettings.info $(RELEASE_AROS_DIR)/; \
+		echo "Copied $(ART_DIR)/MintPrintSettings.info -> $(RELEASE_AROS_DIR)/"; \
+	else \
+		echo "No $(ART_DIR)/MintPrintSettings.info found - application will have no icon"; \
+	fi
+	@if [ -f $(ART_DIR)/MintPRINT.info ]; then \
+		cp $(ART_DIR)/MintPRINT.info release/MintPRINT-AROS.info; \
+		echo "Copied $(ART_DIR)/MintPRINT.info -> release/MintPRINT-AROS.info (drawer icon)"; \
+	else \
+		echo "No $(ART_DIR)/MintPRINT.info found - AROS release drawer will have no icon"; \
+	fi
+	@echo
+	@echo "AROS aarch64 release bundle staged in $(RELEASE_AROS_DIR)/:"
+	@echo "  MintPrintSettings       - AROS aarch64 setup/test GUI"
+	@echo "  MintPRINT               - native aarch64 printer.device driver"
+	@echo "  MintPrintSettings.info  - if $(ART_DIR)/ had one"
+	@echo "  MintPrintSettings.guide - Help menu > MintPrint Settings Help..."
+
 clean:
-	rm -rf build release MintPrintSettings
+	rm -rf build release MintPrintSettings MintPrintSettings-aros

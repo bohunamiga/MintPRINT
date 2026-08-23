@@ -1,3 +1,24 @@
+<h1>
+  <img src="art/MintPrintSettings.png" width="48" alt="MintPRINT icon">
+  MintPRINT
+</h1>
+
+![AmigaOS](https://img.shields.io/badge/AmigaOS-3.1%2B-orange)
+![CPU](https://img.shields.io/badge/CPU-m68k-blue)
+![Printing](https://img.shields.io/badge/Printing-IPP%20%2F%20AirPrint-0078D4)
+![Formats](https://img.shields.io/badge/Formats-PWG%20%7C%20JPEG%20%7C%20PDF%20%7C%20PostScript-purple)
+![Discovery](https://img.shields.io/badge/Discovery-mDNS%20%2B%20SSDP-green)
+![License](https://img.shields.io/badge/License-MIT-lightgrey)
+
+![GitHub stars](https://img.shields.io/github/stars/boingball/MintPRINT)
+![GitHub last commit](https://img.shields.io/github/last-commit/boingball/MintPRINT)
+
+**Modern network printing for classic Amigas.**
+
+Print directly from normal Amiga applications to modern IPP/AirPrint printers
+using PWG Raster, JPEG, PDF or PostScript — no PC print server required.
+
+
 # MintPRINT
 
 IPP/AirPrint printing for classic AmigaOS - print to modern network

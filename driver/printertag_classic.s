@@ -23,7 +23,7 @@
         .extern _TextDriverOpen
         .extern _TextDriverClose
         .extern _CommandTable
-        .extern _DoSpecial
+        .extern _TextDoSpecial
         .extern _Render
         .extern _ConvFunc
 
@@ -57,7 +57,7 @@ _PEDData:
         .word   300               /* XDotsInch */
         .word   300               /* YDotsInch */
         .long   _CommandTable
-        .long   _DoSpecial
+        .long   _TextDoSpecial
         .long   _Render
         .long   30                /* timeout seconds */
         .long   0                 /* ped_8BitChars: system default */

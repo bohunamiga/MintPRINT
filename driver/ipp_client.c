@@ -282,6 +282,13 @@ static ULONG g_margin_cache_left = 0;
 static ULONG g_margin_cache_right = 0;
 static ULONG g_margin_cache_top = 0;
 static ULONG g_margin_cache_bottom = 0;
+/* Keep network buffers out of the spool Process's deliberately small 8 KiB
+ * stack. Config/margin lookup and Print-Job are serialized in that one
+ * process, so a single static set is sufficient. */
+static UBYTE g_margin_ipp[512];
+static char g_margin_uri[192];
+static char g_margin_http[512];
+static char g_margin_response[4096];
 
 LONG mp_ipp_query_imageable_margins(const struct MPConfig *cfg,
                                     ULONG *left_100mm,
@@ -291,13 +298,9 @@ LONG mp_ipp_query_imageable_margins(const struct MPConfig *cfg,
 {
     int sock = -1;
     struct sockaddr_in addr = {0};
-    UBYTE ipp[512];
     ULONG io = 0;
-    char uri[192];
     ULONG up = 0;
-    char http[512];
     ULONG hp = 0;
-    char response[4096];
     ULONG response_used = 0;
     int body_pos = -1;
     int body_len = 0;
@@ -327,56 +330,57 @@ LONG mp_ipp_query_imageable_margins(const struct MPConfig *cfg,
         return 0;
     }
 
-    uri[0] = 0;
-    if (!mp_append(uri, sizeof(uri), &up, "ipp://") ||
-        !mp_append(uri, sizeof(uri), &up, cfg->host)) {
+    g_margin_uri[0] = 0;
+    if (!mp_append(g_margin_uri, sizeof(g_margin_uri), &up, "ipp://") ||
+        !mp_append(g_margin_uri, sizeof(g_margin_uri), &up, cfg->host)) {
         rc = -2; goto done;
     }
     if (cfg->port != 631 &&
-        (!mp_append(uri, sizeof(uri), &up, ":") ||
-         !mp_append_ulong(uri, sizeof(uri), &up, cfg->port))) {
+        (!mp_append(g_margin_uri, sizeof(g_margin_uri), &up, ":") ||
+         !mp_append_ulong(g_margin_uri, sizeof(g_margin_uri), &up, cfg->port))) {
         rc = -2; goto done;
     }
-    if (!mp_append(uri, sizeof(uri), &up, cfg->path)) {
+    if (!mp_append(g_margin_uri, sizeof(g_margin_uri), &up, cfg->path)) {
         rc = -2; goto done;
     }
 
     /* IPP/1.1 Get-Printer-Attributes, requesting only the four margin
      * descriptions so the response stays tiny even on verbose printers. */
-    if (!mp_put8(ipp, sizeof(ipp), &io, 1) ||
-        !mp_put8(ipp, sizeof(ipp), &io, 1) ||
-        !mp_put16(ipp, sizeof(ipp), &io, 0x000b) ||
-        !mp_put32(ipp, sizeof(ipp), &io, 2) ||
-        !mp_put8(ipp, sizeof(ipp), &io, 0x01) ||
-        !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x47,
+    if (!mp_put8(g_margin_ipp, sizeof(g_margin_ipp), &io, 1) ||
+        !mp_put8(g_margin_ipp, sizeof(g_margin_ipp), &io, 1) ||
+        !mp_put16(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x000b) ||
+        !mp_put32(g_margin_ipp, sizeof(g_margin_ipp), &io, 2) ||
+        !mp_put8(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x01) ||
+        !mp_ipp_attr(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x47,
                      "attributes-charset", "utf-8") ||
-        !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x48,
+        !mp_ipp_attr(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x48,
                      "attributes-natural-language", "en") ||
-        !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x45,
-                     "printer-uri", uri) ||
-        !mp_ipp_attr(ipp, sizeof(ipp), &io, 0x44,
+        !mp_ipp_attr(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x45,
+                     "printer-uri", g_margin_uri) ||
+        !mp_ipp_attr(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x44,
                      "requested-attributes", "media-left-margin-supported") ||
-        !mp_ipp_additional_attr(ipp, sizeof(ipp), &io, 0x44,
+        !mp_ipp_additional_attr(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x44,
                                 "media-right-margin-supported") ||
-        !mp_ipp_additional_attr(ipp, sizeof(ipp), &io, 0x44,
+        !mp_ipp_additional_attr(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x44,
                                 "media-top-margin-supported") ||
-        !mp_ipp_additional_attr(ipp, sizeof(ipp), &io, 0x44,
+        !mp_ipp_additional_attr(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x44,
                                 "media-bottom-margin-supported") ||
-        !mp_put8(ipp, sizeof(ipp), &io, 0x03)) {
+        !mp_put8(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x03)) {
         rc = -3; goto done;
     }
 
-    http[0] = 0;
-    if (!mp_append(http, sizeof(http), &hp, "POST ") ||
-        !mp_append(http, sizeof(http), &hp, cfg->path) ||
-        !mp_append(http, sizeof(http), &hp, " HTTP/1.1\r\nHost: ") ||
-        !mp_append(http, sizeof(http), &hp, cfg->host) ||
-        !mp_append(http, sizeof(http), &hp, ":") ||
-        !mp_append_ulong(http, sizeof(http), &hp, cfg->port) ||
-        !mp_append(http, sizeof(http), &hp,
+    g_margin_http[0] = 0;
+    if (!mp_append(g_margin_http, sizeof(g_margin_http), &hp, "POST ") ||
+        !mp_append(g_margin_http, sizeof(g_margin_http), &hp, cfg->path) ||
+        !mp_append(g_margin_http, sizeof(g_margin_http), &hp,
+                   " HTTP/1.1\r\nHost: ") ||
+        !mp_append(g_margin_http, sizeof(g_margin_http), &hp, cfg->host) ||
+        !mp_append(g_margin_http, sizeof(g_margin_http), &hp, ":") ||
+        !mp_append_ulong(g_margin_http, sizeof(g_margin_http), &hp, cfg->port) ||
+        !mp_append(g_margin_http, sizeof(g_margin_http), &hp,
                    "\r\nContent-Type: application/ipp\r\nContent-Length: ") ||
-        !mp_append_ulong(http, sizeof(http), &hp, io) ||
-        !mp_append(http, sizeof(http), &hp,
+        !mp_append_ulong(g_margin_http, sizeof(g_margin_http), &hp, io) ||
+        !mp_append(g_margin_http, sizeof(g_margin_http), &hp,
                    "\r\nConnection: close\r\n\r\n")) {
         rc = -4; goto done;
     }
@@ -395,8 +399,8 @@ LONG mp_ipp_query_imageable_margins(const struct MPConfig *cfg,
         rc = -8; goto done;
     }
 
-    if (!mp_safe_send(sock, (const UBYTE *)http, hp) ||
-        !mp_safe_send(sock, ipp, io)) {
+    if (!mp_safe_send(sock, (const UBYTE *)g_margin_http, hp) ||
+        !mp_safe_send(sock, g_margin_ipp, io)) {
         rc = -9; goto done;
     }
 
@@ -405,24 +409,25 @@ LONG mp_ipp_query_imageable_margins(const struct MPConfig *cfg,
         int status = 0;
         LONG got;
 
-        parsed = mp_http_final_body(response, (int)response_used, &status,
-                                    &body_pos, &body_len);
+        parsed = mp_http_final_body(g_margin_response, (int)response_used,
+                                    &status, &body_pos, &body_len);
         if (parsed == 1) {
             if (status != 200) { rc = -10; goto done; }
             break;
         }
-        if (parsed < 0 || response_used >= sizeof(response)) {
+        if (parsed < 0 || response_used >= sizeof(g_margin_response)) {
             rc = -10; goto done;
         }
-        got = recv(sock, response + response_used,
-                   (LONG)(sizeof(response) - response_used), 0);
+        got = recv(sock, g_margin_response + response_used,
+                   (LONG)(sizeof(g_margin_response) - response_used), 0);
         if (got <= 0) { rc = -10; goto done; }
         response_used += (ULONG)got;
     }
 
     if (body_pos < 0 || body_len < 8) { rc = -10; goto done; }
     {
-        const UBYTE *body = (const UBYTE *)(response + body_pos);
+        const UBYTE *body =
+            (const UBYTE *)(g_margin_response + body_pos);
         ULONG pos = 8;
         ULONG end = (ULONG)body_len;
         char current_name[48];

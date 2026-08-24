@@ -1,3 +1,7 @@
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 /*
  * Minimal IPP Print-Job transport for MintPRINT working driver path.
  *

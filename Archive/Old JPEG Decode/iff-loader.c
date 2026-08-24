@@ -1,3 +1,6 @@
+#ifndef EXTRA_HALFBRITE
+#define EXTRA_HALFBRITE 0x0080
+#endif
 
 // iff-loader.c - Fixed version with endian handling, HAM6/8, RLE, CLUT, EHB, 24-bit support, and debug output
 #include <stdio.h>

@@ -1,3 +1,7 @@
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 /* MintPrint Settings (formerly IPP-Test16.c / "MintPRINT Preferences").
    Setup/test GUI for the DEVS:Printers/MintPRINT driver: LAN printer
    discovery, IPP capability query, driver install/select helper, and

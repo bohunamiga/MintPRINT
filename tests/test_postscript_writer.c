@@ -153,6 +153,12 @@ int main(int argc, char **argv)
     rc = write_case(margin_path, "fit", "13 207 translate\n569 427 scale\n");
     if (rc) return 100 + rc;
 
+    /* Fill is deliberately different from Fit: even when margins are known,
+     * preserve rev28's full-sheet cover/crop geometry. This guards against
+     * accidentally turning Fill into "fill the printable rectangle" later. */
+    rc = write_case(fill_path, "fill", "-264 0 translate\n1123 842 scale\n");
+    if (rc) return 120 + rc;
+
     mp_postscript_set_margins(0, 0, 0, 0);
     return 0;
 }

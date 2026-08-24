@@ -255,25 +255,24 @@ int mp_postscript_begin(MPPostScriptEncoder *e,
      * printer.device raster's physical DPI size when it already fits, and
      * only reduce oversized content so it cannot run off the selected sheet.
      *
-     * Explicit fit/fill are different.  printer.device can intentionally
+     * Explicit fit/fill are different. printer.device can intentionally
      * deliver a lower-resolution raster to keep classic-Amiga CPU/memory use
      * reasonable (the built-in PostScript test page is 4.2 x 5.94 inches at
      * 300 DPI), while /PageSize still describes the real A4/Letter sheet.
      * Once that raster is embedded in a full-size PostScript page, an IPP
-     * print-scaling attribute can no longer enlarge the image itself.  Apply
+     * print-scaling attribute can no longer enlarge the image itself. Apply
      * those two user-selected modes here, changing only PostScript geometry;
      * the JPEG stream, raster dimensions and transfer size stay unchanged.
      *
-     * A physical sheet is not necessarily fully imageable. If the spool
-     * process resolved unambiguous IPP media margins, explicit Fit/Fill
-     * target that printable rectangle instead of placing image pixels under
-     * the printer's hardware clipping area. Auto/auto-fit/none deliberately
-     * retain their established rev27 geometry. Invalid/impossible margin
-     * combinations are ignored, the same zero-margin compatibility fallback
-     * used when a printer does not report these attributes at all.
+     * Fit means preserve the complete image inside the printer's imageable
+     * area. If the spool process resolved unambiguous IPP media margins,
+     * Fit therefore targets that printable rectangle. Fill deliberately does
+     * not: it retains rev28's cover-the-physical-sheet/crop semantics.
+     * Auto/auto-fit/none also retain their established rev27 geometry.
+     * Invalid/impossible margin combinations are ignored, the same zero-
+     * margin compatibility fallback used when a printer does not report them.
      */
-    if (g_mp_ps_scaling == MP_PS_SCALE_FIT ||
-        g_mp_ps_scaling == MP_PS_SCALE_FILL) {
+    if (g_mp_ps_scaling == MP_PS_SCALE_FIT) {
         unsigned long left = mp_ps_margin_points(g_mp_ps_margin_left_100mm);
         unsigned long right = mp_ps_margin_points(g_mp_ps_margin_right_100mm);
         unsigned long top = mp_ps_margin_points(g_mp_ps_margin_top_100mm);

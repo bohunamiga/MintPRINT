@@ -101,6 +101,10 @@ void mp_config_defaults(struct MPConfig *cfg)
      * job-template attribute to printers that were already working. */
     cfg->sides[0] = 0;
     mp_cfg_copy(cfg->pwg_sheet_back, sizeof(cfg->pwg_sheet_back), "normal");
+    cfg->margin_left_100mm = 0;
+    cfg->margin_right_100mm = 0;
+    cfg->margin_top_100mm = 0;
+    cfg->margin_bottom_100mm = 0;
 }
 
 LONG mp_config_load(struct MPConfig *cfg)
@@ -115,6 +119,10 @@ LONG mp_config_load(struct MPConfig *cfg)
      * used by this job. Empty/default scaling intentionally maps to its
      * historical auto-fit placement until a saved SCALING= overrides it. */
     mp_postscript_set_scaling(cfg->scaling);
+    mp_postscript_set_margins(cfg->margin_left_100mm,
+                              cfg->margin_right_100mm,
+                              cfg->margin_top_100mm,
+                              cfg->margin_bottom_100mm);
 
     if (!DOSBase) return MP_CONFIG_SOURCE_DEFAULTS;
 
@@ -240,9 +248,33 @@ LONG mp_config_load(struct MPConfig *cfg)
             }
             continue;
         }
+        if (mp_cfg_starts(g_config_line, "MARGIN_LEFT=")) {
+            n = mp_cfg_parse_ulong(g_config_line + 12, &ok);
+            if (ok) cfg->margin_left_100mm = n;
+            continue;
+        }
+        if (mp_cfg_starts(g_config_line, "MARGIN_RIGHT=")) {
+            n = mp_cfg_parse_ulong(g_config_line + 13, &ok);
+            if (ok) cfg->margin_right_100mm = n;
+            continue;
+        }
+        if (mp_cfg_starts(g_config_line, "MARGIN_TOP=")) {
+            n = mp_cfg_parse_ulong(g_config_line + 11, &ok);
+            if (ok) cfg->margin_top_100mm = n;
+            continue;
+        }
+        if (mp_cfg_starts(g_config_line, "MARGIN_BOTTOM=")) {
+            n = mp_cfg_parse_ulong(g_config_line + 14, &ok);
+            if (ok) cfg->margin_bottom_100mm = n;
+            continue;
+        }
     }
 
     Close(fh);
     mp_postscript_set_scaling(cfg->scaling);
+    mp_postscript_set_margins(cfg->margin_left_100mm,
+                              cfg->margin_right_100mm,
+                              cfg->margin_top_100mm,
+                              cfg->margin_bottom_100mm);
     return source;
 }

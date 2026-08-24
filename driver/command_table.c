@@ -10,7 +10,7 @@
  *
  * The command table remains deliberately conservative for the first text
  * implementation.  Plain characters, CR/LF, TAB, wrapping and form feed are
- * supported; printer escape-language styling is still ignored by DoSpecial().
+ * supported; most printer escape-language styling is still ignored.
  */
 
 #include <exec/types.h>
@@ -67,6 +67,10 @@ extern struct ExecBase *SysBase;
 extern struct PrinterData *PD;
 extern int PRT_STDARGS DriverOpen(struct IORequest *ior);
 extern VOID PRT_STDARGS DriverClose(struct IORequest *ior);
+extern LONG PRT_STDARGS DoSpecial(UWORD *command, UBYTE output_buffer[],
+                                  BYTE *current_line_position,
+                                  BYTE *current_line_spacing,
+                                  BYTE *crlf_flag, STRPTR params);
 
 /* Required by proto/graphics.h library stubs.  Text output opens the library
  * only while DriverClose is rasterising captured PRT: data. */
@@ -159,9 +163,7 @@ static BOOL mp_text_append(UBYTE c)
  * cannot declare PRTA_NoIO).
  *
  * ESC/CSI/0xff are left to printer.device's command parser so standard Amiga
- * printer control sequences can still reach DoSpecial().  The first text
- * milestone intentionally treats those commands as no-ops rather than printer
- * bytes.
+ * printer control sequences can still reach TextDoSpecial().
  */
 LONG PRT_STDARGS ConvFunc(UBYTE *buf, UBYTE c, LONG crlf_flag)
 {
@@ -198,6 +200,26 @@ LONG PRT_STDARGS ConvFunc(UBYTE *buf, UBYTE c, LONG crlf_flag)
     }
 
     return 0;
+}
+
+/* printer.device can express line movement as the standard aIND/aNEL
+ * commands (ESC D / ESC E) instead of literal LF/CRLF bytes.  Preserve those
+ * two layout operations in our captured text stream; all other command-table
+ * operations still use the existing graphics-era DoSpecial no-op for now. */
+LONG PRT_STDARGS TextDoSpecial(UWORD *command, UBYTE output_buffer[],
+                               BYTE *current_line_position,
+                               BYTE *current_line_spacing,
+                               BYTE *crlf_flag, STRPTR params)
+{
+    if (command && (*command == aIND || *command == aNEL)) {
+        g_text_last_was_cr = FALSE;
+        if (!g_text_capture_failed)
+            mp_text_append('\n');
+        return 0;
+    }
+
+    return DoSpecial(command, output_buffer, current_line_position,
+                     current_line_spacing, crlf_flag, params);
 }
 
 static BOOL mp_text_next(struct MPTextCursor *cursor, UBYTE *out)

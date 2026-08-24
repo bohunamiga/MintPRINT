@@ -7,6 +7,10 @@
 #define MP_PS_SCALE_FILL 2
 
 static int g_mp_ps_scaling = MP_PS_SCALE_AUTO;
+static unsigned long g_mp_ps_margin_left_100mm = 0;
+static unsigned long g_mp_ps_margin_right_100mm = 0;
+static unsigned long g_mp_ps_margin_top_100mm = 0;
+static unsigned long g_mp_ps_margin_bottom_100mm = 0;
 
 static unsigned long mp_ps_strlen(const char *s)
 {
@@ -31,6 +35,24 @@ void mp_postscript_set_scaling(const char *scaling)
         g_mp_ps_scaling = MP_PS_SCALE_FILL;
     else
         g_mp_ps_scaling = MP_PS_SCALE_AUTO;
+}
+
+void mp_postscript_set_margins(unsigned long left_100mm,
+                               unsigned long right_100mm,
+                               unsigned long top_100mm,
+                               unsigned long bottom_100mm)
+{
+    g_mp_ps_margin_left_100mm = left_100mm;
+    g_mp_ps_margin_right_100mm = right_100mm;
+    g_mp_ps_margin_top_100mm = top_100mm;
+    g_mp_ps_margin_bottom_100mm = bottom_100mm;
+}
+
+/* IPP media margins are hundredths of a millimetre.  One PostScript point
+ * is 1/72 inch = 25.4/72 mm, so points = margin * 72 / 2540. */
+static unsigned long mp_ps_margin_points(unsigned long margin_100mm)
+{
+    return (margin_100mm * 72UL + 1270UL) / 2540UL;
 }
 
 static int mp_ps_flush(MPPostScriptEncoder *e)
@@ -190,6 +212,10 @@ int mp_postscript_begin(MPPostScriptEncoder *e,
     unsigned long page_h;
     unsigned long image_w;
     unsigned long image_h;
+    unsigned long target_x = 0;
+    unsigned long target_y = 0;
+    unsigned long target_w;
+    unsigned long target_h;
     unsigned long draw_w;
     unsigned long draw_h;
     long draw_x;
@@ -217,6 +243,8 @@ int mp_postscript_begin(MPPostScriptEncoder *e,
     if (!image_h) image_h = 1UL;
     page_w = page_width_points ? page_width_points : image_w;
     page_h = page_height_points ? page_height_points : image_h;
+    target_w = page_w;
+    target_h = page_h;
 
     /*
      * Keep the rev27 placement policy for auto/auto-fit/none: preserve the
@@ -231,25 +259,48 @@ int mp_postscript_begin(MPPostScriptEncoder *e,
      * print-scaling attribute can no longer enlarge the image itself.  Apply
      * those two user-selected modes here, changing only PostScript geometry;
      * the JPEG stream, raster dimensions and transfer size stay unchanged.
+     *
+     * A physical sheet is not necessarily fully imageable.  If Settings has
+     * supplied unambiguous IPP media margins, explicit Fit/Fill target that
+     * printable rectangle instead of placing image pixels under the printer's
+     * hardware clipping area.  Auto/auto-fit/none deliberately retain their
+     * established rev27 geometry.  Invalid/impossible margin combinations are
+     * ignored, which is the same zero-margin compatibility fallback used for
+     * printers that do not report these attributes at all.
      */
+    if (g_mp_ps_scaling == MP_PS_SCALE_FIT ||
+        g_mp_ps_scaling == MP_PS_SCALE_FILL) {
+        unsigned long left = mp_ps_margin_points(g_mp_ps_margin_left_100mm);
+        unsigned long right = mp_ps_margin_points(g_mp_ps_margin_right_100mm);
+        unsigned long top = mp_ps_margin_points(g_mp_ps_margin_top_100mm);
+        unsigned long bottom = mp_ps_margin_points(g_mp_ps_margin_bottom_100mm);
+
+        if (left + right < page_w && top + bottom < page_h) {
+            target_x = left;
+            target_y = bottom;
+            target_w = page_w - left - right;
+            target_h = page_h - top - bottom;
+        }
+    }
+
     draw_w = image_w;
     draw_h = image_h;
 
     if (g_mp_ps_scaling == MP_PS_SCALE_FIT) {
-        if (image_w * page_h > image_h * page_w) {
-            draw_w = page_w;
-            draw_h = (image_h * page_w + image_w / 2UL) / image_w;
+        if (image_w * target_h > image_h * target_w) {
+            draw_w = target_w;
+            draw_h = (image_h * target_w + image_w / 2UL) / image_w;
         } else {
-            draw_h = page_h;
-            draw_w = (image_w * page_h + image_h / 2UL) / image_h;
+            draw_h = target_h;
+            draw_w = (image_w * target_h + image_h / 2UL) / image_h;
         }
     } else if (g_mp_ps_scaling == MP_PS_SCALE_FILL) {
-        if (image_w * page_h > image_h * page_w) {
-            draw_h = page_h;
-            draw_w = (image_w * page_h + image_h / 2UL) / image_h;
+        if (image_w * target_h > image_h * target_w) {
+            draw_h = target_h;
+            draw_w = (image_w * target_h + image_h / 2UL) / image_h;
         } else {
-            draw_w = page_w;
-            draw_h = (image_h * page_w + image_w / 2UL) / image_w;
+            draw_w = target_w;
+            draw_h = (image_h * target_w + image_w / 2UL) / image_w;
         }
     } else if (draw_w > page_w || draw_h > page_h) {
         if (draw_w * page_h > draw_h * page_w) {
@@ -264,14 +315,26 @@ int mp_postscript_begin(MPPostScriptEncoder *e,
     if (!draw_w) draw_w = 1UL;
     if (!draw_h) draw_h = 1UL;
 
-    if (draw_w <= page_w)
-        draw_x = (long)((page_w - draw_w) / 2UL);
-    else
-        draw_x = -(long)((draw_w - page_w) / 2UL);
-    if (draw_h <= page_h)
-        draw_y = (long)((page_h - draw_h) / 2UL);
-    else
-        draw_y = -(long)((draw_h - page_h) / 2UL);
+    if (g_mp_ps_scaling == MP_PS_SCALE_FIT ||
+        g_mp_ps_scaling == MP_PS_SCALE_FILL) {
+        if (draw_w <= target_w)
+            draw_x = (long)(target_x + (target_w - draw_w) / 2UL);
+        else
+            draw_x = (long)target_x - (long)((draw_w - target_w) / 2UL);
+        if (draw_h <= target_h)
+            draw_y = (long)(target_y + (target_h - draw_h) / 2UL);
+        else
+            draw_y = (long)target_y - (long)((draw_h - target_h) / 2UL);
+    } else {
+        if (draw_w <= page_w)
+            draw_x = (long)((page_w - draw_w) / 2UL);
+        else
+            draw_x = -(long)((draw_w - page_w) / 2UL);
+        if (draw_h <= page_h)
+            draw_y = (long)((page_h - draw_h) / 2UL);
+        else
+            draw_y = -(long)((draw_h - page_h) / 2UL);
+    }
 
     if (!mp_ps_lit(e, "%!PS-Adobe-3.0\n"
                        "%%Creator: MintPRINT\n"

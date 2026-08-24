@@ -70,6 +70,10 @@ def _ipp_resolution(name, dpi, first=True):
     return _ipp_more(0x32, value)
 
 
+def _ipp_integer(name, value):
+    return _ipp_attr(0x21, name, struct.pack(">I", value))
+
+
 def _get_printer_attributes_response(request):
     """Return deterministic capabilities useful for MintPRINT development."""
     out = bytearray(_ipp_header(request))
@@ -96,6 +100,15 @@ def _get_printer_attributes_response(request):
     out += _ipp_more(0x44, "none")
 
     out += _ipp_attr(0x44, "media-supported", "iso_a4_210x297mm")
+
+    # Reproduce the Samsung C480W field report from issue #15. IPP margins
+    # use hundredths of a millimetre, so 440 means a 4.4 mm non-imageable
+    # strip at each edge. This lets the rev29 PostScript geometry fix be
+    # exercised without a physical PostScript printer.
+    out += _ipp_integer("media-left-margin-supported", 440)
+    out += _ipp_integer("media-right-margin-supported", 440)
+    out += _ipp_integer("media-top-margin-supported", 440)
+    out += _ipp_integer("media-bottom-margin-supported", 440)
 
     out += _ipp_attr(0x44, "print-color-mode-supported", "color")
     out += _ipp_more(0x44, "monochrome")
@@ -178,7 +191,7 @@ class MintPrintHandler(BaseHTTPRequestHandler):
             response = _get_printer_attributes_response(body)
             print(
                 "Query: advertised PostScript/JPEG/PWG/PDF, A4, 300/600 dpi, "
-                "scaling auto/auto-fit/fit/fill/none"
+                "scaling auto/auto-fit/fit/fill/none, margins 440/440/440/440"
             )
             sys.stdout.flush()
             self._send_ipp(response)

@@ -231,6 +231,22 @@ while "auto" printed correctly in both cases. Treat any other Scaling
 value as something to try only if "auto" does not look right for your
 particular application and printer.
 
+The two explicit full-page choices have different purposes:
+
+    Fit     Keeps the whole page visible while enlarging it as much as
+            possible. With the PostScript engine, MintPRINT also respects
+            any printable-area margins reported by the printer, so borders
+            and other edge content are not placed in non-printable hardware
+            areas.
+
+    Fill    Enlarges the page to cover the physical sheet. Some content may
+            be cropped at the edges. Printer margins do not change this
+            cover/crop behaviour.
+
+For JPEG, PDF and PWG Raster, scaling is still applied by the printer
+through IPP. The PostScript note above is specific to MintPRINT's own
+PostScript page placement.
+
 @{" Back to Contents " LINK "Main"}
 @endnode
 
@@ -329,6 +345,9 @@ correctly:
     - Prefer port 631 and whatever IPP path the printer itself reports;
       "/ipp/print" is correct for every printer confirmed so far.
     - Start with Scaling set to "auto" if the printer advertises it.
+    - If PostScript with Scaling set to "fit" still clips borders or edge
+      content, include the full IPP probe output in the bug report so the
+      printer's reported media margins can be checked.
     - Prefer an engine the printer actually advertises. Treat JPEG as
       suspicious if Query did not report any JPEG size/dimension
       capabilities for it, even though it remains selectable.

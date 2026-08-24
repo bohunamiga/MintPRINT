@@ -43,6 +43,16 @@ typedef struct MPPostScriptEncoder {
  */
 void mp_postscript_set_scaling(const char *scaling);
 
+/*
+ * Sets the printer's imageable margins in IPP's hundredths-of-a-millimetre
+ * units.  Explicit Fit/Fill use this rectangle instead of the physical sheet
+ * when the values are sane.  Zero preserves the historical full-page target.
+ */
+void mp_postscript_set_margins(unsigned long left_100mm,
+                               unsigned long right_100mm,
+                               unsigned long top_100mm,
+                               unsigned long bottom_100mm);
+
 unsigned long mp_postscript_scratch_size(unsigned long width);
 int mp_postscript_begin(MPPostScriptEncoder *enc,
                         unsigned long width, unsigned long height,

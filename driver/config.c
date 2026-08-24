@@ -274,17 +274,17 @@ LONG mp_config_load(struct MPConfig *cfg)
     Close(fh);
 
     /* Config loading already runs inside MintPRINT's dedicated spool
-     * Process (see spool.c), where bsdsocket calls are safe.  For explicit
-     * PostScript Fit/Fill, resolve the real printer imageable area here so
-     * an old saved Unit0 gains the fix immediately without requiring the
-     * Settings GUI to be opened or re-saved.  Manual MARGIN_* overrides are
-     * still accepted for diagnostics; otherwise the IPP query is cached per
-     * endpoint by ipp_client.c.  Missing/conflicting IPP values resolve to
-     * zero, preserving rev28's full-page target rather than guessing. */
+     * Process (see spool.c), where bsdsocket calls are safe. For explicit
+     * PostScript Fit, resolve the real printer imageable area here so an old
+     * saved Unit0 gains the fix immediately without requiring the Settings
+     * GUI to be opened or re-saved. Fill deliberately keeps rev28 full-sheet
+     * cover/crop geometry. Manual MARGIN_* overrides remain available for
+     * diagnostics; otherwise the IPP query is cached per endpoint by
+     * ipp_client.c. Missing/conflicting IPP values resolve to zero, preserving
+     * rev28's full-page target rather than guessing. */
     if (mp_cfg_starts(cfg->engine, "postscript") &&
         mp_cfg_len(cfg->engine) == 10 &&
-        ((mp_cfg_starts(cfg->scaling, "fit") && mp_cfg_len(cfg->scaling) == 3) ||
-         (mp_cfg_starts(cfg->scaling, "fill") && mp_cfg_len(cfg->scaling) == 4)) &&
+        mp_cfg_starts(cfg->scaling, "fit") && mp_cfg_len(cfg->scaling) == 3 &&
         cfg->margin_left_100mm == 0 && cfg->margin_right_100mm == 0 &&
         cfg->margin_top_100mm == 0 && cfg->margin_bottom_100mm == 0) {
         ULONG left = 0, right = 0, top = 0, bottom = 0;

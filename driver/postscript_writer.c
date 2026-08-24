@@ -48,11 +48,15 @@ void mp_postscript_set_margins(unsigned long left_100mm,
     g_mp_ps_margin_bottom_100mm = bottom_100mm;
 }
 
-/* IPP media margins are hundredths of a millimetre.  One PostScript point
- * is 1/72 inch = 25.4/72 mm, so points = margin * 72 / 2540. */
+/* IPP media margins are hundredths of a millimetre. One PostScript point
+ * is 1/72 inch = 25.4/72 mm, so points = margin * 72 / 2540. These are
+ * NON-imageable margins: round upward, never to nearest, so conversion to
+ * integer PostScript coordinates cannot move content back into the dead
+ * hardware edge. Samsung's 4.4 mm (440) therefore becomes 13 pt, not 12. */
 static unsigned long mp_ps_margin_points(unsigned long margin_100mm)
 {
-    return (margin_100mm * 72UL + 1270UL) / 2540UL;
+    if (!margin_100mm) return 0;
+    return (margin_100mm * 72UL + 2539UL) / 2540UL;
 }
 
 static int mp_ps_flush(MPPostScriptEncoder *e)
@@ -260,13 +264,13 @@ int mp_postscript_begin(MPPostScriptEncoder *e,
      * those two user-selected modes here, changing only PostScript geometry;
      * the JPEG stream, raster dimensions and transfer size stay unchanged.
      *
-     * A physical sheet is not necessarily fully imageable.  If Settings has
-     * supplied unambiguous IPP media margins, explicit Fit/Fill target that
-     * printable rectangle instead of placing image pixels under the printer's
-     * hardware clipping area.  Auto/auto-fit/none deliberately retain their
-     * established rev27 geometry.  Invalid/impossible margin combinations are
-     * ignored, which is the same zero-margin compatibility fallback used for
-     * printers that do not report these attributes at all.
+     * A physical sheet is not necessarily fully imageable. If the spool
+     * process resolved unambiguous IPP media margins, explicit Fit/Fill
+     * target that printable rectangle instead of placing image pixels under
+     * the printer's hardware clipping area. Auto/auto-fit/none deliberately
+     * retain their established rev27 geometry. Invalid/impossible margin
+     * combinations are ignored, the same zero-margin compatibility fallback
+     * used when a printer does not report these attributes at all.
      */
     if (g_mp_ps_scaling == MP_PS_SCALE_FIT ||
         g_mp_ps_scaling == MP_PS_SCALE_FILL) {

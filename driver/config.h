@@ -26,6 +26,11 @@ struct MPConfig {
     char scaling[MP_CONFIG_OPTION_MAX];
     char sides[MP_CONFIG_OPTION_MAX];
     char pwg_sheet_back[MP_CONFIG_OPTION_MAX];
+    /* IPP media-*-margin values, in hundredths of a millimetre. */
+    ULONG margin_left_100mm;
+    ULONG margin_right_100mm;
+    ULONG margin_top_100mm;
+    ULONG margin_bottom_100mm;
 };
 
 void mp_config_defaults(struct MPConfig *cfg);

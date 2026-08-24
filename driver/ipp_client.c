@@ -48,6 +48,26 @@ static ULONG mp_len(const char *s)
     return n;
 }
 
+static int mp_streq(const char *a, const char *b)
+{
+    ULONG i = 0;
+    if (!a || !b) return 0;
+    while (a[i] && b[i] && a[i] == b[i]) ++i;
+    return a[i] == 0 && b[i] == 0;
+}
+
+static void mp_copy(char *dst, ULONG cap, const char *src)
+{
+    ULONG i = 0;
+    if (!dst || !cap) return;
+    if (!src) src = "";
+    while (src[i] && i + 1 < cap) {
+        dst[i] = src[i];
+        ++i;
+    }
+    dst[i] = 0;
+}
+
 static int mp_append(char *dst, ULONG cap, ULONG *pos, const char *src)
 {
     ULONG i = 0;
@@ -127,6 +147,17 @@ static int mp_ipp_attr(UBYTE *p, ULONG cap, ULONG *off, UBYTE tag,
     return mp_put8(p, cap, off, tag) &&
            mp_put16(p, cap, off, (UWORD)nl) &&
            mp_put_bytes(p, cap, off, (const UBYTE *)name, nl) &&
+           mp_put16(p, cap, off, (UWORD)vl) &&
+           mp_put_bytes(p, cap, off, (const UBYTE *)value, vl);
+}
+
+static int mp_ipp_additional_attr(UBYTE *p, ULONG cap, ULONG *off, UBYTE tag,
+                                  const char *value)
+{
+    ULONG vl = mp_len(value);
+    if (vl > 65535UL) return 0;
+    return mp_put8(p, cap, off, tag) &&
+           mp_put16(p, cap, off, 0) &&
            mp_put16(p, cap, off, (UWORD)vl) &&
            mp_put_bytes(p, cap, off, (const UBYTE *)value, vl);
 }
@@ -224,6 +255,257 @@ static ULONG mp_quality_enum(const char *quality)
     if (quality[0] == 'n' || quality[0] == 'N') return 4;
     if (quality[0] == 'h' || quality[0] == 'H') return 5;
     return 0;
+}
+
+static ULONG mp_be32(const UBYTE *p)
+{
+    return ((ULONG)p[0] << 24) | ((ULONG)p[1] << 16) |
+           ((ULONG)p[2] << 8) | (ULONG)p[3];
+}
+
+static void mp_margin_record(ULONG *value, BOOL *seen, BOOL *ambiguous,
+                             ULONG candidate)
+{
+    if (!*seen) {
+        *value = candidate;
+        *seen = TRUE;
+    } else if (*value != candidate) {
+        *ambiguous = TRUE;
+    }
+}
+
+static BOOL g_margin_cache_valid = FALSE;
+static char g_margin_cache_host[MP_CONFIG_HOST_MAX];
+static UWORD g_margin_cache_port = 0;
+static char g_margin_cache_path[MP_CONFIG_PATH_MAX];
+static ULONG g_margin_cache_left = 0;
+static ULONG g_margin_cache_right = 0;
+static ULONG g_margin_cache_top = 0;
+static ULONG g_margin_cache_bottom = 0;
+/* Keep network buffers out of the spool Process's deliberately small 8 KiB
+ * stack. Config/margin lookup and Print-Job are serialized in that one
+ * process, so a single static set is sufficient. */
+static UBYTE g_margin_ipp[512];
+static char g_margin_uri[192];
+static char g_margin_http[512];
+static char g_margin_response[4096];
+
+LONG mp_ipp_query_imageable_margins(const struct MPConfig *cfg,
+                                    ULONG *left_100mm,
+                                    ULONG *right_100mm,
+                                    ULONG *top_100mm,
+                                    ULONG *bottom_100mm)
+{
+    int sock = -1;
+    struct sockaddr_in addr = {0};
+    ULONG io = 0;
+    ULONG up = 0;
+    ULONG hp = 0;
+    ULONG response_used = 0;
+    int body_pos = -1;
+    int body_len = 0;
+    LONG rc = -1;
+    ULONG left = 0, right = 0, top = 0, bottom = 0;
+    BOOL left_seen = FALSE, right_seen = FALSE;
+    BOOL top_seen = FALSE, bottom_seen = FALSE;
+    BOOL left_ambiguous = FALSE, right_ambiguous = FALSE;
+    BOOL top_ambiguous = FALSE, bottom_ambiguous = FALSE;
+
+    if (left_100mm) *left_100mm = 0;
+    if (right_100mm) *right_100mm = 0;
+    if (top_100mm) *top_100mm = 0;
+    if (bottom_100mm) *bottom_100mm = 0;
+
+    if (!cfg || !cfg->host[0] || cfg->port == 0 || cfg->path[0] != '/')
+        return -1;
+
+    if (g_margin_cache_valid &&
+        g_margin_cache_port == cfg->port &&
+        mp_streq(g_margin_cache_host, cfg->host) &&
+        mp_streq(g_margin_cache_path, cfg->path)) {
+        if (left_100mm) *left_100mm = g_margin_cache_left;
+        if (right_100mm) *right_100mm = g_margin_cache_right;
+        if (top_100mm) *top_100mm = g_margin_cache_top;
+        if (bottom_100mm) *bottom_100mm = g_margin_cache_bottom;
+        return 0;
+    }
+
+    g_margin_uri[0] = 0;
+    if (!mp_append(g_margin_uri, sizeof(g_margin_uri), &up, "ipp://") ||
+        !mp_append(g_margin_uri, sizeof(g_margin_uri), &up, cfg->host)) {
+        rc = -2; goto done;
+    }
+    if (cfg->port != 631 &&
+        (!mp_append(g_margin_uri, sizeof(g_margin_uri), &up, ":") ||
+         !mp_append_ulong(g_margin_uri, sizeof(g_margin_uri), &up, cfg->port))) {
+        rc = -2; goto done;
+    }
+    if (!mp_append(g_margin_uri, sizeof(g_margin_uri), &up, cfg->path)) {
+        rc = -2; goto done;
+    }
+
+    /* IPP/1.1 Get-Printer-Attributes, requesting only the four margin
+     * descriptions so the response stays tiny even on verbose printers. */
+    if (!mp_put8(g_margin_ipp, sizeof(g_margin_ipp), &io, 1) ||
+        !mp_put8(g_margin_ipp, sizeof(g_margin_ipp), &io, 1) ||
+        !mp_put16(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x000b) ||
+        !mp_put32(g_margin_ipp, sizeof(g_margin_ipp), &io, 2) ||
+        !mp_put8(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x01) ||
+        !mp_ipp_attr(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x47,
+                     "attributes-charset", "utf-8") ||
+        !mp_ipp_attr(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x48,
+                     "attributes-natural-language", "en") ||
+        !mp_ipp_attr(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x45,
+                     "printer-uri", g_margin_uri) ||
+        !mp_ipp_attr(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x44,
+                     "requested-attributes", "media-left-margin-supported") ||
+        !mp_ipp_additional_attr(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x44,
+                                "media-right-margin-supported") ||
+        !mp_ipp_additional_attr(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x44,
+                                "media-top-margin-supported") ||
+        !mp_ipp_additional_attr(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x44,
+                                "media-bottom-margin-supported") ||
+        !mp_put8(g_margin_ipp, sizeof(g_margin_ipp), &io, 0x03)) {
+        rc = -3; goto done;
+    }
+
+    g_margin_http[0] = 0;
+    if (!mp_append(g_margin_http, sizeof(g_margin_http), &hp, "POST ") ||
+        !mp_append(g_margin_http, sizeof(g_margin_http), &hp, cfg->path) ||
+        !mp_append(g_margin_http, sizeof(g_margin_http), &hp,
+                   " HTTP/1.1\r\nHost: ") ||
+        !mp_append(g_margin_http, sizeof(g_margin_http), &hp, cfg->host) ||
+        !mp_append(g_margin_http, sizeof(g_margin_http), &hp, ":") ||
+        !mp_append_ulong(g_margin_http, sizeof(g_margin_http), &hp, cfg->port) ||
+        !mp_append(g_margin_http, sizeof(g_margin_http), &hp,
+                   "\r\nContent-Type: application/ipp\r\nContent-Length: ") ||
+        !mp_append_ulong(g_margin_http, sizeof(g_margin_http), &hp, io) ||
+        !mp_append(g_margin_http, sizeof(g_margin_http), &hp,
+                   "\r\nConnection: close\r\n\r\n")) {
+        rc = -4; goto done;
+    }
+
+    SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
+    if (!SocketBase) { rc = -5; goto done; }
+
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) { rc = -6; goto done; }
+
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(cfg->port);
+    addr.sin_addr.s_addr = inet_addr((STRPTR)cfg->host);
+    if (addr.sin_addr.s_addr == INADDR_NONE) { rc = -7; goto done; }
+    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        rc = -8; goto done;
+    }
+
+    if (!mp_safe_send(sock, (const UBYTE *)g_margin_http, hp) ||
+        !mp_safe_send(sock, g_margin_ipp, io)) {
+        rc = -9; goto done;
+    }
+
+    for (;;) {
+        int parsed;
+        int status = 0;
+        LONG got;
+
+        parsed = mp_http_final_body(g_margin_response, (int)response_used,
+                                    &status, &body_pos, &body_len);
+        if (parsed == 1) {
+            if (status != 200) { rc = -10; goto done; }
+            break;
+        }
+        if (parsed < 0 || response_used >= sizeof(g_margin_response)) {
+            rc = -10; goto done;
+        }
+        got = recv(sock, g_margin_response + response_used,
+                   (LONG)(sizeof(g_margin_response) - response_used), 0);
+        if (got <= 0) { rc = -10; goto done; }
+        response_used += (ULONG)got;
+    }
+
+    if (body_pos < 0 || body_len < 8) { rc = -10; goto done; }
+    {
+        const UBYTE *body =
+            (const UBYTE *)(g_margin_response + body_pos);
+        ULONG pos = 8;
+        ULONG end = (ULONG)body_len;
+        char current_name[48];
+        UWORD ipp_status = (UWORD)(((UWORD)body[2] << 8) | body[3]);
+
+        current_name[0] = 0;
+        if (ipp_status >= 0x0100) { rc = -11; goto done; }
+
+        while (pos < end) {
+            UBYTE tag = body[pos++];
+            UWORD name_len;
+            UWORD value_len;
+            ULONG i;
+
+            if (tag == 0x03) break;
+            if (tag <= 0x0f) {
+                current_name[0] = 0;
+                continue;
+            }
+            if (pos + 2UL > end) { rc = -12; goto done; }
+            name_len = (UWORD)(((UWORD)body[pos] << 8) | body[pos + 1]);
+            pos += 2;
+            if (pos + (ULONG)name_len + 2UL > end) { rc = -12; goto done; }
+            if (name_len) {
+                ULONG copy_len = name_len;
+                if (copy_len >= sizeof(current_name))
+                    copy_len = sizeof(current_name) - 1UL;
+                for (i = 0; i < copy_len; ++i)
+                    current_name[i] = (char)body[pos + i];
+                current_name[copy_len] = 0;
+            }
+            pos += name_len;
+            value_len = (UWORD)(((UWORD)body[pos] << 8) | body[pos + 1]);
+            pos += 2;
+            if (pos + (ULONG)value_len > end) { rc = -12; goto done; }
+
+            if (tag == 0x21 && value_len == 4) {
+                ULONG v = mp_be32(body + pos);
+                if (mp_streq(current_name, "media-left-margin-supported"))
+                    mp_margin_record(&left, &left_seen, &left_ambiguous, v);
+                else if (mp_streq(current_name, "media-right-margin-supported"))
+                    mp_margin_record(&right, &right_seen, &right_ambiguous, v);
+                else if (mp_streq(current_name, "media-top-margin-supported"))
+                    mp_margin_record(&top, &top_seen, &top_ambiguous, v);
+                else if (mp_streq(current_name, "media-bottom-margin-supported"))
+                    mp_margin_record(&bottom, &bottom_seen, &bottom_ambiguous, v);
+            }
+            pos += value_len;
+        }
+    }
+
+    if (!left_seen || left_ambiguous) left = 0;
+    if (!right_seen || right_ambiguous) right = 0;
+    if (!top_seen || top_ambiguous) top = 0;
+    if (!bottom_seen || bottom_ambiguous) bottom = 0;
+
+    g_margin_cache_left = left;
+    g_margin_cache_right = right;
+    g_margin_cache_top = top;
+    g_margin_cache_bottom = bottom;
+    g_margin_cache_port = cfg->port;
+    mp_copy(g_margin_cache_host, sizeof(g_margin_cache_host), cfg->host);
+    mp_copy(g_margin_cache_path, sizeof(g_margin_cache_path), cfg->path);
+    g_margin_cache_valid = TRUE;
+
+    if (left_100mm) *left_100mm = left;
+    if (right_100mm) *right_100mm = right;
+    if (top_100mm) *top_100mm = top;
+    if (bottom_100mm) *bottom_100mm = bottom;
+    rc = 0;
+
+done:
+    if (sock >= 0) CloseSocket(sock);
+    if (SocketBase) {
+        CloseLibrary(SocketBase);
+        SocketBase = NULL;
+    }
+    return rc;
 }
 
 static LONG mp_file_size(BPTR fh)

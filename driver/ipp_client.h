@@ -16,6 +16,16 @@ struct MPIPPResult {
  * functions never run from an arbitrary printer.device caller Task. */
 BOOL mp_ipp_socket_available(void);
 
+/* Query the four IPP media-*-margin-supported values used to build a safe
+ * PostScript imageable rectangle. Outputs are hundredths of a millimetre.
+ * A missing or conflicting side resolves to zero rather than guessing.
+ * Successful results are cached per endpoint for the resident driver. */
+LONG mp_ipp_query_imageable_margins(const struct MPConfig *cfg,
+                                    ULONG *left_100mm,
+                                    ULONG *right_100mm,
+                                    ULONG *top_100mm,
+                                    ULONG *bottom_100mm);
+
 LONG mp_ipp_print_document(const struct MPConfig *cfg, CONST_STRPTR filename,
                            CONST_STRPTR document_format,
                            struct MPIPPResult *result);

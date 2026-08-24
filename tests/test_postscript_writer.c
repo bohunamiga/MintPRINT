@@ -117,12 +117,16 @@ int main(int argc, char **argv)
     char fit_path[512];
     char fill_path[512];
     char none_path[512];
+    char margin_path[512];
     int rc;
 
-    if (strlen(path) + 6U >= sizeof(fit_path)) return 2;
+    if (strlen(path) + 9U >= sizeof(fit_path)) return 2;
     sprintf(fit_path, "%s.fit", path);
     sprintf(fill_path, "%s.fill", path);
     sprintf(none_path, "%s.none", path);
+    sprintf(margin_path, "%s.margin", path);
+
+    mp_postscript_set_margins(0, 0, 0, 0);
 
     /* rev27 compatibility: auto/auto-fit/none keep a smaller raster at its
      * native physical size and centre it on the selected media. */
@@ -140,5 +144,21 @@ int main(int argc, char **argv)
     rc = write_case(fill_path, "fill", "-264 0 translate\n1123 842 scale\n");
     if (rc) return 80 + rc;
 
+    /* Samsung C480W field case: IPP reports 440 hundredths mm (4.4 mm) on
+     * every side. A non-imageable margin is conservatively rounded UP to
+     * 13 PostScript points, leaving a 569x816 pt imageable rectangle at
+     * (13,13). Fit must preserve the whole image inside that rectangle
+     * instead of drawing its border under the printer's hardware margins. */
+    mp_postscript_set_margins(440, 440, 440, 440);
+    rc = write_case(margin_path, "fit", "13 207 translate\n569 427 scale\n");
+    if (rc) return 100 + rc;
+
+    /* Fill is deliberately different from Fit: even when margins are known,
+     * preserve rev28's full-sheet cover/crop geometry. This guards against
+     * accidentally turning Fill into "fill the printable rectangle" later. */
+    rc = write_case(fill_path, "fill", "-264 0 translate\n1123 842 scale\n");
+    if (rc) return 120 + rc;
+
+    mp_postscript_set_margins(0, 0, 0, 0);
     return 0;
 }

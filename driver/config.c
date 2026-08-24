@@ -11,6 +11,7 @@
 #include <proto/dos.h>
 
 #include "config.h"
+#include "ipp_client.h"
 #include "postscript_writer.h"
 
 extern struct DosLibrary *DOSBase;
@@ -101,6 +102,10 @@ void mp_config_defaults(struct MPConfig *cfg)
      * job-template attribute to printers that were already working. */
     cfg->sides[0] = 0;
     mp_cfg_copy(cfg->pwg_sheet_back, sizeof(cfg->pwg_sheet_back), "normal");
+    cfg->margin_left_100mm = 0;
+    cfg->margin_right_100mm = 0;
+    cfg->margin_top_100mm = 0;
+    cfg->margin_bottom_100mm = 0;
 }
 
 LONG mp_config_load(struct MPConfig *cfg)
@@ -115,6 +120,10 @@ LONG mp_config_load(struct MPConfig *cfg)
      * used by this job. Empty/default scaling intentionally maps to its
      * historical auto-fit placement until a saved SCALING= overrides it. */
     mp_postscript_set_scaling(cfg->scaling);
+    mp_postscript_set_margins(cfg->margin_left_100mm,
+                              cfg->margin_right_100mm,
+                              cfg->margin_top_100mm,
+                              cfg->margin_bottom_100mm);
 
     if (!DOSBase) return MP_CONFIG_SOURCE_DEFAULTS;
 
@@ -240,9 +249,58 @@ LONG mp_config_load(struct MPConfig *cfg)
             }
             continue;
         }
+        if (mp_cfg_starts(g_config_line, "MARGIN_LEFT=")) {
+            n = mp_cfg_parse_ulong(g_config_line + 12, &ok);
+            if (ok) cfg->margin_left_100mm = n;
+            continue;
+        }
+        if (mp_cfg_starts(g_config_line, "MARGIN_RIGHT=")) {
+            n = mp_cfg_parse_ulong(g_config_line + 13, &ok);
+            if (ok) cfg->margin_right_100mm = n;
+            continue;
+        }
+        if (mp_cfg_starts(g_config_line, "MARGIN_TOP=")) {
+            n = mp_cfg_parse_ulong(g_config_line + 11, &ok);
+            if (ok) cfg->margin_top_100mm = n;
+            continue;
+        }
+        if (mp_cfg_starts(g_config_line, "MARGIN_BOTTOM=")) {
+            n = mp_cfg_parse_ulong(g_config_line + 14, &ok);
+            if (ok) cfg->margin_bottom_100mm = n;
+            continue;
+        }
     }
 
     Close(fh);
+
+    /* Config loading already runs inside MintPRINT's dedicated spool
+     * Process (see spool.c), where bsdsocket calls are safe. For explicit
+     * PostScript Fit, resolve the real printer imageable area here so an old
+     * saved Unit0 gains the fix immediately without requiring the Settings
+     * GUI to be opened or re-saved. Fill deliberately keeps rev28 full-sheet
+     * cover/crop geometry. Manual MARGIN_* overrides remain available for
+     * diagnostics; otherwise the IPP query is cached per endpoint by
+     * ipp_client.c. Missing/conflicting IPP values resolve to zero, preserving
+     * rev28's full-page target rather than guessing. */
+    if (mp_cfg_starts(cfg->engine, "postscript") &&
+        mp_cfg_len(cfg->engine) == 10 &&
+        mp_cfg_starts(cfg->scaling, "fit") && mp_cfg_len(cfg->scaling) == 3 &&
+        cfg->margin_left_100mm == 0 && cfg->margin_right_100mm == 0 &&
+        cfg->margin_top_100mm == 0 && cfg->margin_bottom_100mm == 0) {
+        ULONG left = 0, right = 0, top = 0, bottom = 0;
+        if (mp_ipp_query_imageable_margins(cfg, &left, &right,
+                                           &top, &bottom) == 0) {
+            cfg->margin_left_100mm = left;
+            cfg->margin_right_100mm = right;
+            cfg->margin_top_100mm = top;
+            cfg->margin_bottom_100mm = bottom;
+        }
+    }
+
     mp_postscript_set_scaling(cfg->scaling);
+    mp_postscript_set_margins(cfg->margin_left_100mm,
+                              cfg->margin_right_100mm,
+                              cfg->margin_top_100mm,
+                              cfg->margin_bottom_100mm);
     return source;
 }

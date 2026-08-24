@@ -28,14 +28,41 @@ printers (JPEG, PostScript, PWG Raster, or PDF; no driver-specific software
 on the printer side) straight from Amiga applications, via a real `DEVS:Printers/`
 printer.device driver plus a GUI setup tool.
 
+## What's new in 1.2.0
+
+MintPRINT 1.2.0 is a substantial driver update, with **driver revision 29**.
+
+- **Much faster JPEG output on classic 68k CPUs.** The JPEG encoder now has
+  fast paths for constant 8x8 blocks and complete interior MCUs, avoiding a
+  large amount of repeated DCT, quantisation, bounds checking and RGB lookup
+  work. This also speeds PostScript jobs because the PostScript backend embeds
+  MintPRINT's JPEG output.
+- **Plain-text `PRT:` printing.** MintPRINT now handles printer.device
+  `CMD_WRITE`/`PRT:` character output as well as graphics dumps. Plain text has
+  been tested with AmigaDOS `Type ... TO PRT:` and MultiView, including tabs,
+  automatic line wrapping and form-feed page breaks.
+- **PostScript Fit respects the printer's printable area.** When a PostScript
+  printer reports hardware media margins, `Fit` now keeps the complete page
+  inside that imageable rectangle instead of placing borders/content into an
+  edge area the printer cannot physically mark. `Fill` keeps its existing
+  full-sheet cover/crop behaviour.
+- **No regression to the existing graphics path.** The normal MintPrint
+  Settings test page and PWG Raster graphics output were re-tested alongside
+  the new text path.
+
+PWG Raster remains the preferred engine when a printer supports it: it is much
+cheaper to encode on a classic Amiga than JPEG/PDF/PostScript and is therefore
+still selected by default where available.
+
 ## What's here
 
 - **`driver/`** - `DEVS:Printers/MintPRINT`, the printer.device driver.
-  Converts printer.device raster callbacks into a streamed JPEG, PostScript,
-  PWG Raster, or PDF document and submits it to the printer's IPP `Print-Job`
-  endpoint. See `docs/PRINTER_DEVICE_SPIKE.md` (and its follow-ups) for how
-  it was built, and `docs/PWG_RASTER.md`/`docs/DRIVER_SPOOL_PROCESS.md` for
-  the two most significant pieces of its design.
+  Handles both graphics raster callbacks and plain-text `PRT:`/`CMD_WRITE`
+  output, converts the result into streamed JPEG, PostScript, PWG Raster, or
+  PDF documents, and submits them to the printer's IPP `Print-Job` endpoint.
+  See `docs/PRINTER_DEVICE_SPIKE.md` (and its follow-ups) for how it was built,
+  and `docs/PWG_RASTER.md`/`docs/DRIVER_SPOOL_PROCESS.md` for two of the most
+  significant pieces of its design.
 - **`src/MintPrintSettings.c`** - MintPrint Settings, the GUI setup/test
   front-end. Discovers printers on the LAN (SSDP + mDNS), queries IPP
   capabilities, supports multiple saved printer profiles (Unit0-7), offers
@@ -108,11 +135,12 @@ be added with its AmigaOS version, TCP/IP stack, engine and exact print options.
 
 ## Status
 
-MintPRINT is now a real, working app: version 1.2.0 driver + GUI, with
-multiple printers confirmed fully working over IPP/AirPrint from real Amiga
-hardware. It's still actively developed and not every printer is confirmed
-yet, so check the [printer compatibility page](docs/PRINTER_COMPATIBILITY.md)
-for your specific model - see `docs/` for open issues and design history.
+MintPRINT is now a real, working app: version **1.2.0** GUI with **driver
+revision 29**, with multiple printers confirmed fully working over IPP/AirPrint
+from real Amiga hardware. It's still actively developed and not every printer
+is confirmed yet, so check the
+[printer compatibility page](docs/PRINTER_COMPATIBILITY.md) for your specific
+model - see `docs/` for open issues and design history.
 
 ## License
 

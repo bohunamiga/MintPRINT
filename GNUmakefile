@@ -5,7 +5,13 @@
 # so their saved Workbench windows are not the tiny 265x64 geometry in the
 # source artwork.  Source .info files are never modified.
 
-.PHONY: all release release31 release-all clean
+# Forwarded command targets must be phony here as well as in Makefile.
+# In particular, the repository contains a real driver/ directory; without
+# declaring `driver` phony GNU make considers that directory to satisfy the
+# target and never reaches the catch-all forwarding rule below.
+.PHONY: all gui test test-http test-dpi test-jpeg test-ipp-enum test-postscript \
+        driver driver31 driver-symbols driver-symbols31 \
+        release release31 release-all clean help
 
 all:
 	$(MAKE) -f Makefile all

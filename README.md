@@ -108,7 +108,7 @@ be added with its AmigaOS version, TCP/IP stack, engine and exact print options.
 
 ## Status
 
-MintPRINT is now a real, working app: version 1.1.0 driver + GUI, with
+MintPRINT is now a real, working app: version 1.2.0 driver + GUI, with
 multiple printers confirmed fully working over IPP/AirPrint from real Amiga
 hardware. It's still actively developed and not every printer is confirmed
 yet, so check the [printer compatibility page](docs/PRINTER_COMPATIBILITY.md)

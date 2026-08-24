@@ -75,12 +75,9 @@ printerName:
  * for diagnostics; the OS3.1 release is packaged separately so Settings sees
  * the correct PROGDIR:MintPRINT binary for that release.
  *
- * This experimental PRT: branch deliberately remains revision 28 until it
- * has been built and exercised on real AmigaOS.  Bump this together with the
- * main driver and MP_DRIVER_REV when promoting it.
  */
 mp_driver_revision_marker:
-        .asciz  "MPDRVREV:28"
+        .asciz  "MPDRVREV:29"
         .even
 
 /* Human-readable marker useful when inspecting a built driver. */

@@ -92,10 +92,7 @@ printerName:
  * Bump the trailing number whenever a driver rebuild actually changes
  * behaviour - a config-only or GUI-only change does not need a bump.
  *
- * This experimental PRT: branch deliberately remains revision 28 until it
- * has been built and exercised on real AmigaOS.  Bump the marker and the
- * matching MP_DRIVER_REV in driver_core.c together when promoting it.
  */
 mp_driver_revision_marker:
-        .asciz  "MPDRVREV:28"
+        .asciz  "MPDRVREV:29"
         .even

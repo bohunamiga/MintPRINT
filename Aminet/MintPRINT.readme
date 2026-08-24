@@ -2,7 +2,7 @@ Short:        IPP/AirPrint driver and setup tool
 Author:       Darren Banfi (boingball)
 Uploader:     boingball gmail com (Darren Banfi)
 Type:         driver/print
-Version:      1.1.0
+Version:      1.2.0
 Requires:     68000+; AmigaOS 3.0+; TCP/IP stack providing bsdsocket.library
 Architecture: m68k-amigaos >= 3.0.0
 Distribution: MIT License - see LICENSE in the source repository

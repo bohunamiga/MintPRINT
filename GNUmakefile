@@ -5,16 +5,22 @@
 # so their saved Workbench windows are not the tiny 265x64 geometry in the
 # source artwork.  Source .info files are never modified.
 
-# Forwarded command targets must be phony here as well as in Makefile.
-# In particular, the repository contains a real driver/ directory; without
-# declaring `driver` phony GNU make considers that directory to satisfy the
-# target and never reaches the catch-all forwarding rule below.
-.PHONY: all gui test test-http test-dpi test-jpeg test-ipp-enum test-postscript \
-        driver driver31 driver-symbols driver-symbols31 \
-        release release31 release-all clean help
+# These are real command targets in Makefile.  They need an explicit recipe
+# here rather than relying on the catch-all % rule: .PHONY targets deliberately
+# skip GNU make's implicit-rule search, so a phony `driver` would otherwise
+# never reach `%:` (while a non-phony `driver` is shadowed by the real driver/
+# source directory in this repository).
+FORWARD_TARGETS := gui test test-http test-dpi test-jpeg test-ipp-enum \
+                   test-postscript driver driver31 driver-symbols \
+                   driver-symbols31 help
+
+.PHONY: all release release31 release-all clean $(FORWARD_TARGETS)
 
 all:
 	$(MAKE) -f Makefile all
+
+$(FORWARD_TARGETS):
+	$(MAKE) -f Makefile $@
 
 release:
 	$(MAKE) -f Makefile release
@@ -44,7 +50,8 @@ release-all:
 clean:
 	$(MAKE) -f Makefile clean
 
-# Preserve the existing command surface: targets not wrapped above are simply
-# forwarded to the original Makefile, including help/gui/test/driver/etc.
+# Keep arbitrary/internal Makefile targets reachable too.  Public command
+# targets above are explicit so directory-name collisions cannot intercept
+# them.
 %:
 	$(MAKE) -f Makefile $@

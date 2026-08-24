@@ -145,12 +145,12 @@ int main(int argc, char **argv)
     if (rc) return 80 + rc;
 
     /* Samsung C480W field case: IPP reports 440 hundredths mm (4.4 mm) on
-     * every side.  Rounded to PostScript points that is 12 pt, leaving a
-     * 571x818 pt imageable rectangle at (12,12).  Fit must preserve the
-     * whole image inside that rectangle instead of drawing its border under
-     * the printer's non-imageable hardware margins. */
+     * every side. A non-imageable margin is conservatively rounded UP to
+     * 13 PostScript points, leaving a 569x816 pt imageable rectangle at
+     * (13,13). Fit must preserve the whole image inside that rectangle
+     * instead of drawing its border under the printer's hardware margins. */
     mp_postscript_set_margins(440, 440, 440, 440);
-    rc = write_case(margin_path, "fit", "12 207 translate\n571 428 scale\n");
+    rc = write_case(margin_path, "fit", "13 207 translate\n569 427 scale\n");
     if (rc) return 100 + rc;
 
     mp_postscript_set_margins(0, 0, 0, 0);

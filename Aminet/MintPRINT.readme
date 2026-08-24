@@ -1,11 +1,10 @@
 Short:        IPP/AirPrint driver and setup tool
 Author:       Darren Banfi (boingball)
-Uploader:     boingball gmail com (Darren Banfi)
+Uploader:     boingball@gmail.com
 Type:         driver/print
 Version:      1.2.0
 Requires:     68000+; AmigaOS 3.0+; TCP/IP stack providing bsdsocket.library
 Architecture: m68k-amigaos >= 3.0.0
-Distribution: MIT License - see LICENSE in the source repository
 
 MintPRINT
 =========
@@ -16,11 +15,11 @@ already use - with no printer-specific software needed on the printer
 side. It is a real DEVS:Printers/ printer.device driver plus MintPrint
 Settings, a GUI setup, discovery and test tool.
 
-Print from applications that use AmigaOS' standard printer graphics dump
-interface (including MultiView, GraphicDump and many paint/DTP programs).
-MintPRINT converts printer.device raster callbacks into JPEG, PostScript,
-PWG Raster, or PDF and submits the resulting document directly to the printer's IPP
-endpoint over the network.
+Print graphics from applications that use AmigaOS' standard printer graphics
+dump interface (including MultiView, GraphicDump and many paint/DTP programs),
+or print plain text through the standard PRT: device. MintPRINT converts the
+printer.device output into JPEG, PostScript, PWG Raster, or PDF and submits the
+resulting document directly to the printer's IPP endpoint over the network.
 
 AmigaOS 3.0/3.1 use the separate classic pre-V44 driver build. Newer
 V44-capable AmigaOS releases use the normal extended driver build. Both use
@@ -51,6 +50,8 @@ Features
   - Real DEVS:Printers/ printer.device driver
   - AmigaOS 3.0/3.1 support via a dedicated classic driver build
   - 68000-compatible driver
+  - Graphics printing through the standard printer.device raster interface
+  - Plain-text printing through PRT:/CMD_WRITE
   - Prints using JPEG, PostScript, PWG Raster, or PDF, selectable per printer
   - LAN printer discovery using SSDP and mDNS
   - IPP capability query - reads the printer's supported media, trays,
@@ -59,6 +60,7 @@ Features
     for printing at a time
   - Printer make/model shown after a successful query
   - Built-in test page sent through printer.device
+  - Built-in AmigaGuide help from the Help menu
   - Warns if a printer advertises none of the formats MintPRINT can
     produce, with information on reporting the printer for support
   - Detects and offers to install or update the bundled driver
@@ -187,6 +189,31 @@ Claude.
 
 History
 -------
+
+1.2.0  Faster JPEG, PRT: text printing, and PostScript compatibility fixes.
+
+       - Added plain-text printer.device output through PRT:/CMD_WRITE.
+         Text printing supports normal characters, CR/LF, tabs, automatic
+         wrapping and form-feed page breaks, and has been tested with
+         AmigaDOS Type and MultiView
+       - Further accelerated the JPEG encoder with constant-block shortcuts,
+         static zig-zag lookup, combined chroma sampling and a direct-pointer
+         fast path for complete interior MCUs, reducing JPEG CPU time on
+         classic 68k systems; PostScript benefits from the same JPEG work
+       - PostScript Fit/Fill now performs explicit page placement, with Fit
+         respecting hardware imageable margins reported by the printer so
+         borders and edge content are not placed in non-printable areas;
+         Fill retains its full-sheet cover/crop behaviour
+       - Fixed the 300* DPI compatibility option so it appears immediately
+         after the first Query on PWG Raster printers that omit 300 DPI from
+         their advertised resolution list
+       - Fixed IPP enum parsing for print-quality and printer-state, and now
+         rejects failed Get-Printer-Attributes HTTP/IPP responses instead of
+         treating them as valid capability data
+       - Added built-in AmigaGuide help, available from MintPrint Settings'
+         Help menu and included in both release drawers
+       - Driver build revision is now 29 so MintPrint Settings can detect and
+         offer the updated driver automatically
 
 1.1.0  PostScript engine, faster JPEG, and more reliable wireless setup.
 

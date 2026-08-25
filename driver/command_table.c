@@ -1,3 +1,6 @@
+#ifndef PRT_STDARGS
+#define PRT_STDARGS
+#endif
 /*
  * MintPRINT alphanumeric/PRT: support.
  *

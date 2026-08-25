@@ -1,11 +1,10 @@
 Short:        IPP/AirPrint driver and setup tool
 Author:       Darren Banfi (boingball)
-Uploader:     boingball gmail com (Darren Banfi)
+Uploader:     boingball@gmail.com
 Type:         driver/print
-Version:      1.1.0
-Requires:     68000+; AmigaOS 3.1+; TCP/IP stack providing bsdsocket.library
-Architecture: m68k-amigaos >= 3.1.0
-Distribution: MIT License - see LICENSE in the source repository
+Version:      1.2.0
+Requires:     68000+; AmigaOS 3.0+; TCP/IP stack providing bsdsocket.library
+Architecture: m68k-amigaos >= 3.0.0
 
 MintPRINT
 =========
@@ -16,15 +15,16 @@ already use - with no printer-specific software needed on the printer
 side. It is a real DEVS:Printers/ printer.device driver plus MintPrint
 Settings, a GUI setup, discovery and test tool.
 
-Print from applications that use AmigaOS' standard printer graphics dump
-interface (including MultiView, GraphicDump and many paint/DTP programs).
-MintPRINT converts printer.device raster callbacks into JPEG, PostScript,
-PWG Raster, or PDF and submits the resulting document directly to the printer's IPP
-endpoint over the network.
+Print graphics from applications that use AmigaOS' standard printer graphics
+dump interface (including MultiView, GraphicDump and many paint/DTP programs),
+or print plain text through the standard PRT: device. MintPRINT converts the
+printer.device output into JPEG, PostScript, PWG Raster, or PDF and submits the
+resulting document directly to the printer's IPP endpoint over the network.
 
-AmigaOS 3.1 is supported by a separate classic driver build. Newer
-AmigaOS releases use the normal extended driver build. Both use the same
-MintPrint Settings GUI and the same IPP/JPEG/PostScript/PWG/PDF backend.
+AmigaOS 3.0/3.1 use the separate classic pre-V44 driver build. Newer
+V44-capable AmigaOS releases use the normal extended driver build. Both use
+the same MintPrint Settings GUI and the same IPP/JPEG/PostScript/PWG/PDF
+backend.
 
 Archive contents
 ----------------
@@ -37,19 +37,21 @@ This archive contains two drawers:
 
   MintPRINT-OS31/
     MintPrintSettings       same GUI setup, discovery and test tool
-    MintPRINT               classic AmigaOS 3.1 driver build
+    MintPRINT               classic AmigaOS 3.0/3.1 driver build
 
-Use MintPRINT-OS31 on AmigaOS 3.1.
+Use MintPRINT-OS31 on AmigaOS 3.0 or 3.1.
 
-Use MintPRINT on AmigaOS 3.2 and later systems, including AmigaOS 3.5/3.9
-and newer classic AmigaOS releases.
+Use MintPRINT on V44-capable classic AmigaOS systems such as AmigaOS 3.2,
+3.5 and 3.9.
 
 Features
 --------
 
   - Real DEVS:Printers/ printer.device driver
-  - AmigaOS 3.1 support via a dedicated classic driver build
+  - AmigaOS 3.0/3.1 support via a dedicated classic driver build
   - 68000-compatible driver
+  - Graphics printing through the standard printer.device raster interface
+  - Plain-text printing through PRT:/CMD_WRITE
   - Prints using JPEG, PostScript, PWG Raster, or PDF, selectable per printer
   - LAN printer discovery using SSDP and mDNS
   - IPP capability query - reads the printer's supported media, trays,
@@ -58,6 +60,7 @@ Features
     for printing at a time
   - Printer make/model shown after a successful query
   - Built-in test page sent through printer.device
+  - Built-in AmigaGuide help from the Help menu
   - Warns if a printer advertises none of the formats MintPRINT can
     produce, with information on reporting the printer for support
   - Detects and offers to install or update the bundled driver
@@ -67,7 +70,7 @@ Requirements
 ------------
 
   - Motorola 68000 or later
-  - AmigaOS 3.1 or later
+  - AmigaOS 3.0 or later
   - A running TCP/IP stack providing bsdsocket.library. This is required
     for every printing path because MintPRINT talks directly to the
     printer over IP.
@@ -86,10 +89,10 @@ Installation
 
 Extract the archive and choose the drawer for your AmigaOS version:
 
-  AmigaOS 3.1:
+  AmigaOS 3.0 or 3.1:
     use MintPRINT-OS31/
 
-  AmigaOS 3.2 or later:
+  V44-capable AmigaOS 3.x systems (including 3.2, 3.5 and 3.9):
     use MintPRINT/
 
 Copy the selected drawer wherever you like and run MintPrintSettings.
@@ -118,13 +121,18 @@ After rebooting:
 The active printer configuration is Unit0. Additional configurations can
 be stored in Unit1-Unit7 and copied to Unit0 when required.
 
-AmigaOS 3.1 notes
------------------
+AmigaOS 3.0/3.1 notes
+---------------------
 
-The OS3.1 package uses a classic pre-V44 printer driver structure and a
-compatibility rendering path for the older printer.device raster format.
-The IPP networking and JPEG/PostScript/PWG Raster/PDF output code is shared with the
-newer driver build.
+The MintPRINT-OS31 package uses a classic pre-V44 printer driver structure and
+a compatibility rendering path for the older printer.device raster format.
+The same ABI also covers AmigaOS 3.0. The IPP networking and
+JPEG/PostScript/PWG Raster/PDF output code is shared with the newer driver
+build.
+
+AmigaOS 3.0 compatibility follows from the V39/V37 library requirements and
+pre-V44 printer.device ABI used by this build. AmigaOS 3.1 has had more direct
+real-hardware testing, so 3.0 user reports are especially welcome.
 
 MintPrintSettings should be launched using the supplied icon so its
 configured stack size is used. If launching from a Shell on a classic
@@ -155,7 +163,7 @@ Please include the AmigaOS version, TCP/IP stack, document engine, DPI,
 media/tray, scaling, quality and colour mode so a successful configuration
 can be reproduced by another user.
 
-When reporting an AmigaOS 3.1 problem, please also mention that the
+When reporting an AmigaOS 3.0/3.1 problem, please also mention that the
 MintPRINT-OS31 driver build is being used.
 
 Source Code
@@ -181,6 +189,31 @@ Claude.
 
 History
 -------
+
+1.2.0  Faster JPEG, PRT: text printing, and PostScript compatibility fixes.
+
+       - Added plain-text printer.device output through PRT:/CMD_WRITE.
+         Text printing supports normal characters, CR/LF, tabs, automatic
+         wrapping and form-feed page breaks, and has been tested with
+         AmigaDOS Type and MultiView
+       - Further accelerated the JPEG encoder with constant-block shortcuts,
+         static zig-zag lookup, combined chroma sampling and a direct-pointer
+         fast path for complete interior MCUs, reducing JPEG CPU time on
+         classic 68k systems; PostScript benefits from the same JPEG work
+       - PostScript Fit/Fill now performs explicit page placement, with Fit
+         respecting hardware imageable margins reported by the printer so
+         borders and edge content are not placed in non-printable areas;
+         Fill retains its full-sheet cover/crop behaviour
+       - Fixed the 300* DPI compatibility option so it appears immediately
+         after the first Query on PWG Raster printers that omit 300 DPI from
+         their advertised resolution list
+       - Fixed IPP enum parsing for print-quality and printer-state, and now
+         rejects failed Get-Printer-Attributes HTTP/IPP responses instead of
+         treating them as valid capability data
+       - Added built-in AmigaGuide help, available from MintPrint Settings'
+         Help menu and included in both release drawers
+       - Driver build revision is now 29 so MintPrint Settings can detect and
+         offer the updated driver automatically
 
 1.1.0  PostScript engine, faster JPEG, and more reliable wireless setup.
 

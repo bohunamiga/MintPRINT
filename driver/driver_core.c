@@ -43,7 +43,7 @@
  * exactly which build produced it, rather than relying on whoever's
  * reading it to separately check About or remember what they last
  * copied to DEVS:Printers/. */
-#define MP_DRIVER_REV 27
+#define MP_DRIVER_REV 29
 
 struct ExecBase *SysBase = NULL;
 struct DosLibrary *DOSBase = NULL;

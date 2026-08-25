@@ -8,6 +8,8 @@ typedef struct MPJpegEncoder {
     unsigned long height;
     unsigned long rows_in;
     unsigned long mcu_rows_done;
+    unsigned long blocks_total;
+    unsigned long blocks_constant;
     unsigned char *scratch;
     unsigned long scratch_size;
     MPJpegWriteFn write_fn;

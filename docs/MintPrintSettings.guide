@@ -1,5 +1,5 @@
 @database MintPrintSettings.guide
-@$VER: MintPrintSettings.guide 1.1.0 (22.08.2026)
+@$VER: MintPrintSettings.guide 1.2.0 (24.08.2026)
 @author "MintPRINT project (boingball)"
 @(c) "Copyright (c) 2026 Darren Banfi (boingball). MIT License."
 @width 74
@@ -64,6 +64,7 @@ Only Unit0 is what the installed driver reads when it prints - see
 @{" Multiple printers (Units) " LINK "Units"} if you have more than one
 network printer.
 
+@{" Back to Contents " LINK "Main"}
 @endnode
 
 @node Discover "Finding your printer"
@@ -90,6 +91,7 @@ fine once its address is entered manually. If nothing appears, just
 type the printer's IP address into Printer IP/Host and click
 @{" Query Printer " LINK "Query"} as usual.
 
+@{" Back to Contents " LINK "Main"}
 @endnode
 
 @node Query "Query Printer"
@@ -118,6 +120,7 @@ If the printer's advertised format list contains none of the four
 formats MintPRINT can produce, a requester points you at filing a
 GitHub issue - see @{" Reporting a problem " LINK "ReportingProblems"}.
 
+@{" Back to Contents " LINK "Main"}
 @endnode
 
 @node Engines "Printer Engine"
@@ -150,6 +153,7 @@ If Settings finds your printer supports PWG Raster while a slower
 engine is currently pinned, it will offer, once per session, to switch
 you over.
 
+@{" Back to Contents " LINK "Main"}
 @endnode
 
 @node DPI "DPI and the 300* option"
@@ -173,6 +177,7 @@ queries and restarts.
 If your printer's real resolution list does not include a working 300
 DPI mode, leave DPI on one of the plain (non-starred) entries.
 
+@{" Back to Contents " LINK "Main"}
 @endnode
 
 @node MediaTrays "Media and Tray"
@@ -185,6 +190,7 @@ and fills the Media dropdown with them. Where the printer maps a
 particular tray to a particular medium, MintPRINT uses that mapping
 automatically; otherwise "auto" is generally the safest source choice.
 
+@{" Back to Contents " LINK "Main"}
 @endnode
 
 @node Duplex "Duplex (Sides)"
@@ -206,6 +212,7 @@ Print-Job, which also works with printers that report
 PostScript, PDF) always prints one-sided, regardless of what the
 printer itself supports.
 
+@{" Back to Contents " LINK "Main"}
 @endnode
 
 @node ScalingQuality "Scaling and Quality"
@@ -224,6 +231,23 @@ while "auto" printed correctly in both cases. Treat any other Scaling
 value as something to try only if "auto" does not look right for your
 particular application and printer.
 
+The two explicit full-page choices have different purposes:
+
+    Fit     Keeps the whole page visible while enlarging it as much as
+            possible. With the PostScript engine, MintPRINT also respects
+            any printable-area margins reported by the printer, so borders
+            and other edge content are not placed in non-printable hardware
+            areas.
+
+    Fill    Enlarges the page to cover the physical sheet. Some content may
+            be cropped at the edges. Printer margins do not change this
+            cover/crop behaviour.
+
+For JPEG, PDF and PWG Raster, scaling is still applied by the printer
+through IPP. The PostScript note above is specific to MintPRINT's own
+PostScript page placement.
+
+@{" Back to Contents " LINK "Main"}
 @endnode
 
 @node Units "Multiple printers (Units)"
@@ -253,6 +277,7 @@ the dropdown back to Unit0. Activating overwrites Unit0's previous
 settings, so save them to a spare empty Unit first if you want to keep
 them.
 
+@{" Back to Contents " LINK "Main"}
 @endnode
 
 @node DriverInstall "Installing the driver"
@@ -274,6 +299,7 @@ Reboot after installing or updating the driver. A copy of the driver
 already resident in memory will not pick up a replacement file until
 then.
 
+@{" Back to Contents " LINK "Main"}
 @endnode
 
 @node TestPrint "Test Print"
@@ -293,6 +319,7 @@ by itself proof of a physical page - some printer firmware accepts a
 job and silently discards it. Treat an actual sheet of paper as the
 real test.
 
+@{" Back to Contents " LINK "Main"}
 @endnode
 
 @node Troubleshooting "Troubleshooting"
@@ -318,6 +345,9 @@ correctly:
     - Prefer port 631 and whatever IPP path the printer itself reports;
       "/ipp/print" is correct for every printer confirmed so far.
     - Start with Scaling set to "auto" if the printer advertises it.
+    - If PostScript with Scaling set to "fit" still clips borders or edge
+      content, include the full IPP probe output in the bug report so the
+      printer's reported media margins can be checked.
     - Prefer an engine the printer actually advertises. Treat JPEG as
       suspicious if Query did not report any JPEG size/dimension
       capabilities for it, even though it remains selectable.
@@ -325,6 +355,7 @@ correctly:
       before trying a strip-printing application such as Wordworth or
       ArtEffect.
 
+@{" Back to Contents " LINK "Main"}
 @endnode
 
 @node ReportingProblems "Reporting a problem"
@@ -355,4 +386,5 @@ Use the report template on the printer compatibility page
 (docs/PRINTER_COMPATIBILITY.md) so your result can be added with its
 AmigaOS version, TCP/IP stack, engine and exact print options.
 
+@{" Back to Contents " LINK "Main"}
 @endnode

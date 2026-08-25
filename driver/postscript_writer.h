@@ -36,6 +36,23 @@ typedef struct MPPostScriptEncoder {
     int failed;
 } MPPostScriptEncoder;
 
+/*
+ * Sets the PostScript placement policy used by subsequent jobs.  The driver
+ * updates this from Unit0's SCALING= value when configuration is loaded.
+ * Unknown/empty values fall back to the historical auto-fit behaviour.
+ */
+void mp_postscript_set_scaling(const char *scaling);
+
+/*
+ * Sets the printer's imageable margins in IPP's hundredths-of-a-millimetre
+ * units.  Explicit Fit/Fill use this rectangle instead of the physical sheet
+ * when the values are sane.  Zero preserves the historical full-page target.
+ */
+void mp_postscript_set_margins(unsigned long left_100mm,
+                               unsigned long right_100mm,
+                               unsigned long top_100mm,
+                               unsigned long bottom_100mm);
+
 unsigned long mp_postscript_scratch_size(unsigned long width);
 int mp_postscript_begin(MPPostScriptEncoder *enc,
                         unsigned long width, unsigned long height,

@@ -18,11 +18,12 @@
 
         .extern _Init
         .extern _Expunge
-        .extern _DriverOpen
-        .extern _DriverClose
+        .extern _TextDriverOpen
+        .extern _TextDriverClose
         .extern _CommandTable
-        .extern _DoSpecial
+        .extern _TextDoSpecial
         .extern _Render
+        .extern _ConvFunc
         .extern _DriverTags
 
 _start:
@@ -43,8 +44,8 @@ _PEDData:
         .long   printerName
         .long   _Init
         .long   _Expunge
-        .long   _DriverOpen
-        .long   _DriverClose
+        .long   _TextDriverOpen
+        .long   _TextDriverClose
 
         /* PrinterClass = PPC_COLORGFX | PPCF_EXTENDED */
         .byte   0x07
@@ -57,12 +58,12 @@ _PEDData:
         .word   300               /* XDotsInch */
         .word   300               /* YDotsInch */
         .long   _CommandTable
-        .long   _DoSpecial
+        .long   _TextDoSpecial
         .long   _Render
         .long   30                /* timeout seconds */
         .long   0                 /* ped_8BitChars: use system default */
         .long   0                 /* ped_PrintMode */
-        .long   0                 /* ped_ConvFunc */
+        .long   _ConvFunc         /* capture PRT:/CMD_WRITE characters */
 
         /* V44 extended fields */
         .long   _DriverTags
@@ -90,7 +91,8 @@ printerName:
  * same approach AmigaOS's own "Version" command uses for "$VER:" strings.
  * Bump the trailing number whenever a driver rebuild actually changes
  * behaviour - a config-only or GUI-only change does not need a bump.
+ *
  */
 mp_driver_revision_marker:
-        .asciz  "MPDRVREV:27"
+        .asciz  "MPDRVREV:29"
         .even

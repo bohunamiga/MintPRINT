@@ -20,11 +20,12 @@
 
         .extern _Init
         .extern _Expunge
-        .extern _DriverOpen
-        .extern _DriverClose
+        .extern _TextDriverOpen
+        .extern _TextDriverClose
         .extern _CommandTable
-        .extern _DoSpecial
+        .extern _TextDoSpecial
         .extern _Render
+        .extern _ConvFunc
 
 _start:
         /* MOVEQ #0,D0 ; RTS -- standard printer driver run-alert stub. */
@@ -42,8 +43,8 @@ _PEDData:
         .long   printerName
         .long   _Init
         .long   _Expunge
-        .long   _DriverOpen
-        .long   _DriverClose
+        .long   _TextDriverOpen
+        .long   _TextDriverClose
 
         /* PrinterClass = PPC_COLORGFX (NO PPCF_EXTENDED). */
         .byte   0x03
@@ -56,12 +57,12 @@ _PEDData:
         .word   300               /* XDotsInch */
         .word   300               /* YDotsInch */
         .long   _CommandTable
-        .long   _DoSpecial
+        .long   _TextDoSpecial
         .long   _Render
         .long   30                /* timeout seconds */
         .long   0                 /* ped_8BitChars: system default */
         .long   0                 /* ped_PrintMode */
-        .long   0                 /* ped_ConvFunc */
+        .long   _ConvFunc         /* suppress primitive I/O and capture PRT: */
 
         /* STOP HERE: V44 extended PED fields must not exist in this build. */
 
@@ -74,10 +75,9 @@ printerName:
  * for diagnostics; the OS3.1 release is packaged separately so Settings sees
  * the correct PROGDIR:MintPRINT binary for that release.
  *
- * Bump this alongside the main driver when shared driver behaviour changes.
  */
 mp_driver_revision_marker:
-        .asciz  "MPDRVREV:27"
+        .asciz  "MPDRVREV:29"
         .even
 
 /* Human-readable marker useful when inspecting a built driver. */

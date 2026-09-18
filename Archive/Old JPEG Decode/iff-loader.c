@@ -5,6 +5,9 @@
 #include <string.h>
 #include <exec/memory.h>
 #include <proto/exec.h>
+#ifdef __AROS__
+#include <graphics/view.h> // EXTRA_HALFBRITE lives in view.h on AROS
+#endif
 #include <graphics/modeid.h> // For HAM_KEY and EXTRA_HALFBRITE
 #include "iff-loader.h"
 

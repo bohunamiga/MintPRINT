@@ -8,3 +8,8 @@
 build/
 release/
 __pycache__/
+.DS_Store
+a.out
+MintPrintSettings
+MintPrintSettings-aros
+test-postscript*.ps

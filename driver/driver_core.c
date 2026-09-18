@@ -14,6 +14,13 @@
  * driver/config.c and mp_build_spool_paths() below.
  */
 
+/* The AROS aarch64 SDK does not predefine PRT_STDARGS (no alternate
+ * calling convention on that ABI), so give it an empty definition before
+ * the printer.device headers are included. */
+#ifndef PRT_STDARGS
+#define PRT_STDARGS
+#endif
+
 #include <exec/types.h>
 #include <exec/libraries.h>
 #include <exec/io.h>

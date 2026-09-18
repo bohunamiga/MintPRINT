@@ -7,6 +7,13 @@
  * invalid values fall back to the known-good development defaults.
  */
 
+/* The AROS aarch64 SDK does not predefine PRT_STDARGS (no alternate
+ * calling convention on that ABI), so give it an empty definition before
+ * the printer.device headers are included. */
+#ifndef PRT_STDARGS
+#define PRT_STDARGS
+#endif
+
 #include <exec/types.h>
 #include <dos/dos.h>
 #include <devices/printer.h>

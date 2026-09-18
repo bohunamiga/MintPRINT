@@ -10,7 +10,13 @@
 #include <dos/dos.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
-typedef long ssize_t;
+typedef long ssize_t; /* AROS provides ssize_t via its SDK; classic libnix needs this. */
+#ifdef __AROS__
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#endif
 #include <proto/bsdsocket.h>
 #include <sys/ioctl.h> /* FIONBIO, for mp_connect_with_timeout() */
 #include <errno.h>     /* EINPROGRESS/EWOULDBLOCK, for mp_connect_with_timeout() */

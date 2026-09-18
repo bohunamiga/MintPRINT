@@ -31,7 +31,19 @@
 #include <proto/intuition.h>
 #include <proto/gadtools.h>
 #include <proto/graphics.h>
+#include <graphics/gfxbase.h> /* complete struct GfxBase (GfxBase->LibNode.lib_Version) */
+/* AROS provides the BSD-socket header set below from its SDK; classic
+ * m68k AmigaOS gets the same types out of <proto/bsdsocket.h>.
+ * ssize_t is provided by the AROS SDK; only define it manually for classic
+ * m68k AmigaOS / libnix where it is absent from the system headers. */
+#ifdef __AROS__
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#else
 typedef long ssize_t;
+#endif
 #include <clib/alib_protos.h>
 #include <proto/bsdsocket.h>
 #include <intuition/intuition.h>
@@ -249,11 +261,17 @@ BOOL has_extension(const char *filename, const char *ext) {
  * real AmigaOS hardware before reducing this again.
  *
  * 256 KiB = 262144 bytes.
- */
+ *
+ * AROS has its own stack handling (Startup tags via AROS_IP_* / the startup
+ * code's own default) and its SDK does not use the libnix __stack variable,
+ * so guard it (and the libnix $STACK: cookie it pairs with) the same way the
+ * rest of the MintPRINT AROS port guards its libnix/classic-only metadata. */
+#ifndef __AROS__
 unsigned long __stack = 262144UL;
 
 /* Keep the cookie as harmless metadata for newer startup code too. */
 static const char USED min_stack[] = "$STACK:262144";
+#endif
 
 // Structure to map media sizes to trays (Updated to include tray name and medianame)
 struct MediaTrayMap {

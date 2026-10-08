@@ -17,13 +17,15 @@ CFLAGS  ?= -Os -Wall -Wextra -fomit-frame-pointer -fno-builtin
 # makes both headers and libaros resolve.  Only added when it truly exists
 # (avoids guessing at tree names). */
 AROS_GCC_PATH := $(shell command -v $(CC) 2>/dev/null)
-AROS_SDK     := $(wildcard $(abspath $(dir $(AROS_GCC_PATH))/../sysroot))
+ifneq ($(strip $(AROS_GCC_PATH)),)
+AROS_SDK := $(wildcard $(abspath $(dir $(AROS_GCC_PATH))/../sysroot))
 ifneq ($(strip $(AROS_SDK)),)
 CFLAGS += --sysroot="$(AROS_SDK)"
-endif
 AROS_SDK_LIB := $(wildcard $(AROS_SDK)/lib)
 ifneq ($(strip $(AROS_SDK_LIB)),)
 CFLAGS += -L"$(AROS_SDK_LIB)"
+endif
+endif
 endif
 
 IFF_DIR := Archive/Old JPEG Decode

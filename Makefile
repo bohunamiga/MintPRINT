@@ -1,10 +1,5 @@
-# MintPRINT build system - AROS aarch64 is the default target (the AmigaOS
-# incarnation that this repository is maintained on/flashed to), mirroring the
-# structure the 2016-era AROS port fork used.  Building the classic m68k
-# AmigaOS3.1/OS3.9 driver or the host-side unit tests is still supported via
-# the overridable CROSS/HOSTCC variables (see help below), but none of those
-# are part of the default invocation - `make` produces the AROS aarch64 GUI
-# and driver, exactly like the fork did.
+# MintPRINT build system - AROS aarch64 is the supported cross-build target.
+# `make` produces the AROS aarch64 GUI and printer driver.
 
 CROSS   ?= aarch64-aros-
 CC      = $(CROSS)gcc
@@ -42,17 +37,6 @@ RELEASE_DIR := release/MintPRINT
 
 all: gui driver
 
-# --- AROS aarch64: jawny --sysroot ---
-# The ELF cross-compiler carries a baked-in sysroot path that only exists on
-# the machine that built the toolchain (an AROS source-tree build tree).  On
-# any other host the SDK headers must be found explicitly, so point the
-# compiler at the SDK's own aros-toolchain-aarch64/sysroot dir.  Matches the
-# classic AmigaOS m68k behaviour of finding headers from the libnix/NDK.
-ifeq (aarch64-aros-,$(CROSS))
-SYSROOT := $(abspath $(dir $(shell command -v "$(CC)" 2>/dev/null))/../sysroot)
-CFLAGS += $(if $(SYSROOT),--sysroot=$(SYSROOT))
-endif
-
 help:
 	@echo "MintPRINT targets (AROS aarch64 default):"
 	@echo "  make         - build the MintPRINT Settings GUI and the printer"
@@ -63,8 +47,7 @@ help:
 	@echo "  make release - stage a distributable bundle under release/MintPRINT/"
 	@echo "  make clean"
 	@echo
-	@echo "Cross-target overrides (classic AmigaOS m68k compatibility):"
-	@echo "  make CROSS=m68k-amigaos- CFLAGS='-Os -m68000 -Wall -Wextra' gui driver" 
+	@echo "The GUI and driver produced by this Makefile require AROS aarch64."
 
 gui: MintPrintSettings
 

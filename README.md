@@ -128,22 +128,22 @@ rarer case of a printer that accepts neither - see
 
 ## Building
 
-Requires `m68k-amigaos-gcc` (Bebbo's cross-toolchain) on `PATH`, or set
-`CROSS=` to a different prefix.
+The default build target is **AROS aarch64**. Install the AROS aarch64
+cross-toolchain and put its `bin/` directory on `PATH`; the toolchain's SDK
+sysroot must be available alongside it. The compiler's `collect-aros` linker
+also uses the absolute crosstool paths baked into the toolchain, so builds on
+other hosts may need the linker-tool symlink setup described in
+[`AGENTS.md`](AGENTS.md). These outputs are AROS executables and are not
+runnable on classic m68k AmigaOS.
 
     make gui       # MintPrintSettings
-    make driver    # build/driver/MintPRINT (V44+ build)
-    make driver31  # build/driver31/MintPRINT (AmigaOS 2.04-3.1 classic build)
-    make release   # all three, staged into release/MintPRINT/ ready to distribute
+    make driver    # build/driver/MintPRINT (AROS aarch64)
+    make release   # GUI and driver, staged into release/MintPRINT/
     make clean
 
-`make release` stages one drawer with both driver builds under
-`Drivers/MintPRINT-V44/` and `Drivers/MintPRINT-OS31/`, plus the `Install`
-script and Aminet readme next to it. See `docs/OS31_SUPPORT.md` for the two
-driver builds and `mp_driver_src_path()` in `src/MintPrintSettings.c` for
-how the right one gets chosen at runtime. Workbench icons for
-`MintPrintSettings` and the release drawer itself are copied in
-automatically from `art/` if present there.
+The Makefile defaults to the `aarch64-aros-` compiler prefix. `make release`
+stages the AROS aarch64 GUI and printer driver; it does not build the separate
+classic m68k driver variants described in [`docs/OS31_SUPPORT.md`](docs/OS31_SUPPORT.md).
 
 ## Reporting a problem
 
